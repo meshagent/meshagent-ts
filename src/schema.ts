@@ -44,9 +44,12 @@ export abstract class ElementProperty {
   public readonly name: string;
   public readonly description?: string;
 
-  constructor(params: { name: string; description?: string }) {
-    this.name = params.name;
-    this.description = params.description;
+  constructor({name, description}: {
+      name: string;
+      description?: string;
+  }) {
+    this.name = name;
+    this.description = description;
   }
 
   abstract validate(schema: MeshSchema): void;
@@ -60,15 +63,16 @@ export class ValueProperty extends ElementProperty {
   public readonly type: SimpleValue;
   public readonly enumValues?: any[];
 
-  constructor(params: {
+  constructor({name, description, type, enumValues}: {
     name: string;
     description?: string;
     type: SimpleValue;
     enumValues?: any[];
   }) {
-    super(params);
-    this.type = params.type;
-    this.enumValues = params.enumValues;
+    super({name, description});
+
+    this.type = type;
+    this.enumValues = enumValues;
   }
 
   validate(_: MeshSchema): void {
@@ -100,15 +104,16 @@ export class ChildProperty extends ElementProperty {
   private readonly _childTagNames: string[];
   public readonly ordered: boolean;
 
-  constructor(params: {
+  constructor({name, description, childTagNames, ordered = false}: {
     name: string;
     description?: string;
     childTagNames: string[];
     ordered?: boolean;
   }) {
-    super({ name: params.name, description: params.description });
-    this._childTagNames = params.childTagNames;
-    this.ordered = params.ordered ?? false;
+    super({name, description});
+
+    this._childTagNames = childTagNames;
+    this.ordered = ordered;
   }
 
   validate(schema: MeshSchema): void {

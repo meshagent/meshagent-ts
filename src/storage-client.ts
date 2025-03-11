@@ -7,11 +7,24 @@ import { JsonResponse, FileResponse } from "./response";
 import { decoder } from "./utils";
 
 export class FileHandle {
-  constructor(public id: number) { }
+  public id: number;
+
+  constructor({id}: {id: number}) {
+    this.id = id;
+  }
 }
 
 class StorageEntry {
-    constructor(public name: string, public isFolder: boolean) { }
+    public name: string;
+    public isFolder: boolean;
+
+    constructor({name, isFolder}: {
+        name: string;
+        isFolder: boolean;
+    }) {
+        this.name = name;
+        this.isFolder = isFolder;
+    }
 
     /**
      * Returns the file name without its extension, using a simple regex
@@ -34,8 +47,8 @@ class StorageEntry {
 export class StorageClient {
   private client: RoomClient;
 
-  constructor(client: RoomClient) {
-    this.client = client;
+  constructor({room}: {room: RoomClient}) {
+    this.client = room;
 
     // Add protocol handlers
     this.client.protocol.addHandler("storage.file_deleted", this._handleFileDeleted.bind(this));
@@ -46,14 +59,14 @@ export class StorageClient {
     const raw = decoder.decode(bytes || new Uint8Array());
     const data = JSON.parse(raw);
 
-    this.client.emitt(new FileUpdatedEvent({ path: data["path"] }));
+    this.client.emit(new FileUpdatedEvent({ path: data["path"] }));
   }
 
   private async _handleFileDeleted(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
     const raw = decoder.decode(bytes || new Uint8Array());
     const data = JSON.parse(raw);
 
-    this.client.emitt(new FileDeletedEvent({ path: data["path"] }));
+    this.client.emit(new FileDeletedEvent({ path: data["path"] }));
   }
 
   /**
@@ -63,10 +76,10 @@ export class StorageClient {
     const response = (await this.client.sendRequest("storage.list", { path })) as JsonResponse;
     const files = response.json["files"] as Array<Record<string, any>>;
     const entries = files.map((f) => {
-      return {
+      return new StorageEntry({
         name: f["name"],
         isFolder: f["is_folder"],
-      } as StorageEntry;
+      });
     });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     return entries;
@@ -83,13 +96,10 @@ export class StorageClient {
   /**
    * Opens a file at a given path, returning a FileHandle.
    */
-  public async open(path: string, overwrite: boolean = false): Promise<FileHandle> {
-    const response = (await this.client.sendRequest("storage.open", {
-      path,
-      overwrite,
-    })) as JsonResponse;
+  public async open(path: string, {overwrite = false}: {overwrite: boolean}): Promise<FileHandle> {
+    const response = (await this.client.sendRequest("storage.open", { path, overwrite })) as JsonResponse;
 
-    return new FileHandle(response.json["handle"]);
+    return new FileHandle({id: response.json["handle"]});
   }
 
   /**

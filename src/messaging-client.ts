@@ -48,13 +48,13 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   // Tracks remote participants
   private _participants: Record<string, RemoteParticipant> = {};
 
-  constructor(client: RoomClient) {
+  constructor({room}: {room: RoomClient}) {
     super();
 
-    this.client = client;
+    this.client = room;
 
     // Register handler
-    client.protocol.addHandler("messaging.send", this._handleMessageSend.bind(this));
+    this.client.protocol.addHandler("messaging.send", this._handleMessageSend.bind(this));
   }
 
   /**
@@ -176,9 +176,9 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     const messageEvent = { message } as RoomMessageEvent;
 
     // Add to events
-    this.client.emitt(messageEvent);
+    this.client.emit(messageEvent);
 
-    this.notifyListeners(messageEvent);
+    this.emit("message", messageEvent);
   }
 
   private _onParticipantEnabled(message: RoomMessage): void {
@@ -190,7 +190,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       (p as any)._attributes[k] = v;
     }
     this._participants[data["id"]] = p;
-    this.notifyListeners({ message } as RoomMessageEvent);
+    this.emit("participant_added", { message } as RoomMessageEvent);
   }
 
   private _onParticipantAttributes(message: RoomMessage): void {
@@ -201,12 +201,17 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       (part as any)._attributes[k] = v;
     }
 
-    this.notifyListeners({ message } as RoomMessageEvent);
+    this.emit("participant_attributes_updated", { message } as RoomMessageEvent);
   }
 
   private _onParticipantDisabled(message: RoomMessage): void {
-    delete this._participants[message.message["id"]];
-    this.notifyListeners({ message } as RoomMessageEvent);
+    const part = this._participants[message.message["id"]];
+
+    if (part) {
+      delete this._participants[message.message["id"]];
+
+      this.emit("participant_removed", { message } as RoomMessageEvent);
+    }
   }
 
   private _onMessagingEnabled(message: RoomMessage): void {
@@ -218,10 +223,11 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       for (const [k, v] of Object.entries(data["attributes"] || {})) {
         (rp as any)._attributes[k] = v;
       }
+
       this._participants[data["id"]] = rp;
     }
 
-    this.notifyListeners({ message } as RoomMessageEvent);
+    this.emit("messaging_enabled", { message } as RoomMessageEvent);
   }
 
   private _onStreamOpen(message: RoomMessage): void {
@@ -245,7 +251,11 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       }
       this._onStreamAcceptCallback(reader);
       // Send "stream.accept"
-      this.sendMessage({ to: from, type: "stream.accept", message: { stream_id: streamId }});
+      this.sendMessage({
+        to: from,
+        type: "stream.accept",
+        message: { stream_id: streamId },
+      });
     } catch (e) {
       // Send "stream.reject"
       this.sendMessage({
@@ -256,7 +266,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     }
 
     this._streamReaders[streamId] = reader;
-    this.notifyListeners({ message } as RoomMessageEvent);
+    this.emit("stream_opened", { message } as RoomMessageEvent);
   }
 
   private _onStreamAccept(message: RoomMessage): void {

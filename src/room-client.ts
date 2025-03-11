@@ -30,33 +30,37 @@ export class RoomClient {
     public protocol: Protocol;
 
     // clients
-    public sync: SyncClient;
-    public storage: StorageClient;
-    public developer: DeveloperClient;
-    public messaging: MessagingClient;
-    public queues: QueuesClient;
-    public database: DatabaseClient;
-    public agents: AgentsClient;
+    public readonly sync: SyncClient;
+    public readonly storage: StorageClient;
+    public readonly developer: DeveloperClient;
+    public readonly messaging: MessagingClient;
+    public readonly queues: QueuesClient;
+    public readonly database: DatabaseClient;
+    public readonly agents: AgentsClient;
 
     private _pendingRequests: Map<number, Completer<any>> = new Map();
     private _ready = new Completer<boolean>();
     private _localParticipant: LocalParticipant | null = null;
     private _eventsController = new StreamController<RoomEvent>();
 
-    constructor(protocol: Protocol) {
+    constructor({protocol} : {protocol: Protocol}) {
         this.protocol = protocol;
 
         protocol.addHandler("room_ready", this._handleRoomReady.bind(this));
         protocol.addHandler("connected", this._handleParticipant.bind(this));
         protocol.addHandler("__response__", this._handleResponse.bind(this));
 
-        this.sync = new SyncClient(this);
-        this.storage = new StorageClient(this);
-        this.developer = new DeveloperClient(this);
-        this.messaging = new MessagingClient(this);
-        this.queues = new QueuesClient(this);
-        this.database = new DatabaseClient(this);
-        this.agents = new AgentsClient(this);
+        this.sync = new SyncClient({room: this});
+        this.storage = new StorageClient({room: this});
+        this.developer = new DeveloperClient({room: this});
+        this.messaging = new MessagingClient({room: this});
+        this.queues = new QueuesClient({room: this});
+        this.database = new DatabaseClient({room: this});
+        this.agents = new AgentsClient({room: this});
+    }
+
+    get localParticipant(): LocalParticipant | null {
+        return this._localParticipant;
     }
 
     public get ready(): Promise<boolean> {
@@ -66,8 +70,10 @@ export class RoomClient {
     /**
      * Starts the protocol and begins processing outgoing changes
      */
-    public start(): void {
+    public async start(): Promise<void> {
         this.sync.start();
+
+        await this.ready;
     }
 
     /**
@@ -142,12 +148,8 @@ export class RoomClient {
     /**
      * Handler for "room_ready" messages.
      */
-    async _handleRoomReady(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
+    private async _handleRoomReady(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
         this._ready.complete(JSON.parse(decoder.decode(data))["room_name"]);
-    }
-
-    get localParticipant(): LocalParticipant | null {
-        return this._localParticipant;
     }
 
     private _onParticipantInit(participantId: string, attributes: Record<string, any>): void {
@@ -166,7 +168,7 @@ export class RoomClient {
         }
     }
 
-    public emitt(event: RoomEvent): void {
+    public emit(event: RoomEvent): void {
         this._eventsController.add(event);
     }
 

@@ -6,7 +6,10 @@ export class Queue {
   public name: string;
   public size: number;
 
-  constructor({ name, size }: { name: string; size: number }) {
+  constructor({ name, size }: {
+      name: string;
+      size: number;
+  }) {
     this.name = name;
     this.size = size;
   }
@@ -16,8 +19,8 @@ export class Queue {
 export class QueuesClient {
   private client: RoomClient;
 
-  constructor(client: RoomClient) {
-    this.client = client;
+  constructor({room}: {room: RoomClient}) {
+    this.client = room;
   }
 
   /**

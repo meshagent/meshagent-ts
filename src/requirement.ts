@@ -17,7 +17,7 @@ export class RoomException extends Error {
 export abstract class Requirement {
   public readonly name: string;
 
-  constructor(name: string) {
+  constructor({name} : { name: string }) {
     this.name = name;
   }
 
@@ -49,7 +49,8 @@ export class RequiredToolkit extends Requirement {
   public readonly tools?: string[];
 
   constructor({ name, tools }: { name: string; tools?: string[] }) {
-    super(name);
+    super({name});
+
     this.tools = tools;
   }
 
@@ -66,7 +67,7 @@ export class RequiredToolkit extends Requirement {
  */
 export class RequiredSchema extends Requirement {
   constructor({ name }: { name: string }) {
-    super(name);
+    super({ name });
   }
 
   public toJson(): Record<string, any> {

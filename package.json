@@ -1,31 +1,31 @@
 {
-  "name": "meshagent-ts",
-  "version": "1.0.0",
-  "description": "Meshage Agent Client ",
-  "main": "dist/src/index.js",
-  "scripts": {
-    "test": "tsc && mocha dist/test/*.js",
-    "build-node": "tsc",
-    "build-browser": "esbuild test/all-test.ts --bundle --outfile=browser-test/index.js"
-  },
-  "author": "Powerboards",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/chai": "^5.0.1",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^22.13.4",
-    "@types/ws": "^8.18.0",
-    "chai": "^5.2.0",
-    "esbuild": "^0.25.0",
-    "esm": "^3.2.25",
-    "mocha": "^11.1.0",
-    "typescript": "^5.8.2"
-  },
-  "dependencies": {
-    "@kayahr/text-encoding": "^2.0.0",
-    "isomorphic-ws": "^5.0.0",
-    "jose": "^6.0.8",
-    "uuid": "^11.0.5",
-    "ws": "^8.18.0"
-  }
+    "name": "meshagent-ts",
+    "version": "1.0.0",
+    "description": "Meshage Agent Client ",
+    "main": "dist/src/index.js",
+    "scripts": {
+        "test": "tsc && mocha dist/test/*.js",
+        "build-node": "tsc",
+        "build-browser": "node ./build-browser.js"
+    },
+    "author": "Powerboards",
+    "license": "ISC",
+    "devDependencies": {
+        "@types/chai": "^5.0.1",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "^22.13.9",
+        "@types/ws": "^8.18.0",
+        "chai": "^5.2.0",
+        "esbuild": "^0.25.0",
+        "esm": "^3.2.25",
+        "mocha": "^11.1.0",
+        "typescript": "^5.8.2"
+    },
+    "dependencies": {
+        "@kayahr/text-encoding": "^2.0.0",
+        "isomorphic-ws": "^5.0.0",
+        "jose": "^6.0.8",
+        "uuid": "^11.0.5",
+        "ws": "^8.18.0"
+    }
 }

@@ -36,20 +36,22 @@ export class RoomServerException extends Error {
 export class MeshDocument extends RuntimeDocument {
   private _synchronized = new Completer<boolean>();
 
-  constructor(schema:  MeshSchema, sendChangesToBackend: (base64: string) => void) {
-    super(
-      uuidv4(),
+  constructor({schema, sendChangesToBackend}: {
+    schema:  MeshSchema;
+    sendChangesToBackend: (base64: string) => void;
+  }) {
+    super({
+      id: uuidv4(),
       schema,
-      (base64) => applyChanges(base64),
+      sendChanges: (base64) => applyChanges(base64),
       sendChangesToBackend,
-    );
+    });
 
     registerDocument(
-        this.id,
-        null,
-        (base64) => applyChanges(base64),
-        sendChangesToBackend,
-    );
+      this.id,
+      null,
+      (base64) => applyChanges(base64),
+      sendChangesToBackend);
   }
 
   get synchronized(): Promise<boolean> {

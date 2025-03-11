@@ -15,17 +15,26 @@ export interface RuntimeDocumentEvent {
 ------------------------------------------------------------------
 */
 export class RuntimeDocument extends EventEmitter<RuntimeDocumentEvent> {
+  public readonly id: string;
+  public readonly schema: MeshSchema;
+  public readonly sendChanges: (changes: Record<string, any>) => void;
+  public readonly sendChangesToBackend?: (msg: string) => void;
+
   // A stream of changes. In Dart, this was a StreamController.
   // Here we’ll maintain an array of subscribers for demonstration.
   private _changeSubscribers: Array<(data: Record<string, any>) => void> = [];
 
-  constructor(
-    public readonly id: string,
-    public readonly schema: MeshSchema,
-    public readonly sendChanges: (changes: Record<string, any>) => void,
-    public readonly sendChangesToBackend?: (msg: string) => void
-  ) {
+  constructor({id, schema, sendChanges, sendChangesToBackend}: {
+    id: string;
+    schema: MeshSchema;
+    sendChanges: (changes: Record<string, any>) => void;
+    sendChangesToBackend?: (msg: string) => void;
+  }) {
     super();
+    this.id = id;
+    this.schema = schema;
+    this.sendChanges = sendChanges;
+    this.sendChangesToBackend = sendChangesToBackend;
   }
 
   // Dart used a `StreamController<Map<String,dynamic>>` with a broadcast stream
@@ -291,18 +300,19 @@ export class RuntimeDocument extends EventEmitter<RuntimeDocumentEvent> {
       const setList = (attr["set"] as Array<Record<string, any>>) || [];
       for (const change of setList) {
         target.attributes[change["name"]] = change["value"];
-        target.notifyListeners({ type: "change", node: target });
+
+        target.emit("updated", { type: "change", node: target });
       }
 
       const delList = (attr["delete"] as Array<string>) || [];
       for (const name of delList) {
         delete target.attributes[name];
 
-        target.notifyListeners({ type: "change", node: target });
+        target.emit("updated", { type: "change", node: target });
       }
     }
 
-    this.notifyListeners({ type: "change", doc: this });
+    this.emit("updated", { type: "change", doc: this});
   }
 }
 

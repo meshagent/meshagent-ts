@@ -1,8 +1,4 @@
-import {
-    packMessage,
-    splitMessageHeader,
-    splitMessagePayload,
-} from "./utils";
+import { packMessage, splitMessageHeader, splitMessagePayload } from "./utils";
 
 /** Represents a network or protocol-level response with a method to pack into bytes. */
 export interface Response {
@@ -13,10 +9,22 @@ export interface Response {
  * Minimally replicate "Response" classes:
  */
 export class LinkResponse implements Response {
-  constructor(public url: string, public name: string) { }
+    public url: string;
+    public name: string;
+
+  constructor({url, name}: {
+    url: string;
+    name: string;
+  }) {
+    this.url = url;
+    this.name = name;
+  }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new LinkResponse(header["url"], header["name"]);
+    return new LinkResponse({
+      url: header["url"],
+      name: header["name"]!,
+    });
   }
 
   pack(): Uint8Array {
@@ -33,14 +41,26 @@ export class LinkResponse implements Response {
 }
 
 export class FileResponse implements Response {
-  constructor(
-    public data: Uint8Array,
-    public name: string,
-    public mimeType: string
-  ) { }
+  public data: Uint8Array;
+  public name: string;
+  public mimeType: string;
+
+  constructor({data, name, mimeType}: {
+    data: Uint8Array;
+    name: string;
+    mimeType: string;
+  }) {
+    this.data = data;
+    this.name = name;
+    this.mimeType = mimeType;
+  }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new FileResponse(payload, header["name"], header["mime_type"]);
+    return new FileResponse({
+        data: payload,
+        name: header["name"],
+        mimeType: header["mime_type"],
+    });
   }
 
   pack(): Uint8Array {
@@ -57,10 +77,16 @@ export class FileResponse implements Response {
 }
 
 export class TextResponse implements Response {
-  constructor(public text: string) { }
+  public text: string;
+
+  constructor({text}: {text: string}) {
+    this.text = text;
+  }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new TextResponse(header["text"]);
+    return new TextResponse({
+        text: header["text"],
+    });
   }
 
   pack(): Uint8Array {
@@ -77,10 +103,14 @@ export class TextResponse implements Response {
 
 /** Example JSON-based response class. */
 export class JsonResponse implements Response {
-  constructor(public json: any) { }
+  public json: Record<string, any>;
+
+  constructor({json}: {json: Record<string, any>}) {
+    this.json = json;
+  }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new JsonResponse(header["json"]);
+    return new JsonResponse({json: header["json"]});
   }
 
   pack(): Uint8Array {
@@ -96,14 +126,21 @@ export class JsonResponse implements Response {
 }
 
 export class ErrorResponse implements Response {
-  constructor(public text: string) { }
+  public text: string;
+
+  constructor({text}: {text: string}) {
+    this.text = text;
+  }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new ErrorResponse(header["text"]);
+    return new ErrorResponse({text: header["text"]});
   }
 
   pack(): Uint8Array {
-    return packMessage({ type: "error", text: this.text });
+    return packMessage({
+      type: "error",
+      text: this.text,
+    });
   }
 
   toString(): string {
@@ -139,9 +176,8 @@ const _responseTypes: Record<string, (header: Record<string, any>, payload: Uint
  * Unpacks a response from a combined packet.
  */
 export function unpackResponse(data: Uint8Array): Response {
-  const header =JSON.parse(splitMessageHeader(data));
+  const header = JSON.parse(splitMessageHeader(data));
   const payload = splitMessagePayload(data);
-
   const typeKey = header["type"];
 
   if (!_responseTypes[typeKey]) {

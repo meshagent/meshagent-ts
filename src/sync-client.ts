@@ -18,7 +18,16 @@ export interface SyncClientEvent {
  * A helper interface for an object queued for sync.
  */
 export class QueuedSync {
-    constructor(public path: string, public base64: string) { }
+    public path: string;
+    public base64: string;
+
+    constructor({ path, base64 }: {
+        path: string;
+        base64: string;
+    }) {
+        this.path = path;
+        this.base64 = base64;
+    }
 }
 
 /**
@@ -32,10 +41,10 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   private _changesToSync = new StreamController<QueuedSync>();
   private _connectedDocuments: Record<string, MeshDocument> = {};
 
-  constructor(client: RoomClient) {
+  constructor({room}: {room: RoomClient}) {
     super();
 
-    this.client = client;
+    this.client = room;
 
     // Add a protocol handler
     this.client.protocol.addHandler("room.sync", this._handleSync.bind(this));
@@ -91,7 +100,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
 
       applyBackendChanges(doc.id, base64);
 
-      this.notifyListeners({ type: "sync", doc });
+      this.emit("synced", { type: "sync", doc });
 
       if (!doc.isSynchronized) {
         doc.setSynchronizedComplete();
@@ -123,7 +132,8 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * Opens a new doc, returning a MeshDocument. If create=true, the doc
    * may be created server-side if it doesn't exist.
    */
-  async open(path: string, create = true): Promise<MeshDocument> {
+  async open(path: string, {
+      create = true}: {create: boolean}): Promise<MeshDocument> {
     const hasConnectingPath = this._connectingDocuments.hasOwnProperty(path);
     const hasConnectedPath = this._connectedDocuments.hasOwnProperty(path);
 
@@ -145,15 +155,15 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
       console.log(JSON.stringify(schema.toJson()));
 
       // create local doc
-      const doc = new MeshDocument(
+      const doc = new MeshDocument({
         schema,
-        (base64Str: string) => {
+        sendChangesToBackend: (base64Str: string) => {
           this._changesToSync.add({ path, base64: base64Str });
         },
-      );
+      });
 
       this._connectedDocuments[path] = doc;
-      this.notifyListeners({ type: "open", doc });
+      this.emit("connected", { type: "connect", doc });
 
       c.complete();
       return doc;
@@ -179,7 +189,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     delete this._connectedDocuments[path];
     unregisterDocument(doc.id);
 
-    this.notifyListeners({ type: "close", doc });
+    this.emit("closed", { type: "close", doc });
   }
 
   /**

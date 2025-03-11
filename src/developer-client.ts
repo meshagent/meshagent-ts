@@ -12,10 +12,11 @@ import { RoomLogEvent } from "./room-event";
 export class DeveloperClient extends EventEmitter<RoomLogEvent> {
   private client: RoomClient;
 
-  constructor(client: RoomClient) {
+  constructor({room}: {room: RoomClient}) {
     super();
 
-    this.client = client;
+    this.client = room;
+
     // Bind to the protocol event
     this.client.protocol.addHandler("developer.log", this._handleDeveloperLog.bind(this));
   }
@@ -33,9 +34,9 @@ export class DeveloperClient extends EventEmitter<RoomLogEvent> {
 
     // Trigger an internal event on the RoomClient
     // or do whatever you need with the data
-    this.client.emitt(event);
+    this.client.emit(event);
 
-    this.notifyListeners(event);
+    this.emit("log", event);
   }
 
   /**

@@ -21,3 +21,4 @@ export * from './schema';
 export * from './storage-client';
 export * from './stream-controller';
 export * from './sync-client';
+export * from './helpers';

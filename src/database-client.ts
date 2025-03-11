@@ -16,7 +16,7 @@ export class DatabaseClient {
   /**
    * @param room The RoomClient used to send requests.
    */
-  constructor(room: RoomClient) {
+  constructor({room}: {room: RoomClient}) {
     this.room = room;
   }
 

@@ -103,7 +103,9 @@ export class ParticipantToken {
    * If `token` is not provided, falls back to `process.env.MESHAGENT_SECRET`.
    * `extraPayload` merges additional data (stored in `this.extra`) into the JWT payload.
    */
-  public async toJwt(token?: string): Promise<string> {
+  public async toJwt({token}: {
+      token?: string;
+  }): Promise<string> {
     const secret = token || process.env.MESHAGENT_SECRET;
     if (!secret) {
       throw new Error(

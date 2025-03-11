@@ -260,7 +260,7 @@ export abstract class RemoteToolkit extends Toolkit {
 
         } catch (e: any) {
             // On error
-            const err = new ErrorResponse(String(e));
+            const err = new ErrorResponse({text: String(e)});
 
             await this.client.protocol.send("agent.tool_call_response", err.pack(), messageId);
         }

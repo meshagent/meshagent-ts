@@ -1,94 +1,79 @@
 // test_queues_mocha.ts
 
-// import { describe, it, before, after } from "mocha";
 import { expect } from "chai"; // or any other Chai interface you prefer
 
 import {
-  Protocol,
-  RoomClient,
-  WebSocketProtocolChannel,
+    Protocol,
+    RoomClient,
+    WebSocketProtocolChannel,
+    websocketProtocol,
 } from "../src/index";
 
-import {
-  createJwt,
-  MESHAGENT_URL,
-  room,
-} from "./utils";
+import { room } from "./utils";
 
 describe("test_queues_client", function () {
-  // Increase timeout if necessary to accommodate WebSocket round trips.
-  this.timeout(10000);
+    // Increase timeout if necessary to accommodate WebSocket round trips.
+    this.timeout(10000);
 
-  const url = `${MESHAGENT_URL}/rooms/${room}`;
-  let token1: string;
-  let token2: string;
-  let chan1: WebSocketProtocolChannel;
-  let chan2: WebSocketProtocolChannel;
-  let protocol1: Protocol;
-  let protocol2: Protocol;
-  let client1: RoomClient;
-  let client2: RoomClient;
+    let chan1: WebSocketProtocolChannel;
+    let chan2: WebSocketProtocolChannel;
+    let protocol1: Protocol;
+    let protocol2: Protocol;
+    let client1: RoomClient;
+    let client2: RoomClient;
 
-  before(async () => {
-    token1 = await createJwt("client1");
-    token2 = await createJwt("client2");
+    before(async () => {
+        chan1 = await websocketProtocol({roomName: room, participantName: 'client1'});
+        chan2 = await websocketProtocol({roomName: room, participantName: 'client2'});
 
-    chan1 = new WebSocketProtocolChannel(url, token1);
-    chan2 = new WebSocketProtocolChannel(url, token2);
+        protocol1 = new Protocol({channel: chan1});
+        protocol2 = new Protocol({channel: chan2});
 
-    protocol1 = new Protocol(chan1);
-    protocol2 = new Protocol(chan2);
+        client1 = new RoomClient({protocol: protocol1});
+        client2 = new RoomClient({protocol: protocol2});
 
-    client1 = new RoomClient(protocol1);
-    client2 = new RoomClient(protocol2);
+        await client1.start();
+        await client2.start();
+    });
 
-    // Start the clients
-    client1.start();
-    client2.start();
+    after(async () => {
+        client1.dispose();
+        client2.dispose();
+    });
 
-    // Wait for both to be ready
-    await client1.ready;
-    await client2.ready;
-  });
+    it("test_can_receive_last", async () => {
+        await client1.queues.send("test_queue", { hello: "world" }, true);
 
-  after(async () => {
-    client1.dispose();
-    client2.dispose();
-  });
+        const message = await client2.queues.receive("test_queue", false, true);
 
-  it("test_can_receive_last", async () => {
-    await client1.queues.send("test_queue", { hello: "world" }, true);
+        expect(message?.hello).to.equal("world");
+    });
 
-    const message = await client2.queues.receive("test_queue", false, true);
+    it("test_can_receive_first", async () => {
+        const messageFuture = client2.queues.receive("test_queue", true, true);
 
-    expect(message?.hello).to.equal("world");
-  });
+        // small delay
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  it("test_can_receive_first", async () => {
-    const messageFuture = client2.queues.receive("test_queue", true, true);
+        await client1.queues.send("test_queue", { hello: "world" }, false);
 
-    // small delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+        const message = await messageFuture;
 
-    await client1.queues.send("test_queue", { hello: "world" }, false);
+        expect(message?.hello).to.equal("world");
+    });
 
-    const message = await messageFuture;
+    it("test_can_receive_no_wait", async () => {
+        // client2 checks immediately (no wait), expects null. Then client1 sends a message.
+        let message = await client2.queues.receive("test_queue", true, false);
 
-    expect(message?.hello).to.equal("world");
-  });
+        expect(message).to.equal(null);
 
-  it("test_can_receive_no_wait", async () => {
-    // client2 checks immediately (no wait), expects null. Then client1 sends a message.
-    let message = await client2.queues.receive("test_queue", true, false);
+        // Now send a message
+        await client1.queues.send("test_queue", { hello: "world" }, false);
 
-    expect(message).to.equal(null);
+        // And receive again with no wait
+        message = await client2.queues.receive("test_queue", true, false);
 
-    // Now send a message
-    await client1.queues.send("test_queue", { hello: "world" }, false);
-
-    // And receive again with no wait
-    message = await client2.queues.receive("test_queue", true, false);
-
-    expect(message?.hello).to.equal("world");
-  });
+        expect(message?.hello).to.equal("world");
+    });
 });
