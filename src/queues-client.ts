@@ -57,18 +57,14 @@ export class QueuesClient {
   /**
    * Sends a message to a queue, optionally creating the queue if it doesn't exist.
    */
-  public async send(name: string, message: Record<string, any>, create: boolean = true): Promise<void> {
-    await this.client.sendRequest("queues.send", {
-      name,
-      create,
-      message,
-    });
+  public async send(name: string, message: Record<string, any>, { create = true } : { create?: boolean }): Promise<void> {
+    await this.client.sendRequest("queues.send", { name, create, message });
   }
 
   /**
    * Receives a message from a queue. Returns null if the response is EmptyResponse, or the JSON if it's a JsonResponse.
    */
-  public async receive(name: string, create: boolean = true, wait: boolean = true): Promise<Record<string, any> | null> {
+  public async receive(name: string, { create = true, wait = true } : { create?: boolean, wait?: boolean }): Promise<Record<string, any> | null> {
     const response = await this.client.sendRequest("queues.receive", {
       name,
       create,

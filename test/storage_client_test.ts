@@ -17,7 +17,6 @@ import {
     RoomEvent,
     SimpleValue,
     ValueProperty,
-    WebSocketProtocolChannel,
     websocketProtocol,
 } from "../src/index";
 
@@ -57,13 +56,13 @@ describe("test storage client", function () {
     // Increase timeout if necessary for network or WebSocket delays
     this.timeout(10000);
 
-    let channel: WebSocketProtocolChannel;
-    let protocol: Protocol;
     let client: RoomClient;
 
     before(async () => {
-        channel = await websocketProtocol({ roomName: room, participantName: "client" });
-        protocol = new Protocol({ channel });
+        const channel = await websocketProtocol({ roomName: room, participantName: "client" });
+
+        const protocol = new Protocol({ channel });
+
         client = new RoomClient({ protocol });
 
         // Start the client and wait for readiness

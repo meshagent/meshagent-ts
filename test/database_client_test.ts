@@ -12,7 +12,6 @@ import {
     TextDataType,
     FloatDataType,
     VectorDataType,
-    WebSocketProtocolChannel,
     websocketProtocol,
 } from "../src/index";
 
@@ -22,21 +21,15 @@ describe("database_client_test", function () {
     // Increase timeout if needed for async operations (DB indexing, WebSocket connections, etc.)
     this.timeout(10000);
 
-    let chan1: WebSocketProtocolChannel;
-    let chan2: WebSocketProtocolChannel;
-
-    let protocol1: Protocol;
-    let protocol2: Protocol;
-
     let client1: RoomClient;
     let client2: RoomClient;
 
     before(async () => {
-        chan1 = await websocketProtocol({roomName: room, participantName: 'client1'});
-        chan2 = await websocketProtocol({roomName: room, participantName: 'client2'});
+        const chan1 = await websocketProtocol({roomName: room, participantName: 'client1'});
+        const chan2 = await websocketProtocol({roomName: room, participantName: 'client2'});
 
-        protocol1 = new Protocol({channel: chan1});
-        protocol2 = new Protocol({channel: chan2});
+        const protocol1 = new Protocol({channel: chan1});
+        const protocol2 = new Protocol({channel: chan2});
 
         client1 = new RoomClient({protocol: protocol1});
         client2 = new RoomClient({protocol: protocol2});
@@ -216,7 +209,10 @@ describe("database_client_test", function () {
             schema: {
                 id: new IntDataType(),
                 name: new TextDataType(),
-                embedding: new VectorDataType({ size: 128, elementType: new FloatDataType() }),
+                embedding: new VectorDataType({
+                  size: 128,
+                  elementType: new FloatDataType()
+                }),
             },
         });
 

@@ -237,6 +237,7 @@ export class DatabaseClient {
       where: whereClause,
       text,
     };
+
     if (limit !== undefined) {
       payload.limit = limit;
     }

@@ -28,6 +28,22 @@ export abstract class DataType {
 
     return ctor.fromJson(data);
   }
+
+  public static int(): IntDataType {
+    return new IntDataType();
+  }
+  public static date(): DateDataType {
+    return new DateDataType();
+  }
+  public static float(): FloatDataType {
+    return new FloatDataType();
+  }
+  public static vector({ size, elementType }: { size: number; elementType: DataType }): VectorDataType {
+    return new VectorDataType({ size, elementType });
+  }
+  public static text(): TextDataType {
+    return new TextDataType();
+  }
 }
 
 /**
