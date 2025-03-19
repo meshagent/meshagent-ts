@@ -1,6 +1,5 @@
 // agent_tests_mocha.ts
 
-// import { describe, it, before, after } from "mocha";
 import { expect } from "chai";
 
 import {
@@ -14,7 +13,6 @@ import {
     RemoteToolkit,
     RoomClient,
     Tool,
-    WebSocketProtocolChannel,
     websocketProtocol,
 } from "../src/index";
 
@@ -142,25 +140,18 @@ class AddAgent extends RemoteTaskRunner {
 
 describe("agent_client_test", function () {
     // Increase timeout if necessary for WebSocket connections
-    this.timeout(10000);
-
-    let chan1: WebSocketProtocolChannel;
-    let chan2: WebSocketProtocolChannel;
-
-    let protocol1: Protocol;
-    let protocol2: Protocol;
+    this.timeout(30000);
 
     let client1: RoomClient;
     let client2: RoomClient;
-
     let agent: AddAgent;
 
     before(async () => {
-        chan1 = await websocketProtocol({roomName: room, participantName: 'client1'});
-        chan2 = await websocketProtocol({roomName: room, participantName: 'client2'});
+        const chan1 = await websocketProtocol({roomName: room, participantName: 'client1'});
+        const chan2 = await websocketProtocol({roomName: room, participantName: 'client2'});
 
-        protocol1 = new Protocol({channel: chan1});
-        protocol2 = new Protocol({channel: chan2});
+        const protocol1 = new Protocol({channel: chan1});
+        const protocol2 = new Protocol({channel: chan2});
 
         client1 = new RoomClient({protocol: protocol1});
         client2 = new RoomClient({protocol: protocol2});

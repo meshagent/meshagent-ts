@@ -5,7 +5,7 @@ import { MeshSchema } from "./schema";
 import { StreamController } from "./stream-controller";
 import { MeshDocument, RoomServerException } from "./room-server-client";
 import { JsonResponse } from "./response";
-import { splitMessageHeader, splitMessagePayload, decoder, encoder } from "./utils";
+import { splitMessageHeader, splitMessagePayload, decoder, encoder, RefCount } from "./utils";
 import { unregisterDocument, applyBackendChanges } from "./runtime";
 import { Completer } from "./completer";
 
@@ -37,9 +37,9 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   private client: RoomClient;
 
   // Map<path, Promise<void>>
-  private _connectingDocuments: Record<string, Promise<void>> = {};
+  private _connectingDocuments: Record<string, Promise<RefCount<MeshDocument>>> = {};
   private _changesToSync = new StreamController<QueuedSync>();
-  private _connectedDocuments: Record<string, MeshDocument> = {};
+  private _connectedDocuments: Record<string, RefCount<MeshDocument>> = {};
 
   constructor({room}: {room: RoomClient}) {
     super();
@@ -61,11 +61,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     (async () => {
       for await (const message of this._changesToSync.stream) {
         console.log(`sending changes to backend ${message.base64}`);
-        await this.client.sendRequest(
-          "room.sync",
-          { path: message.path },
-          encoder.encode(message.base64)
-        );
+        await this.client.sendRequest("room.sync", { path: message.path }, encoder.encode(message.base64));
       }
     })();
   }
@@ -94,7 +90,8 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     }
 
     if (this._connectedDocuments[path]) {
-      const doc = this._connectedDocuments[path];
+      const rc = this._connectedDocuments[path];
+      const doc = rc.ref;
       const base64 = decoder.decode(payload);
       console.log(`GOT SYNC ${base64}`);
 
@@ -132,18 +129,22 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * Opens a new doc, returning a MeshDocument. If create=true, the doc
    * may be created server-side if it doesn't exist.
    */
-  async open(path: string, {
-      create = true}: {create: boolean}): Promise<MeshDocument> {
-    const hasConnectingPath = this._connectingDocuments.hasOwnProperty(path);
-    const hasConnectedPath = this._connectedDocuments.hasOwnProperty(path);
+  async open(path: string, {create = true}: {create: boolean}): Promise<MeshDocument> {
+    const pending = this._connectingDocuments[path];
 
-    if (hasConnectingPath || hasConnectedPath) {
-      throw new RoomServerException(`Already connected to ${path}`);
+    if (pending) {
+      // Wait for the doc to finish connecting
+      await pending;
+    }
+
+    if (this._connectedDocuments[path]) {
+        const rc = this._connectedDocuments[path];
+        rc.count++;
+        return rc.ref;
     }
 
     // "Completer" approach
-    const c = new Completer<void>();
-
+    const c = new Completer<RefCount<MeshDocument>>();
     this._connectingDocuments[path] = c.fut
 
     try {
@@ -161,8 +162,9 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
           this._changesToSync.add({ path, base64: base64Str });
         },
       });
+      const rc = new RefCount<MeshDocument>(doc);
 
-      this._connectedDocuments[path] = doc;
+      this._connectedDocuments[path] = rc;
       this.emit("connected", { type: "connect", doc });
 
       c.complete();
@@ -179,15 +181,19 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * Closes a doc at the given path.
    */
   async close(path: string): Promise<void> {
-    await this.client.sendRequest("room.disconnect", { path });
-
-    if (!this._connectedDocuments[path]) {
+    const rc = this._connectedDocuments[path];
+    if (!rc) {
       throw new RoomServerException(`Not connected to ${path}`);
     }
 
-    const doc = this._connectedDocuments[path];
-    delete this._connectedDocuments[path];
-    unregisterDocument(doc.id);
+    const doc = rc.ref;
+    rc.count--;
+
+    if (rc.count === 0) {
+      delete this._connectedDocuments[path];
+      await this.client.sendRequest("room.disconnect", { path });
+      unregisterDocument(doc.id);
+    }
 
     this.emit("closed", { type: "close", doc });
   }

@@ -25,7 +25,14 @@ class ProtocolMessage {
 }
 
 export interface ProtocolChannel {
-    start(onDataReceived: (data: Uint8Array) => void): void;
+    start(
+        onDataReceived: (data: Uint8Array) => void,
+        {onDone, onError}: {
+          onDone?: () => void,
+          onError?: (error: any) => void,
+        }
+    ): void;
+
     dispose(): void;
     sendData(data: Uint8Array): Promise<void>;
 }
@@ -45,21 +52,35 @@ export class StreamProtocolChannel implements ProtocolChannel {
         this.output = output;
     }
 
-    start(onDataReceived: (data: Uint8Array) => void) {
+    start(onDataReceived: (data: Uint8Array) => void, { onDone, onError }: {
+      onDone?: () => void;
+      onError?: (error: any) => void;
+    }): void {
         if (this.started) {
             throw new Error("Already started");
         }
         this.started = true;
 
         (async () => {
-            this._iterator?.return(null);
+          this._iterator?.return(null);
+
+          try {
             this._iterator = this.input.stream();
 
             for await (const message of this._iterator) {
-                if (message) {
-                    onDataReceived(message);
-                }
+              if (message) {
+                onDataReceived(message);
+              }
             }
+          } catch (error) {
+            if (onError) {
+              onError(error);
+            }
+          } finally {
+            if (onDone) {
+              onDone();
+            }
+          }
         })();
     }
 
@@ -90,7 +111,8 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
         this.jwt = jwt;
     }
 
-    public start(onDataReceived: (data: Uint8Array) => void) {
+    public start(onDataReceived: (data: Uint8Array) => void, {
+      onDone, onError }: { onDone?: () => void, onError?: (error: any) => void }): void {
         if (typeof(onDataReceived) != "function") {
             throw new Error("onDataReceived must be a function")
         }
@@ -103,6 +125,14 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
         this.webSocket = new WebSocket(url.toString());
         this.webSocket.addEventListener("open", this._onOpen);
         this.webSocket.addEventListener("message", this._onData);
+
+        if (onDone) {
+            this.webSocket.addEventListener("close", onDone);
+        }
+
+        if (onError) {
+            this.webSocket.addEventListener("error", onError);
+        }
     }
 
     private _onOpen = (): void => this._opened.resolve();
@@ -128,8 +158,7 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
 
     public dispose(): void {
         this.webSocket?.close();
-        this.webSocket?.removeEventListener("open", this._onOpen);
-        this.webSocket?.removeEventListener("message", this._onData);
+        this.webSocket?.removeAllListeners();
         this.webSocket = null;
     }
 

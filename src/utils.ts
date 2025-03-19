@@ -2,10 +2,10 @@
 
 import { TextDecoder, TextEncoder } from "@kayahr/text-encoding";
 
-const decoder = new TextDecoder();
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
-export { decoder, encoder };
+export { encoder, decoder };
 
 /**
  * Splits a message payload from a combined packet.
@@ -74,4 +74,10 @@ export function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
 
         reader.readAsArrayBuffer(blob);
     });
+}
+
+export class RefCount<T> {
+  public count: number = 1;
+
+  constructor(public ref: T) {}
 }

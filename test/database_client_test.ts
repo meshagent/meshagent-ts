@@ -221,13 +221,22 @@ describe("database_client_test", function () {
 
         for (let i = 0; i < 1000; i++) {
             const vector: number[] = [];
+
             for (let j = 0; j < 128; j++) {
                 vector.push(Math.random());
             }
-            data.push({ id: i, name: "test", embedding: vector });
+
+            data.push({
+                id: i,
+                name: "test",
+                embedding: vector,
+            });
         }
 
-        await client1.database.insert({ table: tableName, records: data });
+        await client1.database.insert({
+            table: tableName,
+            records: data,
+        });
 
         // Create a scalar index
         await client1.database.createScalarIndex({

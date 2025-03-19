@@ -6,7 +6,12 @@ import { RuntimeDocument } from "./document";
 import { MeshSchema } from "./schema";
 import { Completer } from "./completer";
 
-import { registerDocument, unregisterDocument, applyChanges } from "./runtime";
+import {
+    registerDocument,
+    unregisterDocument,
+    applyChanges,
+    UpdatePayload,
+} from "./runtime";
 
 /** Simulates Dart's `Uint8List`. In TypeScript, we usually use `Uint8Array`. */
 export type Uint8List = Uint8Array;
@@ -43,14 +48,18 @@ export class MeshDocument extends RuntimeDocument {
     super({
       id: uuidv4(),
       schema,
-      sendChanges: (base64) => applyChanges(base64),
+      sendChanges: (base64) => applyChanges(base64 as UpdatePayload),
       sendChangesToBackend,
     });
 
     registerDocument(
       this.id,
       null,
-      (base64) => applyChanges(base64),
+      (base64) => {
+          const s = JSON.parse(base64);
+
+          applyChanges(s);
+      },
       sendChangesToBackend);
   }
 
