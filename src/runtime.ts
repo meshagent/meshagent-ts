@@ -5,9 +5,10 @@ export {
     applyChanges,
     applyBackendChanges,
     UpdatePayload,
-} from '../../meshagent-entrypoint';
+} from 'meshagent-entrypoint';
 
 /*
+
 import * as ep from "./entrypoint.js";
 
 type SendUpdateFn = (data: string) => void;

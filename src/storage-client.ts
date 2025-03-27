@@ -54,8 +54,8 @@ export class StorageClient extends EventEmitter<RoomEvent> {
     this.client = room;
 
     // Add protocol handlers
-    this.client.protocol.addHandler("storage.file_deleted", this._handleFileDeleted.bind(this));
-    this.client.protocol.addHandler("storage.file_updated", this._handleFileUpdated.bind(this));
+    this.client.protocol.addHandler("storage.file.deleted", this._handleFileDeleted.bind(this));
+    this.client.protocol.addHandler("storage.file.updated", this._handleFileUpdated.bind(this));
   }
 
   private async _handleFileUpdated(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
@@ -64,7 +64,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
 
     const event = new FileUpdatedEvent({ path: data["path"] });
     this.client.emit(event);
-    this.emit('file_updated', event);
+    this.emit('file.updated', event);
   }
 
   private async _handleFileDeleted(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
@@ -73,7 +73,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
 
     const event = new FileDeletedEvent({ path: data["path"] });
     this.client.emit(event);
-    this.emit('file_deleted', event);
+    this.emit('file.deleted', event);
   }
 
   /**
@@ -97,7 +97,6 @@ export class StorageClient extends EventEmitter<RoomEvent> {
    */
   public async delete(path: string): Promise<void> {
     await this.client.sendRequest("storage.delete", { path });
-    // We ignore or discard the JsonResponse if not needed
   }
 
   /**

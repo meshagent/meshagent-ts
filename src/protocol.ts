@@ -259,6 +259,8 @@ export class Protocol {
      * @param {Uint8Array?} data - the data for the message
      */ 
     async handleMessage(messageId: number, type: string, data?: Uint8Array) {
+        console.log(this.handlers, Object.keys(this.handlers));
+
         const handler = this.handlers[type] ?? this.handlers["*"];
 
         await handler(this, messageId, type, data);    
@@ -295,7 +297,7 @@ export class Protocol {
         if (onMessage != null) {
             this.addHandler("*", onMessage);
         }
-        this.channel.start(this.onDataReceived.bind(this));
+        this.channel.start(this.onDataReceived.bind(this), {});
 
         // used for closing the iterator
         this._iterator?.return(null);
