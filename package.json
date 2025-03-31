@@ -1,7 +1,7 @@
 {
     "name": "meshagent-ts",
-    "version": "1.0.0",
-    "description": "Meshage Agent Client ",
+    "version": "0.0.9",
+    "description": "Meshagent Client",
     "main": "dist/src/index.js",
     "scripts": {
         "test": "tsc && mocha dist/test/*.js",
@@ -9,7 +9,7 @@
         "build-browser": "node ./build-browser.js"
     },
     "author": "Powerboards",
-    "license": "ISC",
+    "license": "Apache-2.0",
     "devDependencies": {
         "@types/chai": "^5.0.1",
         "@types/mocha": "^10.0.10",
