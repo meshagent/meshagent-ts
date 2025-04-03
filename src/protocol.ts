@@ -423,3 +423,13 @@ export class Protocol {
     }
 }
 
+export class WebSocketClientProtocol extends Protocol {
+    constructor({url, token}: {
+        url: string,
+        token: string
+    }) {
+        const channel = new WebSocketProtocolChannel({url, jwt: token});
+
+        super({channel});
+    }
+}

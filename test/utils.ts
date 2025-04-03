@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 
-export const room = 'test-room-' + uuid();
+export const room = uuid();
 
 export function subscribe<T>(iterator: AsyncIterable<T>, { next, error, complete }: {
     next: (value: T) => void;

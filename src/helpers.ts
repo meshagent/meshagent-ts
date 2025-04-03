@@ -2,6 +2,7 @@ import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken } from './participant-token';
 import { WebSocketProtocolChannel } from './protocol';
+import { WebSocketClientProtocol } from './protocol';
 
 /**
  * Validate schema name: cannot contain '.'.
@@ -117,7 +118,7 @@ export async function websocketProtocol({participantName, roomName, role}: {
   participantName: string;
   roomName: string;
   role?: string;
-}): Promise<WebSocketProtocolChannel> {
+}): Promise<WebSocketClientProtocol> {
   const url = websocketRoomUrl({roomName});
   const token = participantToken({participantName, roomName, role});
 
@@ -128,5 +129,8 @@ export async function websocketProtocol({participantName, roomName, role}: {
 
   const jwt = await token.toJwt({token: secret});
 
-  return new WebSocketProtocolChannel({url, jwt});
+  return new WebSocketClientProtocol({
+      url,
+      token: jwt,
+  });
 }

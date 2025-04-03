@@ -2,7 +2,7 @@
 
 import { expect } from "chai"; // or any other Chai interface you prefer
 
-import { Protocol, RoomClient, websocketProtocol } from "../src/index";
+import { RoomClient, websocketProtocol } from "../src/index";
 
 import { room } from "./utils";
 
@@ -14,11 +14,14 @@ describe("test_queues_client", function () {
     let client2: RoomClient;
 
     before(async () => {
-        const chan1 = await websocketProtocol({roomName: room, participantName: 'client1'});
-        const chan2 = await websocketProtocol({roomName: room, participantName: 'client2'});
-
-        const protocol1 = new Protocol({channel: chan1});
-        const protocol2 = new Protocol({channel: chan2});
+        const protocol1 = await websocketProtocol({
+            roomName: room,
+            participantName: 'client1',
+        });
+        const protocol2 = await websocketProtocol({
+            roomName: room,
+            participantName: 'client2',
+        });
 
         client1 = new RoomClient({protocol: protocol1});
         client2 = new RoomClient({protocol: protocol2});

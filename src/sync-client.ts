@@ -77,6 +77,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
 
   private async _handleSync(protocol: Protocol, messageId: number, data: string, bytes?: Uint8Array): Promise<void> {
     console.log("GOT SYNC");
+
     const headerStr = splitMessageHeader(bytes || new Uint8Array());
     const payload = splitMessagePayload(bytes || new Uint8Array());
 
@@ -109,27 +110,15 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     }
   }
 
-  async createMeshDocumentWithMeshSchema(path: string, schema: MeshSchema, json?: Record<string, any>): Promise<void> {
-    await this.client.sendRequest("room.create", {
-      path,
-      schema: schema.toJson(),
-      json,
-    });
-  }
-
-  async createMeshDocumentWithFormat(path: string, format: string, json?: Record<string, any>): Promise<void> {
-    await this.client.sendRequest("room.create", {
-      path,
-      format,
-      json,
-    });
+  async create(path: string, json?: Record<string, any>): Promise<void> {
+    await this.client.sendRequest("room.create", { path, json });
   }
 
   /**
    * Opens a new doc, returning a MeshDocument. If create=true, the doc
    * may be created server-side if it doesn't exist.
    */
-  async open(path: string, {create = true}: {create: boolean}): Promise<MeshDocument> {
+  async open(path: string, {create = true}: {create?: boolean} = {}): Promise<MeshDocument> {
     const pending = this._connectingDocuments[path];
 
     if (pending) {

@@ -43,7 +43,7 @@ export class MeshDocument extends RuntimeDocument {
 
   constructor({schema, sendChangesToBackend}: {
     schema:  MeshSchema;
-    sendChangesToBackend: (base64: string) => void;
+    sendChangesToBackend?: (base64: string) => void;
   }) {
     super({
       id: uuidv4(),
@@ -55,12 +55,23 @@ export class MeshDocument extends RuntimeDocument {
     registerDocument(
       this.id,
       null,
-      (base64) => {
-          const s = JSON.parse(base64);
+      false, // undo
+      this.onSendUpdateToBackend,
+      this.onSendUpdateToClient);
+  }
 
-          applyChanges(s);
-      },
-      sendChangesToBackend);
+  public onSendUpdateToBackend = (base64: string): void => {
+    const parsed = JSON.parse(base64);
+
+    if (this.sendChangesToBackend) {
+      this.sendChangesToBackend(parsed.data);
+    }
+  }
+
+  public onSendUpdateToClient = (base64: string): void => {
+    const parsed = JSON.parse(base64);
+
+    this.receiveChanges(parsed.data);
   }
 
   get synchronized(): Promise<boolean> {
@@ -80,9 +91,5 @@ export class MeshDocument extends RuntimeDocument {
 
     unregisterDocument(this.id);
   }
-}
-
-export class LivekitConnectionInfo {
-  constructor(public url: string, public token: string) {}
 }
 

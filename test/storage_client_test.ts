@@ -12,7 +12,6 @@ import {
     FileUpdatedEvent,
 
     MeshSchema,
-    Protocol,
     RoomClient,
     RoomEvent,
     SimpleValue,
@@ -59,9 +58,10 @@ describe("test storage client", function () {
     let client: RoomClient;
 
     before(async () => {
-        const channel = await websocketProtocol({ roomName: room, participantName: "client" });
-
-        const protocol = new Protocol({ channel });
+        const protocol = await websocketProtocol({
+            roomName: room,
+            participantName: "client",
+        });
 
         client = new RoomClient({ protocol });
 
