@@ -1,7 +1,6 @@
 import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken } from './participant-token';
-import { WebSocketProtocolChannel } from './protocol';
 import { WebSocketClientProtocol } from './protocol';
 
 /**
@@ -129,8 +128,6 @@ export async function websocketProtocol({participantName, roomName, role}: {
 
   const jwt = await token.toJwt({token: secret});
 
-  return new WebSocketClientProtocol({
-      url,
-      token: jwt,
-  });
+  return new WebSocketClientProtocol({ url, token: jwt });
 }
+
