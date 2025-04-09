@@ -1,10 +1,10 @@
 {
     "name": "meshagent-ts",
-    "version": "0.0.9",
+    "version": "0.0.11",
     "description": "Meshagent Client",
     "main": "dist/src/index.js",
     "scripts": {
-        "test": "tsc && mocha dist/test/*.js",
+        "test": "tsc && mocha dist/test/**/*.js",
         "build-node": "tsc",
         "build-browser": "node ./build-browser.js"
     },
@@ -25,6 +25,7 @@
         "@kayahr/text-encoding": "^2.0.0",
         "isomorphic-ws": "^5.0.0",
         "jose": "^6.0.8",
+        "meshagent-entrypoint": "^0.0.11",
         "uuid": "^11.0.5",
         "ws": "^8.18.0"
     }
