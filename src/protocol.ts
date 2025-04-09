@@ -111,8 +111,10 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
         this.jwt = jwt;
     }
 
-    public start(onDataReceived: (data: Uint8Array) => void, {
-      onDone, onError }: { onDone?: () => void, onError?: (error: any) => void }): void {
+    public start(onDataReceived: (data: Uint8Array) => void, { onDone, onError }: {
+        onDone?: () => void,
+        onError?: (error: any) => void }): void {
+
         if (typeof(onDataReceived) != "function") {
             throw new Error("onDataReceived must be a function")
         }
@@ -158,7 +160,6 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
 
     public dispose(): void {
         this.webSocket?.close();
-        this.webSocket?.removeAllListeners();
         this.webSocket = null;
     }
 
@@ -181,7 +182,7 @@ export class ProtocolMessageStream<T> {
         this._messages.push(message); 
 
         if (!this._messageAdded.completed) {
-            this._messageAdded.resolve();
+            this._messageAdded.complete();
         }
     }
 

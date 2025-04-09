@@ -550,9 +550,7 @@ export class ClientXmlDocument {
                 i += 3;
                 offset += start.length + remaining;
               }
-            } else if (
-              delta.retain - formatted >= targetDelta[i].insert.length
-            ) {
+            } else if (delta.retain - formatted >= targetDelta[i].insert.length) {
               // Format entire chunk
               formatted += targetDelta[i].insert.length;
               Object.assign(targetDelta[i].attributes, delta.attributes);

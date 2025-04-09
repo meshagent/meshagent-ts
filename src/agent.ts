@@ -368,8 +368,9 @@ export abstract class RemoteTaskRunner {
             const chat = AgentChatContext.fromJson(context_json);
             const callContext = new AgentCallContext({chat, jwt, api_url});
 
-            const response = await this.ask(callContext, args);
-            const encoded = encoder.encode(JSON.stringify({task_id, response}));
+            const answer = await this.ask(callContext, args);
+            const encoded = encoder.encode(JSON.stringify({task_id, answer}));
+
             await protocol.send("agent.ask_response", encoded);
 
         } catch (e: any) {
