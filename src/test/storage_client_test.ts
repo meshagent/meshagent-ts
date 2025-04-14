@@ -17,9 +17,9 @@ import {
     SimpleValue,
     ValueProperty,
     websocketProtocol,
-} from "../src/index";
+} from "../index";
 
-import { encoder } from "../src/utils";
+import { encoder } from "../utils";
 
 import { room, subscribe } from "./utils";
 

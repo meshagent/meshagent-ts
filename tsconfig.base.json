@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {
+        "module": "CommonJS",
+        "moduleResolution": "Node",
+        "declaration": true,
+        "removeComments": true,
+        "skipLibCheck": true,
+        "allowJs": true,
+        "checkJs": false,
+        "target": "ES2020",
+        "strict": true,
+        "esModuleInterop": true,
+        "baseUrl": "./src",
+        "rootDir": "./src",
+        "typeRoots": [
+            "./types",
+            "./node_modules/@types"
+        ]
+    },
+    "exclude": [
+        "dist"
+    ],
+    "include": [
+        "./types/**/*.d.ts",
+        "src/**/*"
+    ]
+}

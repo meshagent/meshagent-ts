@@ -12,7 +12,7 @@ import {
     FloatDataType,
     VectorDataType,
     websocketProtocol,
-} from "../src/index";
+} from "../index";
 
 import { room } from "./utils";
 

@@ -8,8 +8,10 @@ const define = {
 };
 
 esbuild.build({
-    entryPoints: ["test/all-test.ts"],
+    entryPoints: ["src/test/all-test.ts"],
     bundle: true,
     outfile: "browser-test/index.js",
+    platform: "browser",
+    tsconfig: "tsconfig.browser.json",
     define,
 }).catch((err) => console.error(err));

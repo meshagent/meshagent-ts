@@ -1,9 +1,13 @@
 export {
-    SendUpdateFn,
-    UpdatePayload,
     applyBackendChanges,
     applyChanges,
     registerDocument,
     unregisterDocument,
-} from 'meshagent-entrypoint';
+} from './entrypoint.js';
 
+export type SendUpdateFn = (msg: string) => void;
+
+export interface UpdatePayload {
+  documentID: string;
+  changes: any;
+}

@@ -3,11 +3,11 @@
 // import { describe, it, before, after } from "mocha";
 import { expect } from "chai";
 
-import { RoomClient, websocketProtocol } from "../src/index";
+import { RoomClient, websocketProtocol } from "../index";
 
 import { room } from "./utils";
 
-import { encoder } from "../src/utils";
+import { encoder } from "../utils";
 
 describe("messaging", function () {
     // Increase the test timeout if necessary (WebSocket + network delays).

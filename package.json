@@ -2,14 +2,28 @@
     "name": "meshagent-ts",
     "version": "0.0.9",
     "description": "Meshagent Client",
-    "main": "dist/src/index.js",
     "scripts": {
-        "test": "tsc && mocha dist/test/*.js",
-        "build-node": "tsc",
-        "build-browser": "node ./build-browser.js"
+        "test": "mocha dist/node/test/*.js",
+        "build": "./scripts/build.sh",
+        "build-browser-test": "node ./build-browser-test.js"
     },
     "author": "Powerboards",
     "license": "Apache-2.0",
+    "main": "./dist/node/index.js",
+    "exports": {
+        ".": {
+            "browser": "./dist/browser/index.js",
+            "default": "./dist/node/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "browser": {
+        "./dist/node/index.js": "./dist/browser/index.js"
+    },
+    "files": [
+        "dist",
+        "!dist/**/test"
+    ],
     "devDependencies": {
         "@types/chai": "^5.0.1",
         "@types/mocha": "^10.0.10",

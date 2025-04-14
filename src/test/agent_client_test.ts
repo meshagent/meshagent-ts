@@ -13,9 +13,9 @@ import {
     RoomClient,
     Tool,
     websocketProtocol,
-} from "../src/index";
+} from "../index";
 
-import { encoder, decoder } from "../src/utils";
+import { encoder, decoder } from "../utils";
 
 import { room } from "./utils";
 

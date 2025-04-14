@@ -2,7 +2,7 @@
 
 import { expect } from "chai"; // or any other Chai interface you prefer
 
-import { RoomClient, websocketProtocol } from "../src/index";
+import { RoomClient, websocketProtocol } from "../index";
 
 import { room } from "./utils";
 

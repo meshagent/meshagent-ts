@@ -9,7 +9,7 @@ import {
   SimpleValue,
   TextElement,
   ValueProperty,
-} from "meshagent-ts";
+} from "../index";
 
 export const schema = new MeshSchema({
   rootTagName: "root",
