@@ -1,7 +1,7 @@
 {
-    "name": "@meshagent/meshagent-ts",
-    "version": "0.0.11",
-    "description": "Meshagent Typescript Client",
+    "name": "@meshagent/meshagent",
+    "version": "0.0.14",
+    "description": "Meshagent Client",
     "homepage": "https://www.meshagent.com",
     "scripts": {
         "test": "mocha dist/node/test/*.js",
@@ -40,7 +40,6 @@
         "@kayahr/text-encoding": "^2.0.0",
         "isomorphic-ws": "^5.0.0",
         "jose": "^6.0.8",
-        "@meshagent/meshagent-entrypoint": "^0.0.11",
         "uuid": "^11.0.5",
         "ws": "^8.18.0"
     }
