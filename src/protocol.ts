@@ -1,6 +1,6 @@
 import WebSocket, { MessageEvent } from "isomorphic-ws";
 
-import { mergeUint8Arrays, decoder, encoder, blobToArrayBuffer } from "./utils";
+import { mergeUint8Arrays, decoder, encoder } from "./utils";
 import { Completer } from "./completer";
 
 export type UpdateCallback = (update: Uint8Array, origin?: any) => void;
@@ -142,7 +142,7 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
         const data = event.data;
 
         if (data instanceof Blob) {
-            blobToArrayBuffer(data).then((buffer) => {
+            data.arrayBuffer().then((buffer) => {
                 if (this.onDataReceived) {
                     this.onDataReceived(new Uint8Array(buffer));
                 }

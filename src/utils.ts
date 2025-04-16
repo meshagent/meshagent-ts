@@ -65,17 +65,6 @@ export function mergeUint8Arrays(...arrays: Uint8Array[]): Uint8Array {
     return merged;
 }
 
-export function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-
-        reader.onload = () => resolve(reader.result as ArrayBuffer);
-        reader.onerror = () => reject(reader.error);
-
-        reader.readAsArrayBuffer(blob);
-    });
-}
-
 export class RefCount<T> {
   public count: number = 1;
 
