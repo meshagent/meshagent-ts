@@ -105,14 +105,8 @@ export class ParticipantToken {
      */
     public async toJwt({ token }: {
         token?: string;
-    }): Promise<string> {
+    } = {}): Promise<string> {
         const secret = token || process.env.MESHAGENT_SECRET;
-        if (!secret) {
-            throw new Error(
-                "No secret provided. Provide `token` or set MESHAGENT_SECRET in environment."
-            );
-        }
-
         // jose requires a Uint8Array key for HMAC
         const secretKey = new TextEncoder().encode(secret);
 
