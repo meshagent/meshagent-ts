@@ -12,7 +12,7 @@
 set -e # exit on error
 
 # Change to project root
-ROOT="$(pwd)/$(dirname "$0")/.."
+ROOT=`pwd`
 
 cd "$ROOT/../meshagent-entrypoint"
 npm run build-ts

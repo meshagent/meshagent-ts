@@ -4,8 +4,8 @@
     "description": "Meshagent Client",
     "homepage": "https://www.meshagent.com",
     "scripts": {
-        "test": "mocha dist/node/test/*.js",
-        "build": "./scripts/build.sh",
+        "test": "./run-tests.sh",
+        "build": "mkdir -p dist && ./scripts/build.sh",
         "build-browser-test": "node ./build-browser-test.js"
     },
     "author": "Powerboards",
@@ -23,7 +23,10 @@
     },
     "files": [
         "dist",
-        "!dist/**/test"
+        "!dist/**/test",
+        "LICENSE",
+        "README.md",
+        "CHANGELOG.md"
     ],
     "devDependencies": {
         "@types/chai": "^5.0.1",

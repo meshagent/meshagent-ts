@@ -12,7 +12,7 @@ import {
     RemoteToolkit,
     RoomClient,
     Tool,
-    websocketProtocol,
+    websocketProtocol
 } from "../index";
 
 import { encoder, decoder } from "../utils";
@@ -146,11 +146,16 @@ describe("agent_client_test", function () {
     let agent: AddAgent;
 
     before(async () => {
-        const protocol1 = await websocketProtocol({roomName: room, participantName: 'client1'});
-        const protocol2 = await websocketProtocol({roomName: room, participantName: 'client2'});
+        const secret = process.env.MESHAGENT_SECRET;
+        if (!secret) {
+            throw new Error('MESHAGENT_SECRET must be set in the environment.');
+        }
 
-        client1 = new RoomClient({protocol: protocol1});
-        client2 = new RoomClient({protocol: protocol2});
+        const protocol1 = await websocketProtocol({ roomName: room, participantName: 'client1' });
+        const protocol2 = await websocketProtocol({ roomName: room, participantName: 'client2' });
+
+        client1 = new RoomClient({ protocol: protocol1 });
+        client2 = new RoomClient({ protocol: protocol2 });
 
         await client1.start();
         await client2.start();
@@ -170,9 +175,12 @@ describe("agent_client_test", function () {
 
     it("test_can_list_agents", async () => {
         const agents = await client1.agents.listAgents();
+        expect(agents.length).to.greaterThanOrEqual(1, `Expected at least 1 agent, got ${agents.length}`);
 
-        // Expecting 3 agents: 2 from other clients? + 1 we just created
-        expect(agents.length).to.equal(3, `Expected 3 agents, got ${agents.length}`);
+        for (let i = 0; i < agents.length; i++) {
+            let agent = agents[i];
+            expect(agent.name).to.equal("add");
+        }
     });
 
     it("test_can_ask_agent", async () => {

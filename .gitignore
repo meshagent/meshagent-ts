@@ -2,3 +2,5 @@ dist
 node_modules
 package-lock.json
 browser-test/index.js
+.local_server_documents
+venv

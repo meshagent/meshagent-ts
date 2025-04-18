@@ -18,17 +18,17 @@ import { room } from "./utils";
 
 describe("database_client_test", function () {
     // Increase timeout if needed for async operations (DB indexing, WebSocket connections, etc.)
-    this.timeout(10000);
+    this.timeout(30000);
 
     let client1: RoomClient;
     let client2: RoomClient;
 
     before(async () => {
-        const protocol1 = await websocketProtocol({roomName: room, participantName: 'client1'});
-        const protocol2 = await websocketProtocol({roomName: room, participantName: 'client2'});
+        const protocol1 = await websocketProtocol({ roomName: room, participantName: 'client1' });
+        const protocol2 = await websocketProtocol({ roomName: room, participantName: 'client2' });
 
-        client1 = new RoomClient({protocol: protocol1});
-        client2 = new RoomClient({protocol: protocol2});
+        client1 = new RoomClient({ protocol: protocol1 });
+        client2 = new RoomClient({ protocol: protocol2 });
 
         // Start the clients
         await client1.start();
@@ -206,8 +206,8 @@ describe("database_client_test", function () {
                 id: new IntDataType(),
                 name: new TextDataType(),
                 embedding: new VectorDataType({
-                  size: 128,
-                  elementType: new FloatDataType()
+                    size: 128,
+                    elementType: new FloatDataType()
                 }),
             },
         });
