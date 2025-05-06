@@ -1,6 +1,6 @@
 {
     "name": "@meshagent/meshagent",
-    "version": "0.0.17",
+    "version": "0.0.18",
     "description": "Meshagent Client",
     "homepage": "https://www.meshagent.com",
     "scripts": {
