@@ -215,5 +215,32 @@ describe("test storage client", function () {
         const exists = await client.storage.exists(path);
         expect(exists).to.be.true;
     });
-});
 
+    it("test_room_client_download_multiple_files", async () => {
+        const path1 = "file_text_1.txt";
+        const content1 = encoder.encode(JSON.stringify({ message: "Hello, world! (1)" }));
+        const handle1 = await client.storage.open(path1, { overwrite: true });
+        await client.storage.write(handle1, content1);
+        await client.storage.close(handle1);
+
+        const path2 = "file_text_2.txt";
+        const content2 = encoder.encode(JSON.stringify({ message: "Hello, world! (2)" }));
+        const handle2 = await client.storage.open(path2, { overwrite: true });
+        await client.storage.write(handle2, content2);
+        await client.storage.close(handle2);
+
+        const path3 = "file_text_3.txt";
+        const content3 = encoder.encode(JSON.stringify({ message: "Hello, world! (3)" }));
+        const handle3 = await client.storage.open(path3, { overwrite: true });
+        await client.storage.write(handle3, content3);
+        await client.storage.close(handle3);
+
+        const downloadResponse1 = await client.storage.download(path1);
+        const downloadResponse2 = await client.storage.download(path2);
+        const downloadResponse3 = await client.storage.download(path3);
+
+        expect(downloadResponse1.data).to.deep.equal(content1, "Content should match what was written");
+        expect(downloadResponse2.data).to.deep.equal(content2, "Content should match what was written");
+        expect(downloadResponse3.data).to.deep.equal(content3, "Content should match what was written");
+    });
+});
