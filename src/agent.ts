@@ -355,8 +355,7 @@ export abstract class RemoteTaskRunner {
         console.info("_ask handler invoked with data", data);
 
         try {
-            const raw = decoder.decode(data);
-            const message = JSON.parse(raw) as Record<string, any>;
+            const [ message, _ ] = unpackMessage(data!)
             console.info("got message", message);
 
             const jwt = message["jwt"] as string;

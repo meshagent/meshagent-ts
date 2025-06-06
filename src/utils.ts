@@ -32,8 +32,8 @@ export function splitMessageHeader(packet: Uint8Array): string {
     return decoder.decode(payload);
 }
 
-export function unpackMessage(packet: Uint8Array): [string, Uint8Array] {
-    return [ splitMessageHeader(packet), splitMessagePayload(packet) ];
+export function unpackMessage(packet: Uint8Array): [Record<string,any>, Uint8Array] {
+    return [ JSON.parse(splitMessageHeader(packet)), splitMessagePayload(packet) ];
 }
 
 
