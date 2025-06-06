@@ -250,8 +250,7 @@ export abstract class RemoteToolkit extends Toolkit {
 
     private async _toolCall(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
         try {
-            const raw = unpackMessage(data!)[0];
-            const message = JSON.parse(raw) as Record<string, any>;
+            const [ message, _ ] = unpackMessage(data!);
             const toolName = message["name"] as string;
             const args = message["arguments"] as Record<string, any>;
 
