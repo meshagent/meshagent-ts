@@ -32,6 +32,12 @@ export function splitMessageHeader(packet: Uint8Array): string {
     return decoder.decode(payload);
 }
 
+export function unpackMessage(packet: Uint8Array): [string, Uint8Array] {
+    return [ splitMessageHeader(packet), splitMessagePayload(packet) ];
+}
+
+
+
 /**
  * Packs a request object and optional data into a single Uint8Array message.
  * @param request A JavaScript object with the request header

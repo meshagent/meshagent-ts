@@ -4,7 +4,7 @@ import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
 import { Response, ErrorResponse, JsonResponse } from "./response";
-import { decoder, encoder } from "./utils";
+import { decoder, encoder, packMessage, unpackMessage } from "./utils";
 
 export class AgentChatContext {
     messages: Array<Record<string, any>>;
@@ -250,7 +250,7 @@ export abstract class RemoteToolkit extends Toolkit {
 
     private async _toolCall(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
         try {
-            const raw = decoder.decode(data);
+            const raw = unpackMessage(data!)[0];
             const message = JSON.parse(raw) as Record<string, any>;
             const toolName = message["name"] as string;
             const args = message["arguments"] as Record<string, any>;
@@ -369,17 +369,17 @@ export abstract class RemoteTaskRunner {
             const callContext = new AgentCallContext({chat, jwt, api_url});
 
             const answer = await this.ask(callContext, args);
-            const encoded = encoder.encode(JSON.stringify({task_id, answer}));
+            const encoded = packMessage({task_id, answer});
 
             await protocol.send("agent.ask_response", encoded);
 
         } catch (e: any) {
-            const rawError = JSON.stringify({
+            const rawError = {
                 task_id: "",
                 error: String(e),
-            });
+            };
 
-            await protocol.send("agent.ask_response", encoder.encode(rawError));
+            await protocol.send("agent.ask_response", packMessage(rawError));
         }
     }
 }
