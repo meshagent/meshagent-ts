@@ -1,6 +1,6 @@
 import { Completer } from "./completer";
 import { Protocol } from "./protocol";
-import { packMessage, decoder } from "./utils";
+import { packMessage, decoder, unpackMessage } from "./utils";
 import { LocalParticipant } from "./participant";
 import { StreamController } from "./stream-controller";
 
@@ -149,7 +149,8 @@ export class RoomClient {
      * Handler for "room_ready" messages.
      */
     private async _handleRoomReady(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
-        this._ready.complete(JSON.parse(decoder.decode(data))["room_name"]);
+        const [ message, _ ] = unpackMessage(data!);
+        this._ready.complete(message["room_name"]);
     }
 
     private _onParticipantInit(participantId: string, attributes: Record<string, any>): void {
@@ -161,7 +162,7 @@ export class RoomClient {
     }
 
     private async _handleParticipant(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
-        const message = JSON.parse(decoder.decode(data));
+        const [ message, _ ] = unpackMessage(data!);
 
         switch (message["type"]) {
             case "init": this._onParticipantInit(message["participantId"], message["attributes"]);

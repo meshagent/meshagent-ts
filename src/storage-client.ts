@@ -4,7 +4,7 @@ import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { FileDeletedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
 import { JsonResponse, FileResponse } from "./response";
-import { decoder } from "./utils";
+import { decoder, unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 
 export class FileHandle {
@@ -59,18 +59,15 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   }
 
   private async _handleFileUpdated(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
-    const raw = decoder.decode(bytes || new Uint8Array());
-    const data = JSON.parse(raw);
-
+    const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
     const event = new FileUpdatedEvent({ path: data["path"] });
     this.client.emit(event);
     this.emit('file.updated', event);
   }
 
   private async _handleFileDeleted(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
-    const raw = decoder.decode(bytes || new Uint8Array());
-    const data = JSON.parse(raw);
-
+    const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
+   
     const event = new FileDeletedEvent({ path: data["path"] });
     this.client.emit(event);
     this.emit('file.deleted', event);

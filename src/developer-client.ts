@@ -2,7 +2,7 @@
 import { EventEmitter } from "./event-emitter";
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
-import { packMessage, decoder } from "./utils";
+import { packMessage, decoder, unpackMessage } from "./utils";
 import { RoomLogEvent } from "./room-event";
 
 /**
@@ -26,7 +26,7 @@ export class DeveloperClient extends EventEmitter<RoomLogEvent> {
    */
   private async _handleDeveloperLog(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
     // Decode the message
-    const rawJson = JSON.parse(decoder.decode(bytes || new Uint8Array()));
+    const [ rawJson, _ ] = unpackMessage(bytes || new Uint8Array());
     const event = new RoomLogEvent({
         type: rawJson["type"],
         data: rawJson["data"],

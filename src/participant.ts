@@ -1,6 +1,6 @@
 // participant.ts
 import { RoomClient } from "./room-client";
-import { encoder } from "./utils";
+import { encoder, packMessage } from "./utils";
 
 /**
  * An abstract base class for participants.
@@ -59,7 +59,7 @@ export class LocalParticipant extends Participant {
     this._attributes[name] = value;
 
     try {
-      const payload = encoder.encode(JSON.stringify({ [name]: value }));
+      const payload = packMessage({ [name]: value });
 
       await this.client.protocol.send("set_attributes", payload);
 
