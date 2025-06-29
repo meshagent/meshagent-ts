@@ -9,7 +9,8 @@ VIRTUAL_ENV=`pwd`/venv
 python3 -m venv $VIRTUAL_ENV
 PATH="$VIRTUAL_ENV/bin:$PATH"
 
-pip install --no-cache-dir \
+pip3 install uv
+uv pip3 install --no-cache-dir \
             ../meshagent-api \
             ../meshagent-agents \
             ../meshagent-tools \
