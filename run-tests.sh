@@ -10,7 +10,6 @@ python3 -m venv $VIRTUAL_ENV
 PATH="$VIRTUAL_ENV/bin:$PATH"
 
 pip3 install uv
-uv venv
 uv pip install --no-cache-dir \
             ../meshagent-api \
             ../meshagent-agents \
