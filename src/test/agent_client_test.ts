@@ -12,12 +12,13 @@ import {
     RemoteToolkit,
     RoomClient,
     Tool,
-    websocketProtocol
+    websocketProtocol,
 } from "../index";
 
 import { encoder, decoder } from "../utils";
 
 import { room } from "./utils";
+import { getEnvVar } from "../utils";
 
 // A sample schema
 const addSchema = {
@@ -146,7 +147,7 @@ describe("agent_client_test", function () {
     let agent: AddAgent;
 
     before(async () => {
-        const secret = process.env.MESHAGENT_SECRET;
+        const secret = getEnvVar("MESHAGENT_SECRET");
         if (!secret) {
             throw new Error('MESHAGENT_SECRET must be set in the environment.');
         }

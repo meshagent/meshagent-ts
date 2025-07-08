@@ -1,7 +1,8 @@
 {
     "compilerOptions": {
         "module": "CommonJS",
-        "moduleResolution": "Node",
+        "lib": ["ES2020"],
+        "moduleResolution": "node",
         "declaration": true,
         "removeComments": true,
         "skipLibCheck": true,
@@ -16,8 +17,7 @@
             "./types",
             "./node_modules/@types",
             "../node_modules/@types"
-        ],
-        "lib": ["ES2020"]
+        ]
     },
     "exclude": [
         "dist"

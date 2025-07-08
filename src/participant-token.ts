@@ -1,5 +1,6 @@
 // participantToken.ts
 import { decodeJwt, jwtVerify, JWTPayload, SignJWT } from "jose";
+import { getEnvVar } from "./utils";
 
 /**
  * Represents a simple "Grant" given to a participant, with a name and optional scope.
@@ -106,7 +107,8 @@ export class ParticipantToken {
     public async toJwt({ token }: {
         token?: string;
     } = {}): Promise<string> {
-        const secret = token || process.env.MESHAGENT_SECRET;
+        const secret = token || getEnvVar("MESHAGENT_SECRET");
+
         // jose requires a Uint8Array key for HMAC
         const secretKey = new TextEncoder().encode(secret);
 
@@ -153,7 +155,8 @@ export class ParticipantToken {
         const { token, verify = true } = options || {};
 
         if (verify) {
-            const secret = token || process.env.MESHAGENT_SECRET;
+            const secret = token || getEnvVar("MESHAGENT_SECRET");
+
             if (!secret) {
                 throw new Error("No secret provided to verify JWT. Provide `token` or set MESHAGENT_SECRET");
             }

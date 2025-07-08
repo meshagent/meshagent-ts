@@ -53,8 +53,11 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   /**
    * Start listening for changes to sync to the backend.
    */
-  public start(): void {
-    this.client.protocol.start();
+  public start({onDone, onError}: {
+    onDone?: () => void;
+    onError?: (error: Error) => void;
+  } = {}): void {
+    this.client.protocol.start({onDone, onError});
 
     // mimic Dart's: () async { await for(final msg in _changesToSync.stream) {...}}()
     // We can do an async generator approach:

@@ -70,8 +70,12 @@ export class RoomClient {
     /**
      * Starts the protocol and begins processing outgoing changes
      */
-    public async start(): Promise<void> {
-        this.sync.start();
+    public async start({onDone, onError}: {
+        onDone?: () => void;
+        onError?: (error: Error) => void;
+    } = {}): Promise<void> {
+
+        this.sync.start({onDone, onError});
 
         await this.ready;
     }

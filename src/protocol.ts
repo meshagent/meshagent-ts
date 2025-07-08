@@ -294,11 +294,15 @@ export class Protocol {
         return await this.send("application/json", encoder.encode(JSON.stringify(object)));
     }
 
-    start(onMessage = null) {
+    start({onMessage, onDone, onError}: {
+        onMessage?: MessageHandler,
+        onDone?: () => void,
+        onError?: (error: any) => void,
+    } = {}) {
         if (onMessage != null) {
             this.addHandler("*", onMessage);
         }
-        this.channel.start(this.onDataReceived.bind(this), {});
+        this.channel.start(this.onDataReceived.bind(this), {onDone, onError});
 
         // used for closing the iterator
         this._iterator?.return(null);

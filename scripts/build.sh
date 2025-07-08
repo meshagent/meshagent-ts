@@ -23,7 +23,7 @@ DIST_DIR="$ROOT/dist"
 find $DIST_DIR -type f -delete
 
 # Build each module type
-for target in node browser
+for target in esm node browser
 do
     echo "Building ${target}"
 

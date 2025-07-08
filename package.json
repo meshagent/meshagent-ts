@@ -8,11 +8,12 @@
         "build": "mkdir -p dist && ./scripts/build.sh",
         "build-browser-test": "node ./build-browser-test.js"
     },
-    "author": "Powerboards",
+    "author": "Meshagent Software",
     "license": "Apache-2.0",
     "main": "./dist/node/index.js",
     "exports": {
         ".": {
+            "module": "./dist/esm/index.js",
             "browser": "./dist/browser/index.js",
             "default": "./dist/node/index.js"
         },

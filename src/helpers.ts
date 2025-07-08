@@ -2,6 +2,7 @@ import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken } from './participant-token';
 import { WebSocketClientProtocol } from './protocol';
+import { getEnvVar } from './utils';
 
 /**
  * Validate schema name: cannot contain '.'.
@@ -38,7 +39,8 @@ export function meshagentBaseUrl(baseUrl?: string): string {
     if (baseUrl) {
         return baseUrl;
     }
-    return process.env.MESHAGENT_API_URL || 'https://api.meshagent.com';
+
+    return getEnvVar('MESHAGENT_API_URL') || 'https://api.meshagent.com';
 }
 
 /**
@@ -50,7 +52,8 @@ export function websocketRoomUrl({ roomName, baseUrl }: {
     baseUrl?: string;
 }): string {
     if (!baseUrl) {
-        const envApiUrl = process.env.MESHAGENT_API_URL;
+        const envApiUrl = getEnvVar('MESHAGENT_API_URL');
+
         if (!envApiUrl) {
             baseUrl = 'wss://api.meshagent.com';
         } else {
@@ -77,9 +80,9 @@ export function participantToken({ participantName, roomName, role }: {
     roomName: string;
     role?: string;
 }): ParticipantToken {
-    const projectId = process.env.MESHAGENT_PROJECT_ID;
-    const apiKeyId = process.env.MESHAGENT_KEY_ID;
-    const secret = process.env.MESHAGENT_SECRET;
+    const projectId = getEnvVar('MESHAGENT_PROJECT_ID');
+    const apiKeyId = getEnvVar('MESHAGENT_KEY_ID');
+    const secret = getEnvVar('MESHAGENT_SECRET');
 
     if (!projectId) {
         throw new Error(
@@ -121,7 +124,7 @@ export async function websocketProtocol({ participantName, roomName, role }: {
     const url = websocketRoomUrl({ roomName });
     const token = participantToken({ participantName, roomName, role });
 
-    const secret = process.env.MESHAGENT_SECRET;
+    const secret = getEnvVar('MESHAGENT_SECRET');
     if (!secret) {
         throw new Error('MESHAGENT_SECRET must be set in the environment.');
     }

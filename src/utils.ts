@@ -76,3 +76,24 @@ export class RefCount<T> {
 
   constructor(public ref: T) {}
 }
+
+export function getEnvVar(key: string): string | undefined {
+  // Node.js (or any ESM runtime that provides process.env)
+  if (typeof process !== 'undefined' && process.env[key] !== undefined) {
+    return process.env[key];
+  }
+
+  // Snowpack / native ESM in-browser
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env?.[key] !== undefined) {
+    // @ts-ignore
+    return import.meta.env[key];
+  }
+
+  // Vite
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env?.['VITE_' + key] !== undefined) {
+    // @ts-ignore
+    return import.meta.env['VITE_' + key];
+  }
+}
