@@ -1,6 +1,6 @@
 // participant.ts
 import { RoomClient } from "./room-client";
-import { encoder, packMessage } from "./utils";
+import { packMessage } from "./utils";
 
 /**
  * An abstract base class for participants.
