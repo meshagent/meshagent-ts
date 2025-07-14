@@ -1,3 +1,12 @@
+## [0.2.1]
+- Stability
+
+## [0.2.0]
+- Stability
+
+## [0.1.0]
+- Stability
+
 ## [0.0.39]
 - Stability
 
