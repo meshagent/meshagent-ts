@@ -37,8 +37,6 @@ export class RuntimeDocument extends EventEmitter<RuntimeDocumentEvent> {
     this.sendChangesToBackend = sendChangesToBackend;
   }
 
-  // Dart used a `StreamController<Map<String,dynamic>>` with a broadcast stream
-  // We'll simulate with a subscription approach:
   listen(onData: (data: Record<string, any>) => void) {
     this._changeSubscribers.push(onData);
 

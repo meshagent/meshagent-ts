@@ -5,6 +5,7 @@ const define = {
     "process.env.MESHAGENT_PROJECT_ID": JSON.stringify(process.env.MESHAGENT_PROJECT_ID),
     "process.env.MESHAGENT_KEY_ID": JSON.stringify(process.env.MESHAGENT_KEY_ID),
     "process.env.MESHAGENT_API_URL": JSON.stringify(process.env.MESHAGENT_API_URL),
+    "import.meta": "{}"
 };
 
 esbuild.build({

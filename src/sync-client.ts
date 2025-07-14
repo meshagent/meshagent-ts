@@ -48,6 +48,8 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
 
     // Add a protocol handler
     this.client.protocol.addHandler("room.sync", this._handleSync.bind(this));
+
+    this.client.protocol.addHandler("room.status", this._handleStatus.bind(this));
   }
 
   /**
@@ -113,6 +115,13 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     }
   }
 
+  private async _handleStatus(protocol: Protocol, messageId: number, data: string, bytes?: Uint8Array): Promise<void> {
+    const headerStr = splitMessageHeader(bytes || new Uint8Array());
+    const header = JSON.parse(headerStr);
+
+    this.emit("status", header.status);
+  }
+
   async create(path: string, json?: Record<string, any>): Promise<void> {
     await this.client.sendRequest("room.create", { path, json });
   }
@@ -173,6 +182,17 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * Closes a doc at the given path.
    */
   async close(path: string): Promise<void> {
+    const pending = this._connectingDocuments[path];
+
+    if (pending) {
+      // Wait for the doc to finish connecting
+      await pending;
+
+      // Give time for incoming connections to register first
+      // before closing
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
     const rc = this._connectedDocuments[path];
     if (!rc) {
       throw new RoomServerException(`Not connected to ${path}`);

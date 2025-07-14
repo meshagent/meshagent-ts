@@ -1,6 +1,6 @@
 import { Completer } from "./completer";
 import { Protocol } from "./protocol";
-import { packMessage, decoder, unpackMessage } from "./utils";
+import { packMessage, unpackMessage } from "./utils";
 import { LocalParticipant } from "./participant";
 import { StreamController } from "./stream-controller";
 

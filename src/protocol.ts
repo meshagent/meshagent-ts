@@ -1,6 +1,6 @@
 import WebSocket, { MessageEvent } from "isomorphic-ws";
 
-import { mergeUint8Arrays, decoder, encoder } from "./utils";
+import { mergeUint8Arrays, decoder, encoder, unpackMessage } from "./utils";
 import { Completer } from "./completer";
 
 export type UpdateCallback = (update: Uint8Array, origin?: any) => void;
@@ -263,6 +263,11 @@ export class Protocol {
         console.log(this.handlers, Object.keys(this.handlers));
 
         const handler = this.handlers[type] ?? this.handlers["*"];
+        if (!handler) {
+            const d = data ? unpackMessage(data) : null;
+            console.warn(`No handler for message type ${type}; data: ${d}`);
+            return;
+        }
 
         await handler(this, messageId, type, data);    
     }
