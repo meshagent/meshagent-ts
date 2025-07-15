@@ -8093,7 +8093,7 @@ if (glo[importIdentifier] === true) {
 }
 glo[importIdentifier] = true;
 
-// node_modules/uuid/dist/esm-browser/stringify.js
+// ../node_modules/uuid/dist/esm-browser/stringify.js
 var byteToHex = [];
 for (let i = 0; i < 256; ++i) {
   byteToHex.push((i + 256).toString(16).slice(1));
@@ -8102,7 +8102,7 @@ function unsafeStringify(arr, offset = 0) {
   return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
 
-// node_modules/uuid/dist/esm-browser/rng.js
+// ../node_modules/uuid/dist/esm-browser/rng.js
 var getRandomValues2;
 var rnds8 = new Uint8Array(16);
 function rng() {
@@ -8115,11 +8115,11 @@ function rng() {
   return getRandomValues2(rnds8);
 }
 
-// node_modules/uuid/dist/esm-browser/native.js
+// ../node_modules/uuid/dist/esm-browser/native.js
 var randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
 var native_default = { randomUUID };
 
-// node_modules/uuid/dist/esm-browser/v4.js
+// ../node_modules/uuid/dist/esm-browser/v4.js
 function v4(options, buf, offset) {
   if (native_default.randomUUID && !buf && !options) {
     return native_default.randomUUID();
@@ -8547,7 +8547,6 @@ var ClientProtocol = class {
 var protocols = /* @__PURE__ */ new Map();
 var documents = /* @__PURE__ */ new Map();
 function applyChanges(update) {
-  console.log("applying", JSON.stringify(update.changes));
   const server = documents.get(update.documentID);
   if (!server) {
     throw new Error("cannot apply changes, document was not registered " + update.documentID);
@@ -8584,17 +8583,14 @@ function applyBackendChanges(documentID, base64Changes) {
       "cannot apply changes, document was not registered " + documentID
     );
   }
-  console.log("applying", JSON.stringify(base64Changes));
   const buffer = Uint8Array.from(
     import_base_64.default.decode(base64Changes),
     (c) => c.charCodeAt(0)
   );
-  console.log("applying", Array.from(buffer));
   server.applyBackendChanges(buffer);
   const protocol = protocols.get(documentID);
   if (protocol) {
     const xmlRoot = protocol.doc.get("xml", YXmlElement);
-    console.log(xmlRoot.toString());
   }
 }
 function registerDocument(id2, base64Data, undo = false, sendUpdateToBackend, sendUpdateToClient) {

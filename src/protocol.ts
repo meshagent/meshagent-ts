@@ -260,7 +260,7 @@ export class Protocol {
      * @param {Uint8Array?} data - the data for the message
      */ 
     async handleMessage(messageId: number, type: string, data?: Uint8Array) {
-        console.log(this.handlers, Object.keys(this.handlers));
+        //console.log(this.handlers, Object.keys(this.handlers));
 
         const handler = this.handlers[type] ?? this.handlers["*"];
 
@@ -308,7 +308,7 @@ export class Protocol {
 
             for await (const message of this._iterator) {
                 if (message) {
-                    console.log(`message recv on protocol ${message.id} ${message.type}`);
+                    //console.log(`message recv on protocol ${message.id} ${message.type}`);
 
                     const packets = Math.ceil((message.data.length / 1024));
 
@@ -337,11 +337,11 @@ export class Protocol {
                         await this.channel.sendData(packet);
                     }
                     message.sent.resolve();
-                    console.log(`message sent on protocol ${message.id} ${message.type}`);
+                    // console.log(`message sent on protocol ${message.id} ${message.type}`);
                 }
             }
 
-            console.log("protocol done");
+            //console.log("protocol done");
         })();
     }
 
@@ -359,8 +359,8 @@ export class Protocol {
 
         if (packet != this._recvPacketId) {
             this._recvState = "error";
-            console.log(dataPacket);
-            console.log(`received out of order packet got ${packet} expected ${this._recvPacketId}, total ${this._recvPacketTotal} message ID: ${messageId}`);
+            //console.log(dataPacket);
+            //console.log(`received out of order packet got ${packet} expected ${this._recvPacketId}, total ${this._recvPacketTotal} message ID: ${messageId}`);
         }
 
         if (packet == 0) {
@@ -368,7 +368,7 @@ export class Protocol {
                 this._recvPacketTotal = dataView.getUint32(12, false);
                 this._recvMessageId = messageId;
                 this._recvType = decoder.decode(dataPacket.subarray(16));
-                console.log(`recieved packet ${this._recvType}`);
+                //console.log(`recieved packet ${this._recvType}`);
 
                 if (this._recvPacketTotal == 0) {
                     try {
@@ -377,7 +377,7 @@ export class Protocol {
                         this.handleMessage(messageId, this._recvType, merged);
 
                     } finally {
-                        console.log("expecting packet reset to 0");
+                        //console.log("expecting packet reset to 0");
                         this._recvState = "ready";
                         this._recvPacketId = 0;
                         this._recvType = "";
@@ -385,23 +385,23 @@ export class Protocol {
                     }
                 } else {
                     this._recvPacketId += 1;
-                    console.log(`expecting packet ${this._recvPacketId}`);
+                    //console.log(`expecting packet ${this._recvPacketId}`);
                     this._recvState = "processing";
                 }
             } else {
                 this._recvState = "error";
                 this._recvPacketId = 0;
-                console.log("received packet 0 in invalid state");
+                //console.log("received packet 0 in invalid state");
             }
         } else if (this._recvState != "processing") {
             this._recvState = "error";
             this._recvPacketId = 0;
-            console.log("received datapacket in invalid state");
+            //console.log("received datapacket in invalid state");
         } else {
             if (messageId != this._recvMessageId) {
                 this._recvState = "error";
                 this._recvPacketId = 0;
-                console.log("received packet from incorrect message");
+                //console.log("received packet from incorrect message");
             }
 
             this._recvPackets.push(dataPacket.subarray(12));
