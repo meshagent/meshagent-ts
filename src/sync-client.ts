@@ -65,7 +65,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     // We can do an async generator approach:
     (async () => {
       for await (const message of this._changesToSync.stream) {
-        console.log(`sending changes to backend ${message.base64}`);
+        //console.log(`sending changes to backend ${message.base64}`);
         await this.client.sendRequest("room.sync", { path: message.path }, encoder.encode(message.base64));
       }
     })();
@@ -81,7 +81,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   }
 
   private async _handleSync(protocol: Protocol, messageId: number, data: string, bytes?: Uint8Array): Promise<void> {
-    console.log("GOT SYNC");
+    //console.log("GOT SYNC");
 
     const headerStr = splitMessageHeader(bytes || new Uint8Array());
     const payload = splitMessagePayload(bytes || new Uint8Array());
@@ -99,7 +99,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
       const rc = this._connectedDocuments[path];
       const doc = rc.ref;
       const base64 = decoder.decode(payload);
-      console.log(`GOT SYNC ${base64}`);
+      //console.log(`GOT SYNC ${base64}`);
 
       applyBackendChanges(doc.id, base64);
 
@@ -154,7 +154,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
 
       // parse the schema
       const schema = MeshSchema.fromJson(result.json["schema"]);
-      console.log(JSON.stringify(schema.toJson()));
+      //console.log(JSON.stringify(schema.toJson()));
 
       // create local doc
       const doc = new MeshDocument({
