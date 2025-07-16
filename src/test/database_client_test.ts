@@ -14,7 +14,7 @@ import {
     websocketProtocol,
 } from "../index";
 
-import { room } from "./utils";
+import { room, getConfig } from "./utils";
 
 describe("database_client_test", function () {
     // Increase timeout if needed for async operations (DB indexing, WebSocket connections, etc.)
@@ -24,8 +24,10 @@ describe("database_client_test", function () {
     let client2: RoomClient;
 
     before(async () => {
-        const protocol1 = await websocketProtocol({ roomName: room, participantName: 'client1' });
-        const protocol2 = await websocketProtocol({ roomName: room, participantName: 'client2' });
+        const config = getConfig();
+
+        const protocol1 = await websocketProtocol({ roomName: room, participantName: 'client1', ...config });
+        const protocol2 = await websocketProtocol({ roomName: room, participantName: 'client2', ...config });
 
         client1 = new RoomClient({ protocol: protocol1 });
         client2 = new RoomClient({ protocol: protocol2 });

@@ -5,7 +5,7 @@ import { expect } from "chai";
 
 import { RoomClient, websocketProtocol } from "../index";
 
-import { room } from "./utils";
+import { getConfig, room } from "./utils";
 
 import { encoder } from "../utils";
 
@@ -17,8 +17,9 @@ describe("messaging", function () {
     let client2: RoomClient;
 
     before(async () => {
-        const protocol1 = await websocketProtocol({roomName: room, participantName: 'client1'});
-        const protocol2 = await websocketProtocol({roomName: room, participantName: 'client2'});
+        const config = getConfig();
+        const protocol1 = await websocketProtocol({roomName: room, participantName: 'client1', ...config});
+        const protocol2 = await websocketProtocol({roomName: room, participantName: 'client2', ...config});
 
         client1 = new RoomClient({protocol: protocol1});
         client2 = new RoomClient({protocol: protocol2});

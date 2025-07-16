@@ -17,8 +17,7 @@ import {
 
 import { encoder, decoder } from "../utils";
 
-import { room } from "./utils";
-import { getEnvVar } from "../utils";
+import { room, getConfig } from "./utils";
 
 // A sample schema
 const addSchema = {
@@ -147,13 +146,19 @@ describe("agent_client_test", function () {
     let agent: AddAgent;
 
     before(async () => {
-        const secret = getEnvVar("MESHAGENT_SECRET");
-        if (!secret) {
-            throw new Error('MESHAGENT_SECRET must be set in the environment.');
-        }
+        const config = getConfig();
 
-        const protocol1 = await websocketProtocol({ roomName: room, participantName: 'client1' });
-        const protocol2 = await websocketProtocol({ roomName: room, participantName: 'client2' });
+        const protocol1 = await websocketProtocol({
+            roomName: room,
+            participantName: 'client1',
+            ...config,
+        });
+
+        const protocol2 = await websocketProtocol({
+            roomName: room,
+            participantName: 'client2',
+            ...config,
+        });
 
         client1 = new RoomClient({ protocol: protocol1 });
         client2 = new RoomClient({ protocol: protocol2 });

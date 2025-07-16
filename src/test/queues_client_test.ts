@@ -4,7 +4,7 @@ import { expect } from "chai"; // or any other Chai interface you prefer
 
 import { RoomClient, websocketProtocol } from "../index";
 
-import { room } from "./utils";
+import { getConfig, room } from "./utils";
 
 describe("test_queues_client", function () {
     // Increase timeout if necessary to accommodate WebSocket round trips.
@@ -14,13 +14,17 @@ describe("test_queues_client", function () {
     let client2: RoomClient;
 
     before(async () => {
+        const config = getConfig();
+
         const protocol1 = await websocketProtocol({
             roomName: room,
             participantName: 'client1',
+            ...config,
         });
         const protocol2 = await websocketProtocol({
             roomName: room,
             participantName: 'client2',
+            ...config,
         });
 
         client1 = new RoomClient({protocol: protocol1});

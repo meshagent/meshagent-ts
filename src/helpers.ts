@@ -2,7 +2,6 @@ import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken } from './participant-token';
 import { WebSocketClientProtocol } from './protocol';
-import { getEnvVar } from './utils';
 
 /**
  * Validate schema name: cannot contain '.'.
@@ -40,68 +39,44 @@ export function meshagentBaseUrl(baseUrl?: string): string {
         return baseUrl;
     }
 
-    return getEnvVar('MESHAGENT_API_URL') || 'https://api.meshagent.com';
+    return 'https://api.meshagent.com';
 }
 
 /**
  * Construct the WebSocket URL for a given room.
  * (Python: websocket_room_url)
  */
-export function websocketRoomUrl({ roomName, baseUrl }: {
+export function websocketRoomUrl({ roomName, apiUrl }: {
     roomName: string;
-    baseUrl?: string;
+    apiUrl?: string;
 }): string {
-    if (!baseUrl) {
-        const envApiUrl = getEnvVar('MESHAGENT_API_URL');
+    const baseUrl = apiUrl || 'wss://api.meshagent.com';
 
-        if (!envApiUrl) {
-            baseUrl = 'wss://api.meshagent.com';
-        } else {
-            // Convert http/https to ws/wss if needed
-            if (envApiUrl.startsWith('https:')) {
-                baseUrl = 'wss:' + envApiUrl.substring('https:'.length);
-            } else if (envApiUrl.startsWith('http:')) {
-                baseUrl = 'ws:' + envApiUrl.substring('http:'.length);
-            } else {
-                baseUrl = envApiUrl;
-            }
-        }
+    let url = baseUrl;
+
+    // Convert http/https to ws/wss if needed
+    if (baseUrl.startsWith('https:')) {
+        url = 'wss:' + baseUrl.substring('https:'.length);
+    } else if (baseUrl.startsWith('http:')) {
+        url = 'ws:' + baseUrl.substring('http:'.length);
     }
 
-    return `${baseUrl}/rooms/${roomName}`;
+    return `${url}/rooms/${roomName}`;
 }
 
-/**
- * Create a participant token; requires environment variables to be set.
- * (Python: participant_token)
- */
-export function participantToken({ participantName, roomName, role }: {
+export function participantToken({
+    participantName,
+    roomName,
+    role,
+    projectId,
+    apiKeyId,
+}: {
     participantName: string;
     roomName: string;
     role?: string;
+    projectId: string;
+    apiKeyId: string;
 }): ParticipantToken {
-    const projectId = getEnvVar('MESHAGENT_PROJECT_ID');
-    const apiKeyId = getEnvVar('MESHAGENT_KEY_ID');
-    const secret = getEnvVar('MESHAGENT_SECRET');
-
-    if (!projectId) {
-        throw new Error(
-            'MESHAGENT_PROJECT_ID must be set. You can find this in the Meshagent Studio under API keys.'
-        );
-    }
-
-    if (!apiKeyId) {
-        throw new Error(
-            'MESHAGENT_KEY_ID must be set. You can find this in the Meshagent Studio under API keys.'
-        );
-    }
-
-    if (!secret) {
-        throw new Error(
-            'MESHAGENT_SECRET must be set. You can find this in the Meshagent Studio under API keys.'
-        );
-    }
-
     const token = new ParticipantToken({ name: participantName, projectId, apiKeyId });
 
     token.addRoomGrant(roomName);
@@ -116,19 +91,17 @@ export function participantToken({ participantName, roomName, role }: {
 /**
  * Create a WebSocket protocol instance for the given participant and room.
  */
-export async function websocketProtocol({ participantName, roomName, role }: {
+export async function websocketProtocol({ participantName, roomName, role, projectId, apiKeyId, secret, apiUrl }: {
     participantName: string;
     roomName: string;
     role?: string;
+    projectId: string;
+    apiKeyId: string;
+    secret: string;
+    apiUrl?: string;
 }): Promise<WebSocketClientProtocol> {
-    const url = websocketRoomUrl({ roomName });
-    const token = participantToken({ participantName, roomName, role });
-
-    const secret = getEnvVar('MESHAGENT_SECRET');
-    if (!secret) {
-        throw new Error('MESHAGENT_SECRET must be set in the environment.');
-    }
-
+    const url = websocketRoomUrl({ roomName, apiUrl });
+    const token = participantToken({ participantName, roomName, role, projectId, apiKeyId });
     const jwt = await token.toJwt({ token: secret });
 
     return new WebSocketClientProtocol({ url, token: jwt });

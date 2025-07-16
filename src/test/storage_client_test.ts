@@ -21,7 +21,7 @@ import {
 
 import { encoder } from "../utils";
 
-import { room, subscribe } from "./utils";
+import { room, subscribe, getConfig } from "./utils";
 
 const schema = new MeshSchema({
     rootTagName: "sample",
@@ -58,9 +58,12 @@ describe("test storage client", function () {
     let client: RoomClient;
 
     before(async () => {
+        const config = getConfig();
+
         const protocol = await websocketProtocol({
             roomName: room,
             participantName: "client",
+            ...config,
         });
 
         client = new RoomClient({ protocol });

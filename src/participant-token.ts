@@ -1,6 +1,5 @@
 // participantToken.ts
 import { decodeJwt, jwtVerify, JWTPayload, SignJWT } from "jose";
-import { getEnvVar } from "./utils";
 
 /**
  * Represents a simple "Grant" given to a participant, with a name and optional scope.
@@ -105,12 +104,10 @@ export class ParticipantToken {
      * `extraPayload` merges additional data (stored in `this.extra`) into the JWT payload.
      */
     public async toJwt({ token }: {
-        token?: string;
-    } = {}): Promise<string> {
-        const secret = token || getEnvVar("MESHAGENT_SECRET");
-
+        token: string;
+    }): Promise<string> {
         // jose requires a Uint8Array key for HMAC
-        const secretKey = new TextEncoder().encode(secret);
+        const secretKey = new TextEncoder().encode(token);
 
         // Merge core token JSON plus any extras
         const payload: JWTPayload = {
@@ -151,16 +148,11 @@ export class ParticipantToken {
      * If `token` is not provided, tries to read from `process.env.MESHAGENT_SECRET`.
      * If `verify = false`, only decodes without verifying signature.
      */
-    static async fromJwt(jwtStr: string, options?: { token?: string; verify?: boolean }): Promise<ParticipantToken> {
-        const { token, verify = true } = options || {};
+    static async fromJwt(jwtStr: string, options: { token: string; verify?: boolean }): Promise<ParticipantToken> {
+        const { token, verify = true } = options;
 
         if (verify) {
-            const secret = token || getEnvVar("MESHAGENT_SECRET");
-
-            if (!secret) {
-                throw new Error("No secret provided to verify JWT. Provide `token` or set MESHAGENT_SECRET");
-            }
-            const secretKey = new TextEncoder().encode(secret);
+            const secretKey = new TextEncoder().encode(token);
 
             // Verify signature and decode
             const { payload } = await jwtVerify(jwtStr, secretKey, {
