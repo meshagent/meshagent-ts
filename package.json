@@ -2,7 +2,7 @@
     "name": "@meshagent/meshagent",
     "version": "0.4.3",
     "description": "Meshagent Client",
-    "homepage": "https://www.meshagent.com",
+    "homepage": "https://github.com/meshagent/meshagent-ts",
     "scripts": {
         "test": "./run-tests.sh",
         "build": "mkdir -p dist && ./scripts/build.sh",
