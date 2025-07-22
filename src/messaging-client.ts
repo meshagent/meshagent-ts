@@ -173,7 +173,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
         break;
     }
 
-    const messageEvent = { message } as RoomMessageEvent;
+    const messageEvent = new RoomMessageEvent({ message });
 
     // Add to events
     this.client.emit(messageEvent);
