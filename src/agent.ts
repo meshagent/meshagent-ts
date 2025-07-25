@@ -4,7 +4,7 @@ import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
 import { Response, ErrorResponse, JsonResponse } from "./response";
-import { decoder, encoder, packMessage, unpackMessage } from "./utils";
+import { packMessage, unpackMessage } from "./utils";
 
 export class AgentChatContext {
     messages: Array<Record<string, any>>;
