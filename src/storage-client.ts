@@ -4,7 +4,7 @@ import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { FileDeletedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
 import { JsonResponse, FileResponse } from "./response";
-import { decoder, unpackMessage } from "./utils";
+import { unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 
 export class FileHandle {

@@ -111,12 +111,6 @@ export class RuntimeDocument extends EventEmitter<RuntimeDocumentEvent> {
    * Applies incoming changes from the server or another source.
    */
   public receiveChanges(message: Record<string, any>): void {
-    // In Dart, this was `_changes.add(message);`
-    // we simulate by calling subscribers:
-    for (const sub of this._changeSubscribers) {
-      sub(message);
-    }
-
     console.log("Applying changes to doc:", JSON.stringify(message));
 
     const nodeID = message["target"] as string | undefined;
@@ -308,6 +302,10 @@ export class RuntimeDocument extends EventEmitter<RuntimeDocumentEvent> {
 
         target.emit("updated", { type: "change", node: target });
       }
+    }
+
+    for (const sub of this._changeSubscribers) {
+      sub(message);
     }
 
     this.emit("updated", { type: "change", doc: this});
