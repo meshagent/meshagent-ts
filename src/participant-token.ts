@@ -167,7 +167,6 @@ export class ParticipantToken {
                 const payload = decodeJwt(jwtStr);
 
                 return ParticipantToken.fromJson(payload as Record<string, any>);
-
             } catch (err) {
                 throw new Error("Failed to decode JWT");
             }
