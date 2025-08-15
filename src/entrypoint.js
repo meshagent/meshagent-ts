@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../node_modules/base-64/base64.js
+// node_modules/base-64/base64.js
 var require_base64 = __commonJS({
-  "../node_modules/base-64/base64.js"(exports, module) {
+  "node_modules/base-64/base64.js"(exports, module) {
     (function(root) {
       var freeExports = typeof exports == "object" && exports;
       var freeModule = typeof module == "object" && module && module.exports == freeExports && module;
@@ -130,7 +130,7 @@ var require_base64 = __commonJS({
   }
 });
 
-// ../node_modules/lib0/map.js
+// node_modules/lib0/map.js
 var create = () => /* @__PURE__ */ new Map();
 var copy = (m) => {
   const r = create();
@@ -162,10 +162,10 @@ var any = (m, f) => {
   return false;
 };
 
-// ../node_modules/lib0/set.js
+// node_modules/lib0/set.js
 var create2 = () => /* @__PURE__ */ new Set();
 
-// ../node_modules/lib0/array.js
+// node_modules/lib0/array.js
 var last = (arr) => arr[arr.length - 1];
 var appendTo = (dest, src) => {
   for (let i = 0; i < src.length; i++) {
@@ -183,7 +183,7 @@ var some = (arr, f) => {
 };
 var isArray = Array.isArray;
 
-// ../node_modules/lib0/observable.js
+// node_modules/lib0/observable.js
 var ObservableV2 = class {
   constructor() {
     this._observers = create();
@@ -254,7 +254,7 @@ var ObservableV2 = class {
   }
 };
 
-// ../node_modules/lib0/math.js
+// node_modules/lib0/math.js
 var floor = Math.floor;
 var abs = Math.abs;
 var min = (a, b) => a < b ? a : b;
@@ -262,7 +262,7 @@ var max = (a, b) => a > b ? a : b;
 var isNaN = Number.isNaN;
 var isNegativeZero = (n) => n !== 0 ? n < 0 : 1 / n < 0;
 
-// ../node_modules/lib0/binary.js
+// node_modules/lib0/binary.js
 var BIT1 = 1;
 var BIT2 = 2;
 var BIT3 = 4;
@@ -304,7 +304,7 @@ var BITS29 = BIT30 - 1;
 var BITS30 = BIT31 - 1;
 var BITS31 = 2147483647;
 
-// ../node_modules/lib0/number.js
+// node_modules/lib0/number.js
 var MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 var MIN_SAFE_INTEGER = Number.MIN_SAFE_INTEGER;
 var LOWEST_INT32 = 1 << 31;
@@ -312,7 +312,7 @@ var isInteger = Number.isInteger || ((num) => typeof num === "number" && isFinit
 var isNaN2 = Number.isNaN;
 var parseInt = Number.parseInt;
 
-// ../node_modules/lib0/string.js
+// node_modules/lib0/string.js
 var fromCharCode = String.fromCharCode;
 var fromCodePoint = String.fromCodePoint;
 var MAX_UTF16_CHARACTER = fromCharCode(65535);
@@ -342,7 +342,7 @@ if (utf8TextDecoder && utf8TextDecoder.decode(new Uint8Array()).length === 1) {
   utf8TextDecoder = null;
 }
 
-// ../node_modules/lib0/encoding.js
+// node_modules/lib0/encoding.js
 var Encoder = class {
   constructor() {
     this.cpos = 0;
@@ -649,7 +649,7 @@ var StringEncoder = class {
   }
 };
 
-// ../node_modules/lib0/error.js
+// node_modules/lib0/error.js
 var create3 = (s) => new Error(s);
 var methodUnimplemented = () => {
   throw create3("Method unimplemented");
@@ -658,7 +658,7 @@ var unexpectedCase = () => {
   throw create3("Unexpected case");
 };
 
-// ../node_modules/lib0/decoding.js
+// node_modules/lib0/decoding.js
 var errorUnexpectedEndOfArray = create3("Unexpected end of array");
 var errorIntegerOutOfRange = create3("Integer out of Range");
 var Decoder = class {
@@ -901,11 +901,11 @@ var StringDecoder = class {
   }
 };
 
-// ../node_modules/lib0/webcrypto.js
+// node_modules/lib0/webcrypto.js
 var subtle = crypto.subtle;
 var getRandomValues = crypto.getRandomValues.bind(crypto);
 
-// ../node_modules/lib0/random.js
+// node_modules/lib0/random.js
 var uint32 = () => getRandomValues(new Uint32Array(1))[0];
 var uuidv4Template = "10000000-1000-4000-8000" + -1e11;
 var uuidv4 = () => uuidv4Template.replace(
@@ -914,20 +914,20 @@ var uuidv4 = () => uuidv4Template.replace(
   (c) => (c ^ uint32() & 15 >> c / 4).toString(16)
 );
 
-// ../node_modules/lib0/time.js
+// node_modules/lib0/time.js
 var getUnixTime = Date.now;
 
-// ../node_modules/lib0/promise.js
+// node_modules/lib0/promise.js
 var create4 = (f) => (
   /** @type {Promise<T>} */
   new Promise(f)
 );
 var all = Promise.all.bind(Promise);
 
-// ../node_modules/lib0/conditions.js
+// node_modules/lib0/conditions.js
 var undefinedToNull = (v) => v === void 0 ? null : v;
 
-// ../node_modules/lib0/storage.js
+// node_modules/lib0/storage.js
 var VarStoragePolyfill = class {
   constructor() {
     this.map = /* @__PURE__ */ new Map();
@@ -957,7 +957,7 @@ try {
 }
 var varStorage = _localStorage;
 
-// ../node_modules/lib0/object.js
+// node_modules/lib0/object.js
 var assign = Object.assign;
 var keys = Object.keys;
 var forEach = (obj, f) => {
@@ -993,7 +993,7 @@ var deepFreeze = (o) => {
   return freeze(o);
 };
 
-// ../node_modules/lib0/function.js
+// node_modules/lib0/function.js
 var callAll = (fs, args2, i = 0) => {
   try {
     for (; i < fs.length; i++) {
@@ -1008,7 +1008,7 @@ var callAll = (fs, args2, i = 0) => {
 var id = (a) => a;
 var isOneOf = (value, options) => options.includes(value);
 
-// ../node_modules/lib0/environment.js
+// node_modules/lib0/environment.js
 var isNode = typeof process !== "undefined" && process.release && /node|io\.js/.test(process.release.name) && Object.prototype.toString.call(typeof process !== "undefined" ? process : 0) === "[object process]";
 var isMac = typeof navigator !== "undefined" ? /Mac/.test(navigator.platform) : false;
 var params;
@@ -1061,7 +1061,7 @@ var forceColor = isNode && isOneOf(process.env.FORCE_COLOR, ["true", "1", "2"]);
 var supportsColor = forceColor || !hasParam("--no-colors") && // @todo deprecate --no-colors
 !hasConf("no-color") && (!isNode || process.stdout.isTTY) && (!isNode || hasParam("--color") || getVariable("COLORTERM") !== null || (getVariable("TERM") || "").includes("color"));
 
-// ../node_modules/lib0/buffer.js
+// node_modules/lib0/buffer.js
 var createUint8ArrayFromLen = (len) => new Uint8Array(len);
 var copyUint8Array = (uint8Array) => {
   const newBuf = createUint8ArrayFromLen(uint8Array.byteLength);
@@ -1069,7 +1069,7 @@ var copyUint8Array = (uint8Array) => {
   return newBuf;
 };
 
-// ../node_modules/lib0/pair.js
+// node_modules/lib0/pair.js
 var Pair = class {
   /**
    * @param {L} left
@@ -1082,7 +1082,7 @@ var Pair = class {
 };
 var create5 = (left, right) => new Pair(left, right);
 
-// ../node_modules/lib0/dom.js
+// node_modules/lib0/dom.js
 var doc = (
   /** @type {Document} */
   typeof document !== "undefined" ? document : {}
@@ -1100,10 +1100,10 @@ var DOCUMENT_NODE = doc.DOCUMENT_NODE;
 var DOCUMENT_TYPE_NODE = doc.DOCUMENT_TYPE_NODE;
 var DOCUMENT_FRAGMENT_NODE = doc.DOCUMENT_FRAGMENT_NODE;
 
-// ../node_modules/lib0/symbol.js
+// node_modules/lib0/symbol.js
 var create6 = Symbol;
 
-// ../node_modules/lib0/logging.common.js
+// node_modules/lib0/logging.common.js
 var BOLD = create6();
 var UNBOLD = create6();
 var BLUE = create6();
@@ -1145,7 +1145,7 @@ var computeNoColorLoggingArgs = (args2) => {
 };
 var lastLoggingTime = getUnixTime();
 
-// ../node_modules/lib0/logging.js
+// node_modules/lib0/logging.js
 var _browserStyleMap = {
   [BOLD]: create5("font-weight", "bold"),
   [UNBOLD]: create5("font-weight", "normal"),
@@ -1215,7 +1215,7 @@ var warn = (...args2) => {
 };
 var vconsoles = create2();
 
-// ../node_modules/lib0/iterator.js
+// node_modules/lib0/iterator.js
 var createIterator = (next) => ({
   /**
    * @return {IterableIterator<T>}
@@ -1238,7 +1238,7 @@ var iteratorMap = (iterator, fmap) => createIterator(() => {
   return { done, value: done ? void 0 : fmap(value) };
 });
 
-// ../node_modules/yjs/dist/yjs.mjs
+// node_modules/yjs/dist/yjs.mjs
 var DeleteItem = class {
   /**
    * @param {number} clock
@@ -1259,12 +1259,9 @@ var iterateDeletedStructs = (transaction, ds, f) => ds.clients.forEach((deletes,
     /** @type {Array<GC|Item>} */
     transaction.doc.store.clients.get(clientid)
   );
-  if (structs != null) {
-    const lastStruct = structs[structs.length - 1];
-    const clockState = lastStruct.id.clock + lastStruct.length;
-    for (let i = 0, del = deletes[i]; i < deletes.length && del.clock < clockState; del = deletes[++i]) {
-      iterateStructs(transaction, structs, del.clock, del.len, f);
-    }
+  for (let i = 0; i < deletes.length; i++) {
+    const del = deletes[i];
+    iterateStructs(transaction, structs, del.clock, del.len, f);
   }
 });
 var findIndexDS = (dis, clock) => {
@@ -3027,7 +3024,7 @@ var popStackItem = (undoManager, stack, eventType) => {
 };
 var UndoManager = class extends ObservableV2 {
   /**
-   * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Limits the scope of the UndoManager. If this is set to a ydoc instance, all changes on that ydoc will be undone. If set to a specific type, only changes on that type or its children will be undone. Also accepts an array of types.
+   * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Accepts either a single type, or an array of types
    * @param {UndoManagerOptions} options
    */
   constructor(typeScope, {
@@ -3120,8 +3117,6 @@ var UndoManager = class extends ObservableV2 {
     });
   }
   /**
-   * Extend the scope.
-   *
    * @param {Array<AbstractType<any> | Doc> | AbstractType<any> | Doc} ytypes
    */
   addToScope(ytypes) {
@@ -4255,8 +4250,6 @@ var typeMapSet = (transaction, parent, key, value) => {
       case Boolean:
       case Array:
       case String:
-      case Date:
-      case BigInt:
         content = new ContentAny([value]);
         break;
       case Uint8Array:
