@@ -50,10 +50,7 @@ export class StreamController<T> {
           async return(): Promise<IteratorResult<T>> {
             // Consumer stopped early
             cleanup();
-            return {
-                done: true,
-                value: undefined as any
-            };
+            return { done: true, value: undefined as any };
           },
 
           async throw(e?: unknown): Promise<IteratorResult<T>> {
@@ -77,9 +74,7 @@ export class StreamController<T> {
         sub.waiter = null;
 
         // Deliver immediately to a parked iterator
-        try {
-          w({ done: false, value });
-        } catch { }
+        w({ done: false, value });
       } else {
         // Buffer for this iterator to pull later
         sub.queue.push(value);
@@ -97,12 +92,7 @@ export class StreamController<T> {
         const w = sub.waiter;
         sub.waiter = null;
 
-        try {
-            w({ done: true, value: undefined as any });
-        } catch { }
-      } else {
-        // No waiter: they'll observe completion on their next `next()`
-        // (and we’ll remove them at that time)
+        w({ done: true, value: undefined as any });
       }
     }
   }
