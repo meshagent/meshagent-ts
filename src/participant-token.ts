@@ -3,16 +3,43 @@ import { decodeJwt, jwtVerify, JWTPayload, SignJWT } from "jose";
 export type StringList = string[];
 
 export class AgentsGrant {
-    public registerAgent = true;
-    public registerPublicToolkit = true;
-    public registerPrivateToolkit = true;
-    public call = true;
-    public useAgents = true;
-    public useTools = true;
+    public registerAgent: boolean;
+    public registerPublicToolkit: boolean;
+    public registerPrivateToolkit: boolean;
+    public call: boolean;
+    public useAgents: boolean;
+    public useTools: boolean;
+
+    constructor({
+        registerAgent,
+        registerPublicToolkit,
+        registerPrivateToolkit,
+        call,
+        useAgents,
+        useTools,
+    }: {
+        registerAgent?: boolean;
+        registerPublicToolkit?: boolean;
+        registerPrivateToolkit?: boolean;
+        call?: boolean;
+        useAgents?: boolean;
+        useTools?: boolean;
+    } = {}) {
+        this.registerAgent = registerAgent ?? true;
+        this.registerPublicToolkit = registerPublicToolkit ?? true;
+        this.registerPrivateToolkit = registerPrivateToolkit ?? true;
+        this.call = call ?? true;
+        this.useAgents = useAgents ?? true;
+        this.useTools = useTools ?? true;
+    }
 }
 
 export class LivekitGrant {
     public breakoutRooms?: StringList;
+
+    constructor({ breakoutRooms }: { breakoutRooms?: StringList } = {}) {
+        this.breakoutRooms = breakoutRooms;
+    }
 
     canJoinBreakoutRoom(name: string): boolean {
         return !this.breakoutRooms || this.breakoutRooms.includes(name);
@@ -24,6 +51,16 @@ export class QueuesGrant {
     public receive?: StringList;
     public list = true;
 
+    constructor({ send, receive, list }: {
+        send?: StringList;
+        receive?: StringList
+        list?: boolean;
+    } = {}) {
+        this.send = send;
+        this.receive = receive;
+        this.list = list ?? true;
+    }
+
     canSend(q: string) {
         return !this.send || this.send.includes(q);
     }
@@ -33,9 +70,19 @@ export class QueuesGrant {
 }
 
 export class MessagingGrant {
-    broadcast = true;
-    list = true;
-    send = true;
+    public broadcast: boolean;
+    public list: boolean;
+    public send: boolean;
+
+    constructor({ broadcast, list, send }: {
+        broadcast?: boolean;
+        list?: boolean;
+        send?: boolean;
+    } = {}) {
+        this.broadcast = broadcast ?? true;
+        this.list = list ?? true;
+        this.send = send ?? true;
+    }
 }
 
 export class TableGrant {
@@ -43,11 +90,28 @@ export class TableGrant {
     public write = false;
     public read = true;
     public alter = false;
+
+    constructor({ name, write, read, alter }: {
+        name: string;
+        write?: boolean;
+        read?: boolean;
+        alter?: boolean;
+    }) {
+        this.name = name;
+        this.write = write ?? false;
+        this.read = read ?? true;
+        this.alter = alter ?? false;
+    }
 }
 
 export class DatabaseGrant {
     public tables?: TableGrant[];
     public listTables = true;
+
+    constructor({ tables, listTables }: { tables?: TableGrant[]; listTables?: boolean } = {}) {
+        this.tables = tables;
+        this.listTables = listTables ?? true;
+    }
 
     private _match(table: string) {
         if (!this.tables) return undefined;
@@ -75,39 +139,61 @@ export class DatabaseGrant {
 }
 
 export class SyncPathGrant {
-    public path!: string;
-    public readOnly = false;
+    public path: string;
+    public readOnly: boolean;
+
+    constructor({ path, readOnly }: { path: string; readOnly?: boolean }) {
+        this.path = path;
+        this.readOnly = readOnly ?? false;
+    }
 }
 
 export class SyncGrant {
     public paths?: SyncPathGrant[];
+
+    constructor({ paths }: { paths?: SyncPathGrant[] } = {}) {
+        this.paths = paths;
+    }
 
     private matches(p: SyncPathGrant, path: string) {
         return p.path === path || (p.path.endsWith("*") && path.startsWith(p.path.slice(0, -1)));
     }
 
     canRead(path: string) {
-        if (!this.paths) return true;
+        if (this.paths) {
+            return this.paths.some(p => this.matches(p, path));
+        }
 
-        return this.paths.some(p => this.matches(p, path));
+        return true;
     }
 
     canWrite(path: string) {
-        if (!this.paths) return true;
+        if (this.paths) {
+            const p = this.paths.find(pp => this.matches(pp, path));
 
-        const p = this.paths.find(pp => this.matches(pp, path));
+            return p ? !p.readOnly : false;
+        }
 
-        return p ? !p.readOnly : false;
+        return true;
     }
 }
 
 export class StoragePathGrant {
-    public path!: string;
-    public readOnly = false;
+    public path: string;
+    public readOnly: boolean;
+
+    constructor({ path, readOnly }: { path: string; readOnly?: boolean }) {
+        this.path = path;
+        this.readOnly = readOnly ?? false;
+    }
 }
 
 export class StorageGrant {
     public paths?: StoragePathGrant[];
+
+    constructor({ paths }: { paths?: StoragePathGrant[] } = {}) {
+        this.paths = paths;
+    }
 
     private matches(p: StoragePathGrant, path: string) {
         return path.startsWith(p.path);
@@ -129,11 +215,25 @@ export class StorageGrant {
 }
 
 export class ContainersGrant {
-    public build = true;
-    public logs = true;
+    public build: boolean;
+    public logs: boolean;
     public pull?: StringList;
     public run?: StringList;
-    public use_containers = true;
+    public useContainers: boolean;
+
+    constructor({ build, logs, pull, run, useContainers }: {
+        build?: boolean;
+        logs?: boolean;
+        pull?: StringList;
+        run?: StringList;
+        useContainers?: boolean;
+    } = {}) {
+        this.build = build ?? true;
+        this.logs = logs ?? true;
+        this.pull = pull;
+        this.run = run;
+        this.useContainers = useContainers ?? true;
+    }
 
     private match(list: StringList | undefined, tag: string) {
         if (!list) {
@@ -153,11 +253,19 @@ export class ContainersGrant {
 }
 
 export class DeveloperGrant {
-    public logs = true;
+    public logs: boolean;
+
+    constructor({ logs }: { logs?: boolean } = {}) {
+        this.logs = logs ?? true;
+    }
 }
 
 export class AdminGrant {
     public paths?: StoragePathGrant[];
+
+    constructor({ paths }: { paths?: StoragePathGrant[] } = {}) {
+        this.paths = paths;
+    }
 
     private matches(p: StoragePathGrant, path: string) {
         return path.startsWith(p.path);
@@ -208,6 +316,44 @@ export class ApiScope {
     public agents?: AgentsGrant;
     public admin?: AdminGrant;
     public secrets?: SecretsGrant;
+
+    constructor({
+        livekit,
+        queues,
+        messaging,
+        database,
+        sync,
+        storage,
+        containers,
+        developer,
+        agents,
+        admin,
+        secrets,
+    }: {
+        livekit?: LivekitGrant;
+        queues?: QueuesGrant;
+        messaging?: MessagingGrant;
+        database?: DatabaseGrant;
+        sync?: SyncGrant;
+        storage?: StorageGrant;
+        containers?: ContainersGrant;
+        developer?: DeveloperGrant;
+        agents?: AgentsGrant;
+        admin?: AdminGrant;
+        secrets?: SecretsGrant;
+    } = {}) {
+        this.livekit = livekit;
+        this.queues = queues;
+        this.messaging = messaging;
+        this.database = database;
+        this.sync = sync;
+        this.storage = storage;
+        this.containers = containers;
+        this.developer = developer;
+        this.agents = agents;
+        this.admin = admin;
+        this.secrets = secrets;
+    }
 
     static agentDefault(): ApiScope {
         const s = new ApiScope();
@@ -387,20 +533,31 @@ export class ParticipantToken {
         return this.grants.find(g => g.name === name)?.scope;
     }
 
-    getApiGrant(): ApiScope | undefined {
+    getApiGrant(): string | ApiScope | undefined {
         const api = this.grantScope("api");
 
         if (api && typeof api !== "string") {
             return api as ApiScope;
         }
 
-        if (this.version && compareSemver(this.version, "0.5.3") <= 0 && !api) {
-            const fallback = ApiScope.agentDefault();
+        if (this.version && compareSemver(this.version, "0.6.0") < 0 && !api) {
+            return new ApiScope({
+                livekit: new LivekitGrant(),
+                queues: new QueuesGrant(),
+                messaging: new MessagingGrant(),
+                database: new DatabaseGrant(),
+                sync: new SyncGrant(),
+                storage: new StorageGrant(),
+                agents: new AgentsGrant(),
+                developer: new DeveloperGrant(),
 
-            fallback.containers = new ContainersGrant();
-
-            return fallback;
+                // TODO: this should be removed so you have to use fine grained tokens to enable, temp hack to unblock powerboards
+                // containers: new ContainersGrant(),
+                // secrets: new SecretsGrant(),
+            });
         }
+
+        return api;
     }
 
     toJson(): Record<string, any> {
@@ -426,25 +583,40 @@ export class ParticipantToken {
         token: string;
         expiration?: Date;
     }): Promise<string> {
+        let apiGrant = null;
+
+        for (const g of this.grants) {
+            if (g.name === "api") {
+                apiGrant = g;
+
+                break;
+            }
+        }
+
+        if (!apiGrant && this.version && compareSemver(this.version, "0.5.3") >= 0) {
+            console.error(
+                "ParticipantToken.toJwt: No API grant found, but version is >= 0.5.3. " +
+                "This may cause issues with older clients that expect an API grant."
+            );
+        }
+
         // jose requires a Uint8Array key for HMAC
         const secretKey = new TextEncoder().encode(token);
 
         // Merge core token JSON plus any extras
-        const payload: JWTPayload = {
-            ...this.toJson(),
-            ...this.extra,
-        };
+        const payload: JWTPayload = this.toJson();
 
         // Sign using HS256
         if (expiration) {
             payload.exp = Math.floor(expiration.getTime() / 1000);
         }
 
-        const jwt = await new SignJWT(payload)
-            .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-            .sign(secretKey);
+        const jwt = new SignJWT(payload)
+            .setProtectedHeader({ alg: "HS256", typ: "JWT" });
 
-        return jwt;
+        const jwtToken = await jwt.sign(secretKey);
+
+        return jwtToken;
     }
 
     /**
@@ -473,14 +645,13 @@ export class ParticipantToken {
      * Decodes a JWT to a ParticipantToken.
      * Provide `token` to verify (HS256). Set `verify=false` to just decode.
      */
-    static async fromJwt(jwtStr: string, options: { token?: string; verify?: boolean }): Promise<ParticipantToken> {
+    static async fromJwt(jwtStr: string, options: { token?: string; verify?: boolean } = {}): Promise<ParticipantToken> {
         const { token, verify = true } = options ?? {};
 
         if (verify) {
             const secretKey = new TextEncoder().encode(token);
 
             const { payload } = await jwtVerify(jwtStr, secretKey, {
-                // optional: specify allowed algorithms
                 algorithms: ["HS256"],
             });
 
