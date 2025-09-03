@@ -42,10 +42,12 @@
     },
     "dependencies": {
         "@kayahr/text-encoding": "^2.0.0",
+        "base-64": "^1.0.0",
         "isomorphic-ws": "^5.0.0",
         "jose": "^6.0.8",
         "livekit-client": "^2.15.5",
         "uuid": "^11.0.5",
-        "ws": "^8.18.0"
+        "ws": "^8.18.0",
+        "yjs": "^13.6.7"
     }
 }
