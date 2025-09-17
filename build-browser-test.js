@@ -1,4 +1,4 @@
-const esbuild = require("esbuild");
+const esbuild = self._require("esbuild");
 
 const define = {
     "process.env.MESHAGENT_SECRET": JSON.stringify(process.env.MESHAGENT_SECRET),
