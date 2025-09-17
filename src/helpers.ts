@@ -1,6 +1,6 @@
 import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
-import { ParticipantToken } from './participant-token';
+import { ParticipantToken, ApiScope } from './participant-token';
 import { WebSocketClientProtocol } from './protocol';
 
 /**
@@ -84,6 +84,8 @@ export function participantToken({
     if (role) {
         token.addRoleGrant(role);
     }
+
+    token.addApiGrant(ApiScope.agentDefault());
 
     return token;
 }
