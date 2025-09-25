@@ -261,32 +261,6 @@ export class DeveloperGrant {
 }
 
 export class AdminGrant {
-    public paths?: StoragePathGrant[];
-
-    constructor({ paths }: { paths?: StoragePathGrant[] } = {}) {
-        this.paths = paths;
-    }
-
-    private matches(p: StoragePathGrant, path: string) {
-        return path.startsWith(p.path);
-    }
-
-    canRead(path: string) {
-        if (!this.paths) {
-            return true;
-        }
-
-        return this.paths.some(p => this.matches(p, path));
-    }
-    canWrite(path: string) {
-        if (!this.paths) {
-            return true;
-        }
-
-        const p = this.paths.find(pp => this.matches(pp, path));
-
-        return p ? !p.readOnly : false;
-    }
 }
 
 export class SecretsGrant {
