@@ -3,6 +3,7 @@
 // Replace these with your real imports:
 import { RoomClient } from "./room-client";
 import { Response, JsonResponse } from "./response";
+import { RemoteParticipant } from "./participant";
 import { Requirement, RequiredToolkit, RequiredSchema } from "./requirement";
 
 /**
@@ -216,7 +217,7 @@ export class ToolkitConfiguration {
     constructor(
         public name: string,
         public use?: string[] // null => use all
-    ) {}
+    ) { }
 
     toJson(): Record<string, any> {
         if (!this.use) {
@@ -243,7 +244,7 @@ export class ToolkitConfiguration {
 export class AgentsClient {
     private client: RoomClient;
 
-    constructor({room}: {room: RoomClient}) {
+    constructor({ room }: { room: RoomClient }) {
         this.client = room;
     }
 
@@ -263,25 +264,30 @@ export class AgentsClient {
      * Returns the "answer" field from the JSON response.
      */
     public async ask(params: {
-        agentName: string;
-        toolkits?: ToolkitConfiguration[];
+        agent: string;
         arguments: Record<string, any>;
-    }): Promise<Record<string, any>> {
-        const { agentName, toolkits = [], arguments: args } = params;
+        onBehalfOf?: RemoteParticipant;
+        requires?: Requirement[];
+    }): Promise<JsonResponse> {
+        const { agent, arguments: args, onBehalfOf, requires } = params;
 
-        // Merge all toolkits into one object
-        const usedToolkits: Record<string, any> = {};
-        for (const t of toolkits) {
-            Object.assign(usedToolkits, t.toJson());
+        const payload: Record<string, any> = {
+            agent,
+            arguments: args,
+        };
+
+        if (onBehalfOf) {
+            payload["on_behalf_of_id"] = onBehalfOf.id;
         }
 
-        const result = (await this.client.sendRequest("agent.ask", {
-            agent: agentName,
-            arguments: args,
-            toolkits: usedToolkits,
-        })) as JsonResponse;
+        if (requires && requires.length > 0) {
+            payload["requires"] = requires.map((req) => req.toJson());
+        }
 
-        return result.json["answer"];
+        const result = (await this.client.sendRequest("agent.ask", payload)) as JsonResponse;
+        const answer = (result.json["answer"] ?? {}) as Record<string, any>;
+
+        return new JsonResponse({ json: answer });
     }
 
     /**

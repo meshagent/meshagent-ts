@@ -3,6 +3,7 @@
 import { expect } from "chai";
 
 import {
+    AgentsClient,
     AgentCallContext,
     FileResponse,
     JsonResponse,
@@ -10,6 +11,8 @@ import {
     EmptyResponse,
     RemoteTaskRunner,
     RemoteToolkit,
+    RemoteParticipant,
+    RequiredToolkit,
     RoomClient,
     Tool,
     websocketProtocol,
@@ -191,12 +194,71 @@ describe("agent_client_test", function () {
 
     it("test_can_ask_agent", async () => {
         const result = await client1.agents.ask({
-            agentName: "add",
+            agent: "add",
             arguments: { a: 1, b: 2 },
         });
 
-        expect(result).to.have.property("sum");
-        expect(result.sum).to.equal(3);
+        expect(result).to.be.instanceOf(JsonResponse);
+        expect(result.json).to.have.property("sum");
+        expect(result.json.sum).to.equal(3);
+    });
+
+    it("test_ask_includes_optional_arguments", async () => {
+        const calls: { type: string; payload: Record<string, any> }[] = [];
+        const fakeRoom = {
+            async sendRequest(type: string, payload: Record<string, any>) {
+                calls.push({ type, payload });
+                return new JsonResponse({ json: { answer: { result: "ok" } } });
+            },
+        };
+
+        const agentsClient = new AgentsClient({ room: fakeRoom as unknown as RoomClient });
+        const onBehalfOf = new RemoteParticipant(fakeRoom as unknown as RoomClient, "participant-123", "tester");
+        const requires = [new RequiredToolkit({ name: "test-toolkit", tools: ["alpha"] })];
+
+        const response = await agentsClient.ask({
+            agent: "test-agent",
+            arguments: { foo: "bar" },
+            onBehalfOf,
+            requires
+        });
+
+        expect(calls).to.have.lengthOf(1);
+        expect(calls[0].type).to.equal("agent.ask");
+
+        expect(calls[0].payload).to.deep.equal({
+            agent: "test-agent",
+            arguments: { foo: "bar" },
+            on_behalf_of_id: "participant-123",
+            requires: requires.map((req) => req.toJson()),
+        });
+
+        expect(response).to.be.instanceOf(JsonResponse);
+        expect(response.json).to.deep.equal({ result: "ok" });
+    });
+
+    it("test_ask_omits_optional_arguments_when_not_provided", async () => {
+        let received: Record<string, any> | undefined;
+        const fakeRoom = {
+            async sendRequest(type: string, payload: Record<string, any>) {
+                received = payload;
+                return new JsonResponse({ json: { answer: { status: "ok" } } });
+            },
+        };
+
+        const agentsClient = new AgentsClient({ room: fakeRoom as unknown as RoomClient });
+
+        const response = await agentsClient.ask({
+            agent: "simple-agent",
+            arguments: { ping: true },
+        });
+
+        expect(received).to.deep.equal({
+            agent: "simple-agent",
+            arguments: { ping: true },
+        });
+
+        expect(response.json).to.deep.equal({ status: "ok" });
     });
 
     it("test_can_invoke_json_tool", async () => {

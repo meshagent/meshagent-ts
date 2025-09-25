@@ -1,4 +1,5 @@
 export * from './agent';
+export * from './agent-client';
 export * from './event-emitter';
 export * from './client';
 export * from './completer';
