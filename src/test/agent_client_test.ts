@@ -15,6 +15,7 @@ import {
     RequiredToolkit,
     RoomClient,
     Tool,
+    ToolkitDescription,
     websocketProtocol,
 } from "../index";
 
@@ -259,6 +260,60 @@ describe("agent_client_test", function () {
         });
 
         expect(response.json).to.deep.equal({ status: "ok" });
+    });
+
+    it("test_toolkit_description_json_round_trip", () => {
+        const rawToolkit = {
+            name: "math",
+            title: "Math Toolkit",
+            description: "Performs mathematical operations",
+            thumbnail_url: "https://example.com/toolkit.png",
+            tools: [
+                {
+                    name: "adder",
+                    title: "Adder",
+                    description: "Adds two numbers",
+                    input_schema: { type: "object" },
+                    thumbnail_url: "https://example.com/tool.png",
+                    defs: { NumberInput: { type: "number" } },
+                },
+                {
+                    name: "subtractor",
+                    title: "Subtractor",
+                    description: "Subtracts numbers",
+                    input_schema: { type: "object" },
+                    thumbnail_url: undefined,
+                    defs: undefined,
+                },
+            ],
+        };
+
+        const toolkit = ToolkitDescription.fromJson(rawToolkit);
+
+        expect(toolkit.toJson()).to.deep.equal({
+            name: "math",
+            title: "Math Toolkit",
+            description: "Performs mathematical operations",
+            thumbnail_url: "https://example.com/toolkit.png",
+            tools: [
+                {
+                    name: "adder",
+                    title: "Adder",
+                    description: "Adds two numbers",
+                    input_schema: { type: "object" },
+                    thumbnail_url: "https://example.com/tool.png",
+                    defs: { NumberInput: { type: "number" } },
+                },
+                {
+                    name: "subtractor",
+                    title: "Subtractor",
+                    description: "Subtracts numbers",
+                    input_schema: { type: "object" },
+                    thumbnail_url: undefined,
+                    defs: undefined,
+                },
+            ],
+        });
     });
 
     it("test_can_invoke_json_tool", async () => {

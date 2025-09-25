@@ -152,6 +152,26 @@ export class ToolkitDescription {
     }
 
     /**
+     * 
+     */
+    public toJson(): Record<string, any> {
+        return {
+            name: this.name,
+            description: this.description,
+            title: this.title,
+            thumbnail_url: this.thumbnailUrl,
+            tools: this.tools.map((tool) => ({
+                name: tool.name,
+                title: tool.title,
+                description: tool.description,
+                input_schema: tool.inputSchema,
+                thumbnail_url: tool.thumbnailUrl,
+                defs: tool.defs,
+            })),
+        };
+    }
+
+    /**
      * Static factory method to create a ToolkitDescription from JSON data.
      * @param json The JSON object to parse.
      * @param name If provided, overrides json["name"].
