@@ -98,15 +98,19 @@ export class ToolDescription {
     public description: string;
     public inputSchema: Record<string, any>;
     public defs?: Record<string, any>;
-    public thumbnailUrl?: string
+    public thumbnailUrl?: string;
+    public pricing?: string;
+    public supportsContext?: boolean;
 
-    constructor({ title, name, description, inputSchema, thumbnailUrl, defs }: {
+    constructor({ title, name, description, inputSchema, thumbnailUrl, defs, pricing, supportsContext }: {
         title: string;
         name: string;
         description: string;
         inputSchema: Record<string, any>;
         thumbnailUrl?: string;
         defs?: Record<string, any>;
+        pricing?: string;
+        supportsContext?: boolean;
     }) {
         this.title = title;
         this.name = name;
@@ -114,6 +118,8 @@ export class ToolDescription {
         this.inputSchema = inputSchema;
         this.thumbnailUrl = thumbnailUrl;
         this.defs = defs;
+        this.pricing = pricing;
+        this.supportsContext = supportsContext ?? false;
     }
 }
 
@@ -152,6 +158,26 @@ export class ToolkitDescription {
     }
 
     /**
+     * 
+     */
+    public toJson(): Record<string, any> {
+        return {
+            name: this.name,
+            description: this.description,
+            title: this.title,
+            thumbnail_url: this.thumbnailUrl,
+            tools: this.tools.map((tool) => ({
+                name: tool.name,
+                title: tool.title,
+                description: tool.description,
+                input_schema: tool.inputSchema,
+                thumbnail_url: tool.thumbnailUrl,
+                defs: tool.defs,
+            })),
+        };
+    }
+
+    /**
      * Static factory method to create a ToolkitDescription from JSON data.
      * @param json The JSON object to parse.
      * @param name If provided, overrides json["name"].
@@ -177,6 +203,8 @@ export class ToolkitDescription {
                         inputSchema: tool["input_schema"],
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
+                        pricing: tool["pricing"],
+                        supportsContext: tool["supportsContext"],
                     })
                 );
             }
@@ -195,6 +223,8 @@ export class ToolkitDescription {
                         inputSchema: tool["input_schema"],
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
+                        pricing: tool["pricing"],
+                        supportsContext: tool["supportsContext"],
                     })
                 );
             }
