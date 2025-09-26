@@ -110,7 +110,7 @@ export class ToolDescription {
         thumbnailUrl?: string;
         defs?: Record<string, any>;
         pricing?: string;
-        supportsContext: boolean;
+        supportsContext?: boolean;
     }) {
         this.title = title;
         this.name = name;
@@ -203,6 +203,8 @@ export class ToolkitDescription {
                         inputSchema: tool["input_schema"],
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
+                        pricing: tool["pricing"],
+                        supportsContext: tool["supportsContext"],
                     })
                 );
             }
@@ -221,6 +223,8 @@ export class ToolkitDescription {
                         inputSchema: tool["input_schema"],
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
+                        pricing: tool["pricing"],
+                        supportsContext: tool["supportsContext"],
                     })
                 );
             }
