@@ -98,15 +98,19 @@ export class ToolDescription {
     public description: string;
     public inputSchema: Record<string, any>;
     public defs?: Record<string, any>;
-    public thumbnailUrl?: string
+    public thumbnailUrl?: string;
+    public pricing?: string;
+    public supportsContext?: boolean;
 
-    constructor({ title, name, description, inputSchema, thumbnailUrl, defs }: {
+    constructor({ title, name, description, inputSchema, thumbnailUrl, defs, pricing, supportsContext }: {
         title: string;
         name: string;
         description: string;
         inputSchema: Record<string, any>;
         thumbnailUrl?: string;
         defs?: Record<string, any>;
+        pricing?: string;
+        supportsContext: boolean;
     }) {
         this.title = title;
         this.name = name;
@@ -114,6 +118,8 @@ export class ToolDescription {
         this.inputSchema = inputSchema;
         this.thumbnailUrl = thumbnailUrl;
         this.defs = defs;
+        this.pricing = pricing;
+        this.supportsContext = supportsContext ?? false;
     }
 }
 
