@@ -44,6 +44,10 @@ export abstract class DataType {
   public static text(): TextDataType {
     return new TextDataType();
   }
+
+  public static binary(): BinaryDataType {
+    return new BinaryDataType();
+  }
 }
 
 /**
@@ -163,4 +167,25 @@ export class TextDataType extends DataType {
   }
 }
 _dataTypes["text"] = TextDataType;
+
+/**
+ * BinaryDataType
+ */
+export class BinaryDataType extends DataType {
+  constructor() {
+    super();
+  }
+
+  public static override fromJson(data: any): BinaryDataType {
+    if (data.type !== "binary") {
+      throw new Error(`Expected type 'binary', got '${data.type}'`);
+    }
+    return new BinaryDataType();
+  }
+
+  public toJson(): Record<string, unknown> {
+    return { type: "binary" };
+  }
+}
+_dataTypes["binary"] = BinaryDataType;
 
