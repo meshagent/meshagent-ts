@@ -3,6 +3,8 @@
 import { expect } from "chai";
 
 import {
+    AgentDescription,
+    RequiredSchema,
     AgentsClient,
     AgentCallContext,
     FileResponse,
@@ -140,6 +142,66 @@ class AddAgent extends RemoteTaskRunner {
         };
     }
 }
+
+describe("AgentDescription", () => {
+
+    it("defaults optional fields when omitted", () => {
+        const minimal = {
+            name: "simple-agent",
+            description: "A simple agent",
+        };
+
+        const description = AgentDescription.fromJson(minimal);
+
+        expect(description.title).to.equal("");
+        expect(description.requires).to.deep.equal([]);
+        expect(description.labels).to.deep.equal([]);
+        expect(description.supportsTools).to.equal(false);
+    });
+
+    it("serialises to JSON", () => {
+        const requires = [
+            new RequiredToolkit({ name: "toolkit", tools: ["adder"] }),
+            new RequiredSchema({ name: "adder-schema" }),
+        ];
+
+        const agent = new AgentDescription({
+            name: "adder",
+            title: "Adder",
+            description: "Adds numbers",
+            inputSchema: { type: "object" },
+            outputSchema: { type: "object" },
+            labels: ["math"],
+            supportsTools: true,
+            requires,
+        });
+
+        const json = agent.toJson();
+
+        expect(json).to.deep.equal({
+            name: "adder",
+            title: "Adder",
+            description: "Adds numbers",
+            input_schema: { type: "object" },
+            output_schema: { type: "object" },
+            labels: ["math"],
+            supports_tools: true,
+            requires: requires.map((req) => req.toJson()),
+        });
+
+        const roundTripped = AgentDescription.fromJson(json);
+        expect(roundTripped.name).to.equal(agent.name);
+        expect(roundTripped.title).to.equal(agent.title);
+        expect(roundTripped.description).to.equal(agent.description);
+        expect(roundTripped.inputSchema).to.deep.equal(agent.inputSchema);
+        expect(roundTripped.outputSchema).to.deep.equal(agent.outputSchema);
+        expect(roundTripped.labels).to.deep.equal(agent.labels);
+        expect(roundTripped.supportsTools).to.equal(agent.supportsTools);
+        expect(roundTripped.requires.map((r) => r.toJson())).to.deep.equal(
+            requires.map((r) => r.toJson())
+        );
+    });
+});
 
 describe("agent_client_test", function () {
     // Increase timeout if necessary for WebSocket connections

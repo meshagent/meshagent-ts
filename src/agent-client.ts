@@ -17,7 +17,7 @@ export class AgentDescription {
     public readonly inputSchema?: Record<string, any>;
     public readonly requires: Requirement[];
     public readonly labels: string[];
-    public readonly supportsTools: boolean;
+    public readonly supportsTools?: boolean;
 
     constructor({
         name,
@@ -34,18 +34,34 @@ export class AgentDescription {
         description: string;
         outputSchema?: Record<string, any>;
         inputSchema?: Record<string, any>;
-        requires: Requirement[];
-        labels: string[];
-        supportsTools: boolean;
+        requires?: Requirement[];
+        labels?: string[];
+        supportsTools?: boolean;
     }) {
         this.name = name;
         this.title = title;
         this.description = description;
         this.outputSchema = outputSchema;
         this.inputSchema = inputSchema;
-        this.requires = requires;
-        this.labels = labels;
-        this.supportsTools = supportsTools;
+        this.requires = Array.isArray(requires) ? requires : [];
+        this.labels = Array.isArray(labels) ? labels : [];
+        this.supportsTools = supportsTools ?? false;
+    }
+
+    /**
+    * Serialises the agent description to a JSON-compatible structure.
+    */
+    public toJson(): Record<string, any> {
+        return {
+            name: this.name,
+            title: this.title,
+            description: this.description,
+            input_schema: this.inputSchema,
+            output_schema: this.outputSchema,
+            labels: this.labels,
+            supports_tools: this.supportsTools,
+            requires: this.requires.map((requirement) => requirement.toJson()),
+        };
     }
 
     /**
