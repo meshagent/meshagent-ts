@@ -17,7 +17,7 @@ export class AgentDescription {
     public readonly inputSchema?: Record<string, any>;
     public readonly requires: Requirement[];
     public readonly labels: string[];
-    public readonly supportsTools?: boolean;
+    public readonly supportsTools: boolean;
 
     constructor({
         name,
@@ -36,7 +36,7 @@ export class AgentDescription {
         inputSchema?: Record<string, any>;
         requires?: Requirement[];
         labels?: string[];
-        supportsTools?: boolean;
+        supportsTools: boolean;
     }) {
         this.name = name;
         this.title = title;
