@@ -1,4 +1,5 @@
 import { decodeJwt, jwtVerify, JWTPayload, SignJWT } from "jose";
+import { parseApiKey } from "./api_keys";
 
 export type StringList = string[];
 
@@ -553,10 +554,11 @@ export class ParticipantToken {
         return base;
     }
 
-    public async toJwt({ token, expiration}: {
-        token: string;
+    public async toJwt({ token, expiration, apiKey }: {
+        token?: string;
         expiration?: Date;
-    }): Promise<string> {
+        apiKey?: string;
+    } = {}): Promise<string> {
         let apiGrant = null;
 
         for (const g of this.grants) {
@@ -574,11 +576,54 @@ export class ParticipantToken {
             );
         }
 
+        let resolvedSecret = token;
+        let resolvedKid = this.apiKeyId;
+        let resolvedSub = this.projectId;
+
+        const apiKeyValue = apiKey ?? process.env.MESHAGENT_API_KEY;
+
+        if (apiKeyValue) {
+            const parsed = parseApiKey(apiKeyValue);
+
+            resolvedSecret ??= parsed.secret;
+            resolvedKid = parsed.id;
+            resolvedSub = parsed.projectId;
+        }
+
+        let usingDefaultSecret = false;
+
+        if (!resolvedSecret) {
+            const envSecret = process.env.MESHAGENT_SECRET;
+
+            if (!envSecret) {
+                throw new Error(
+                    "ParticipantToken.toJwt: No secret provided. Pass `token`, `apiKey`, or set MESHAGENT_SECRET / MESHAGENT_API_KEY."
+                );
+            }
+
+            resolvedSecret = envSecret;
+            usingDefaultSecret = true;
+        }
+
         // jose requires a Uint8Array key for HMAC
-        const secretKey = new TextEncoder().encode(token);
+        const secretKey = new TextEncoder().encode(resolvedSecret);
 
         // Merge core token JSON plus any extras
         const payload: JWTPayload = this.toJson();
+
+        if (resolvedSub) {
+            payload["sub"] = resolvedSub;
+        } else {
+            delete payload["sub"];
+        }
+
+        if (usingDefaultSecret) {
+            delete payload["kid"];
+        } else if (resolvedKid) {
+            payload["kid"] = resolvedKid;
+        } else {
+            delete payload["kid"];
+        }
 
         // Sign using HS256
         if (expiration) {

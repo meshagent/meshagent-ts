@@ -2,6 +2,7 @@ import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken, ApiScope } from './participant-token';
 import { WebSocketClientProtocol } from './protocol';
+import { parseApiKey } from './api_keys';
 
 /**
  * Validate schema name: cannot contain '.'.
@@ -70,14 +71,30 @@ export function participantToken({
     role,
     projectId,
     apiKeyId,
+    apiKey,
 }: {
     participantName: string;
     roomName: string;
     role?: string;
-    projectId: string;
-    apiKeyId: string;
+    projectId?: string;
+    apiKeyId?: string;
+    apiKey?: string;
 }): ParticipantToken {
-    const token = new ParticipantToken({ name: participantName, projectId, apiKeyId });
+    let resolvedProjectId = projectId;
+    let resolvedApiKeyId = apiKeyId;
+
+    if (apiKey) {
+        const parsed = parseApiKey(apiKey);
+
+        resolvedProjectId ??= parsed.projectId;
+        resolvedApiKeyId ??= parsed.id;
+    }
+
+    const token = new ParticipantToken({
+        name: participantName,
+        projectId: resolvedProjectId,
+        apiKeyId: resolvedApiKeyId,
+    });
 
     token.addRoomGrant(roomName);
 
@@ -93,18 +110,19 @@ export function participantToken({
 /**
  * Create a WebSocket protocol instance for the given participant and room.
  */
-export async function websocketProtocol({ participantName, roomName, role, projectId, apiKeyId, secret, apiUrl }: {
+export async function websocketProtocol({ participantName, roomName, role, projectId, apiKeyId, apiKey, secret, apiUrl }: {
     participantName: string;
     roomName: string;
     role?: string;
-    projectId: string;
-    apiKeyId: string;
-    secret: string;
+    projectId?: string;
+    apiKeyId?: string;
+    secret?: string;
     apiUrl?: string;
+    apiKey?: string;
 }): Promise<WebSocketClientProtocol> {
     const url = websocketRoomUrl({ roomName, apiUrl });
-    const token = participantToken({ participantName, roomName, role, projectId, apiKeyId });
-    const jwt = await token.toJwt({ token: secret });
+    const token = participantToken({ participantName, roomName, role, projectId, apiKeyId, apiKey });
+    const jwt = await token.toJwt({ token: secret, apiKey });
 
     return new WebSocketClientProtocol({ url, token: jwt });
 }

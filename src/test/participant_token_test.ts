@@ -17,6 +17,8 @@ import {
     ContainersGrant,
     ApiScope,
     ParticipantToken,
+    encodeApiKey,
+    parseApiKey,
 } from "../index";
 
 
@@ -204,6 +206,26 @@ describe("ParticipantToken", () => {
         expect(recovered.name).to.equal("dave");
     });
 
+    it("token jwt with api key", async () => {
+        const apiKey = encodeApiKey({
+            id: "72c17196-3f2d-4444-a55b-39825e35cbb7",
+            projectId: "44bb91aa-2555-4487-8173-580027a87558",
+            secret: "api-key-secret",
+        });
+
+        const pt = new ParticipantToken({ name: "frank" });
+
+        const jwtStr = await pt.toJwt({ apiKey });
+        const parsed = parseApiKey(apiKey);
+
+        const { payload } = await jwtVerify(jwtStr, new TextEncoder().encode(parsed.secret), {
+            algorithms: ["HS256"],
+        });
+
+        expect(payload.kid).to.equal(parsed.id);
+        expect(payload.sub).to.equal(parsed.projectId);
+    });
+
     it("token expiration", async () => {
         const secret = "expire‑secret";
 
@@ -218,6 +240,37 @@ describe("ParticipantToken", () => {
         const expAsSeconds = typeof payload.exp === "number" ? payload.exp : 0;
 
         expect(Math.abs(expAsSeconds - Math.floor(exp.getTime() / 1000))).to.be.lessThan(2);
+    });
+
+    it("token jwt uses default secret and strips kid", async () => {
+        const token = new ParticipantToken({ name: "grace", apiKeyId: "should-strip" });
+        const envVars = process.env as Record<string, string | undefined>;
+        const previousSecret = envVars.MESHAGENT_SECRET;
+        const previousApiKey = envVars.MESHAGENT_API_KEY;
+
+        envVars.MESHAGENT_SECRET = "default-secret";
+        delete envVars.MESHAGENT_API_KEY;
+
+        try {
+            const jwtStr = await token.toJwt();
+            const { payload } = await jwtVerify(jwtStr, new TextEncoder().encode("default-secret"), {
+                algorithms: ["HS256"],
+            });
+
+            expect(payload.kid).to.equal(undefined);
+        } finally {
+            if (previousSecret === undefined) {
+                delete envVars.MESHAGENT_SECRET;
+            } else {
+                envVars.MESHAGENT_SECRET = previousSecret;
+            }
+
+            if (previousApiKey === undefined) {
+                delete envVars.MESHAGENT_API_KEY;
+            } else {
+                envVars.MESHAGENT_API_KEY = previousApiKey;
+            }
+        }
     });
 });
 
