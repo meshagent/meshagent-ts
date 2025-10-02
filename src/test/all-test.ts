@@ -5,3 +5,4 @@ import "./messaging_client_test";
 import "./participant_token_test";
 import "./queues_client_test";
 import "./storage_client_test";
+import "./keys_test";
