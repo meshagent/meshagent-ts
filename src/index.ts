@@ -7,6 +7,7 @@ export * from './data-types';
 export * from './database-client';
 export * from './developer-client';
 export * from './document';
+export * from './meshagent-client';
 export * from './messaging-client';
 export * from './participant-token';
 export * from './participant';
