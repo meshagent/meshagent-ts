@@ -342,6 +342,23 @@ export class ApiScope {
         s.containers = new ContainersGrant();
         s.developer = new DeveloperGrant();
         s.agents = new AgentsGrant();
+
+        return s;
+    }
+    
+
+    static userDefault(): ApiScope {
+        const s = new ApiScope();
+
+        s.livekit = new LivekitGrant();
+        s.queues = new QueuesGrant();
+        s.messaging = new MessagingGrant();
+        s.database = new DatabaseGrant();
+        s.sync = new SyncGrant();
+        s.storage = new StorageGrant();
+        s.containers = new ContainersGrant();
+        s.developer = new DeveloperGrant();
+        s.agents = new AgentsGrant();
         s.secrets = new SecretsGrant();
 
         return s;
