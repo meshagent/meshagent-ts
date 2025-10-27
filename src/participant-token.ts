@@ -216,20 +216,17 @@ export class StorageGrant {
 }
 
 export class ContainersGrant {
-    public build: boolean;
     public logs: boolean;
     public pull?: StringList;
     public run?: StringList;
     public useContainers: boolean;
 
-    constructor({ build, logs, pull, run, useContainers }: {
-        build?: boolean;
+    constructor({ logs, pull, run, useContainers }: {
         logs?: boolean;
         pull?: StringList;
         run?: StringList;
         useContainers?: boolean;
     } = {}) {
-        this.build = build ?? true;
         this.logs = logs ?? true;
         this.pull = pull;
         this.run = run;
