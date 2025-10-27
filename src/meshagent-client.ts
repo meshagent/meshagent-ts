@@ -59,65 +59,136 @@ export interface ProjectUserGrantCount {
     email: string;
 }
 
-export type EndpointType = "mcp.sse" | "meshagent.callable" | "http" | "tcp";
-export type ServiceRole = "user" | "tool" | "agent";
+export interface EnvironmentVariable {
+    name: string;
+    value: string;
+}
 
-export interface Endpoint {
-    type: EndpointType;
-    path?: string | null;
-    participantName?: string | null;
-    role?: ServiceRole | null;
+export interface RoomStorageMountSpec {
+    path: string;
+    subpath?: string | null;
+    read_only?: boolean;
+}
+
+export interface ProjectStorageMountSpec {
+    path: string;
+    subpath?: string | null;
+    read_only?: boolean;
+}
+
+export interface ServiceStorageMountsSpec {
+    room?: RoomStorageMountSpec[];
+    project?: ProjectStorageMountSpec[];
+}
+
+export interface ServiceApiKeySpec {
+    role: "admin";
+    name: string;
+    auto_provision?: boolean | null;
+}
+
+export interface ServiceMetadata {
+    name: string;
+    description?: string | null;
+    repo?: string | null;
+    icon?: string | null;
+    annotations?: Record<string, string> | null;
+}
+
+export interface ContainerSpec {
+    command?: string | null;
+    image: string;
+    environment?: EnvironmentVariable[] | null;
+    secrets?: string[];
+    pull_secret?: string | null;
+    storage?: ServiceStorageMountsSpec;
+    api_key?: ServiceApiKeySpec;
+}
+
+export interface ExternalServiceSpec {
+    url: string;
+}
+
+export interface MeshagentEndpointSpec {
+    identity: string;
     api?: ApiScope;
 }
 
-export interface Port {
-    livenessPath?: string | null;
-    participantName?: string | null;
-    type?: EndpointType | null;
-    path?: string | null;
-    endpoints?: Endpoint[];
+export interface AllowedMcpToolFilter {
+    tool_names?: string[] | null;
+    read_only?: boolean | null;
 }
 
-export interface RoomStorageMount {
+export interface OAuthClientConfig {
+    client_id: string;
+    client_secret?: string | null;
+    authorization_endpoint: string;
+    token_endpoint: string;
+    no_pkce?: boolean | null;
+    scopes?: string[] | null;
+}
+
+export interface MCPEndpointSpec {
+    label: string;
+    description?: string | null;
+    allowed_tools?: AllowedMcpToolFilter[] | null;
+    headers?: Record<string, string> | null;
+    require_approval?: "always" | "never" | null;
+    oauth?: OAuthClientConfig | null;
+    openai_connector_id?: string | null;
+}
+
+export interface ServicePortEndpointSpec {
     path: string;
-    subpath?: string | null;
-    readOnly?: boolean;
+    meshagent?: MeshagentEndpointSpec;
+    mcp?: MCPEndpointSpec;
 }
 
-export interface ProjectStorageMount {
-    path: string;
-    subpath?: string | null;
-    readOnly?: boolean;
+export interface ServicePortSpec {
+    num: "*" | number;
+    type?: "http" | "tcp" | null;
+    endpoints?: ServicePortEndpointSpec[];
+    liveness?: string | null;
 }
 
-export interface ServiceStorageMounts {
-    room?: RoomStorageMount[];
-    project?: ProjectStorageMount[];
+export interface ServiceSpec {
+    version: "v1";
+    kind: "Service";
+    id?: string | null;
+    metadata: ServiceMetadata;
+    ports?: ServicePortSpec[];
+    container?: ContainerSpec | null;
+    external?: ExternalServiceSpec | null;
 }
 
-export interface ServiceApiKey {
-    role: "admin";
-    name: string;
-    autoProvision?: boolean | null;
+function pruneUndefinedValues(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        const prunedItems = value
+            .map((item) => pruneUndefinedValues(item))
+            .filter((item) => item !== undefined);
+        return prunedItems;
+    }
+
+    if (value === null || value === undefined) {
+        return value === undefined ? undefined : null;
+    }
+
+    if (typeof value === "object") {
+        const result: Record<string, unknown> = {};
+        for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
+            if (entryValue === undefined) {
+                continue;
+            }
+            result[key] = pruneUndefinedValues(entryValue);
+        }
+        return result;
+    }
+
+    return value;
 }
 
-export interface Service {
-    id?: string;
-    image: string;
-    name: string;
-    environment?: Record<string, string>;
-    command?: string;
-    roomStoragePath?: string | null;
-    roomStorageSubpath?: string | null;
-    pullSecret?: string | null;
-    runtimeSecrets?: Record<string, string>;
-    environmentSecrets?: string[];
-    createdAt?: string;
-    ports?: Record<string, Port>;
-    role?: ServiceRole | null;
-    storage?: ServiceStorageMounts;
-    apiKey?: ServiceApiKey;
-    builtin?: boolean;
+function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
+    return pruneUndefinedValues(service) as Record<string, unknown>;
 }
 
 export interface Mailbox {
@@ -967,35 +1038,93 @@ export class Meshagent {
 
     // Services ----------------------------------------------------------------
 
-    async createService(projectId: string, service: Service): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/services`, {
+    async createService(projectId: string, service: ServiceSpec): Promise<string> {
+        const data = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/services`, {
             method: "POST",
-            json: service as unknown as Record<string, unknown>,
+            json: serializeServiceSpec(service),
             action: "create service",
         });
+        if (!data || typeof data !== "object" || typeof data.id !== "string") {
+            throw new RoomException("Invalid create service response payload");
+        }
+        return data.id;
     }
 
-    async updateService(projectId: string, serviceId: string, service: Partial<Service>): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/services/${serviceId}`, {
+    async createRoomService(projectId: string, roomName: string, service: ServiceSpec): Promise<string> {
+        const data = await this.request<{ id?: unknown }>(
+            `/accounts/projects/${projectId}/rooms/${roomName}/services`,
+            {
+                method: "POST",
+                json: serializeServiceSpec(service),
+                action: "create room service",
+            },
+        );
+        if (!data || typeof data !== "object" || typeof data.id !== "string") {
+            throw new RoomException("Invalid create room service response payload");
+        }
+        return data.id;
+    }
+
+    async updateRoomService(projectId: string, roomName: string, serviceId: string, service: ServiceSpec): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/services/${serviceId}`, {
             method: "PUT",
-            json: service as unknown as Record<string, unknown>,
-            action: "update service",
+            json: serializeServiceSpec(service),
+            action: "update room service",
+            responseType: "void",
         });
     }
 
-    async getService(projectId: string, serviceId: string): Promise<Service> {
+    async getRoomService(projectId: string, roomName: string, serviceId: string): Promise<ServiceSpec> {
+        const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/services/${serviceId}`, {
+            action: "fetch room service",
+        });
+        return data as ServiceSpec;
+    }
+
+    async listRoomServices(projectId: string, roomName: string): Promise<ServiceSpec[]> {
+        const data = await this.request<{ services?: any[] }>(
+            `/accounts/projects/${projectId}/rooms/${roomName}/services`,
+            {
+                action: "list room services",
+            },
+        );
+        const services = Array.isArray(data?.services) ? data.services : [];
+        return services as ServiceSpec[];
+    }
+
+    async deleteRoomService(projectId: string, roomName: string, serviceId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/services/${serviceId}`, {
+            method: "DELETE",
+            action: "delete room service",
+            responseType: "void",
+        });
+    }
+
+    async updateService(projectId: string, serviceId: string, service: ServiceSpec): Promise<void> {
+        if (!service.id) {
+            throw new RoomException("Service id must be set to update a service");
+        }
+        await this.request(`/accounts/projects/${projectId}/services/${serviceId}`, {
+            method: "PUT",
+            json: serializeServiceSpec(service),
+            action: "update service",
+            responseType: "void",
+        });
+    }
+
+    async getService(projectId: string, serviceId: string): Promise<ServiceSpec> {
         const data = await this.request(`/accounts/projects/${projectId}/services/${serviceId}`, {
             action: "fetch service",
         });
-        return data as Service;
+        return data as ServiceSpec;
     }
 
-    async listServices(projectId: string): Promise<Service[]> {
+    async listServices(projectId: string): Promise<ServiceSpec[]> {
         const data = await this.request<{ services?: any[] }>(`/accounts/projects/${projectId}/services`, {
             action: "list services",
         });
         const services = Array.isArray(data?.services) ? data.services : [];
-        return services as Service[];
+        return services as ServiceSpec[];
     }
 
     async deleteService(projectId: string, serviceId: string): Promise<void> {
