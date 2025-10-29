@@ -138,16 +138,16 @@ export interface MCPEndpointSpec {
     openai_connector_id?: string | null;
 }
 
-export interface ServicePortEndpointSpec {
+export interface EndpointSpec {
     path: string;
     meshagent?: MeshagentEndpointSpec;
     mcp?: MCPEndpointSpec;
 }
 
-export interface ServicePortSpec {
+export interface PortSpec {
     num: "*" | number;
     type?: "http" | "tcp" | null;
-    endpoints?: ServicePortEndpointSpec[];
+    endpoints?: EndpointSpec[];
     liveness?: string | null;
 }
 
@@ -156,7 +156,7 @@ export interface ServiceSpec {
     kind: "Service";
     id?: string | null;
     metadata: ServiceMetadata;
-    ports?: ServicePortSpec[];
+    ports?: PortSpec[];
     container?: ContainerSpec | null;
     external?: ExternalServiceSpec | null;
 }
