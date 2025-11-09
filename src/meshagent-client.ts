@@ -721,8 +721,8 @@ export class Meshagent {
         });
     }
 
-    async addUserToProject(projectId: string, userId: string, options: { isAdmin?: boolean; isDeveloper?: boolean } = {}): Promise<Record<string, unknown>> {
-        const { isAdmin = false, isDeveloper = false } = options;
+    async addUserToProject(projectId: string, userId: string, options: { isAdmin?: boolean; isDeveloper?: boolean, canCreateRooms?: boolean } = {}): Promise<Record<string, unknown>> {
+        const { isAdmin = false, isDeveloper = false, canCreateRooms = false } = options;
         return await this.request(`/accounts/projects/${projectId}/users`, {
             method: "POST",
             json: {
@@ -730,6 +730,7 @@ export class Meshagent {
                 user_id: userId,
                 is_admin: isAdmin,
                 is_developer: isDeveloper,
+                can_create_rooms: canCreateRooms,
             },
             action: "add user to project",
         });
