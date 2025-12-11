@@ -62,17 +62,20 @@ export abstract class ElementProperty {
 export class ValueProperty extends ElementProperty {
   public readonly type: SimpleValue;
   public readonly enumValues?: any[];
+  public readonly required: boolean;
 
-  constructor({name, description, type, enumValues}: {
+  constructor({name, description, type, enumValues, required = false}: {
     name: string;
     description?: string;
     type: SimpleValue;
     enumValues?: any[];
+    required?: boolean;
   }) {
     super({name, description});
 
     this.type = type;
     this.enumValues = enumValues;
+    this.required = required;
   }
 
   validate(_: MeshSchema): void {
@@ -82,18 +85,30 @@ export class ValueProperty extends ElementProperty {
   }
 
   toJson(): Record<string, any> {
-    const obj: Record<string, any> = {
-      [this.name]: {
-        type: this.type,
-      },
-    };
-    if (this.description) {
-      obj[this.name].description = this.description;
-    }
+    let propertyJson: Record<string, any>;
+
     if (this.enumValues) {
-      obj[this.name].enum = this.enumValues;
+      propertyJson = {
+        type: this.type,
+        enum: this.enumValues,
+      };
+    } else if (this.required) {
+      propertyJson = {
+        type: this.type,
+      };
+    } else {
+      propertyJson = {
+        type: [this.type, "null"],
+      };
     }
-    return obj;
+
+    if (this.description) {
+      propertyJson.description = this.description;
+    }
+
+    return {
+      [this.name]: propertyJson,
+    };
   }
 }
 
@@ -221,7 +236,17 @@ export class ElementType {
       const propDescription = pMap["description"] as string | undefined;
       const pType = pMap["type"];
 
-      if (pType === "array") {
+      let required = true;
+      let pTypeValue: string;
+
+      if (Array.isArray(pType) && pType.length > 0) {
+        pTypeValue = pType[0];
+        required = false;
+      } else {
+        pTypeValue = pType as string;
+      }
+
+      if (pTypeValue === "array") {
         // Distinguish between prefixItems (ordered) and items.anyOf
         if (pMap["prefixItems"]) {
           // ordered
@@ -272,7 +297,7 @@ export class ElementType {
         }
       } else {
         // handle ValueProperty
-        const valTypeStr = pType as string;
+        const valTypeStr = pTypeValue;
         const valType = SimpleValue.fromString(valTypeStr);
         if (!valType) {
           throw new MeshSchemaValidationException(`Invalid value type: ${valTypeStr}`);
@@ -285,6 +310,7 @@ export class ElementType {
             description: propDescription,
             type: valType,
             enumValues: enumVal,
+            required,
           })
         );
       }
