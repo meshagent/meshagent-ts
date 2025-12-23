@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// node_modules/base-64/base64.js
+// ../node_modules/base-64/base64.js
 var require_base64 = __commonJS({
-  "node_modules/base-64/base64.js"(exports, module) {
+  "../node_modules/base-64/base64.js"(exports, module) {
     (function(root) {
       var freeExports = typeof exports == "object" && exports;
       var freeModule = typeof module == "object" && module && module.exports == freeExports && module;
@@ -130,7 +130,7 @@ var require_base64 = __commonJS({
   }
 });
 
-// node_modules/lib0/map.js
+// node_modules/yjs/node_modules/lib0/map.js
 var create = () => /* @__PURE__ */ new Map();
 var copy = (m) => {
   const r = create();
@@ -162,10 +162,10 @@ var any = (m, f) => {
   return false;
 };
 
-// node_modules/lib0/set.js
+// node_modules/yjs/node_modules/lib0/set.js
 var create2 = () => /* @__PURE__ */ new Set();
 
-// node_modules/lib0/array.js
+// node_modules/yjs/node_modules/lib0/array.js
 var last = (arr) => arr[arr.length - 1];
 var appendTo = (dest, src) => {
   for (let i = 0; i < src.length; i++) {
@@ -173,6 +173,14 @@ var appendTo = (dest, src) => {
   }
 };
 var from = Array.from;
+var every = (arr, f) => {
+  for (let i = 0; i < arr.length; i++) {
+    if (!f(arr[i], i, arr)) {
+      return false;
+    }
+  }
+  return true;
+};
 var some = (arr, f) => {
   for (let i = 0; i < arr.length; i++) {
     if (f(arr[i], i, arr)) {
@@ -181,9 +189,16 @@ var some = (arr, f) => {
   }
   return false;
 };
+var unfold = (len, f) => {
+  const array = new Array(len);
+  for (let i = 0; i < len; i++) {
+    array[i] = f(i, array);
+  }
+  return array;
+};
 var isArray = Array.isArray;
 
-// node_modules/lib0/observable.js
+// node_modules/yjs/node_modules/lib0/observable.js
 var ObservableV2 = class {
   constructor() {
     this._observers = create();
@@ -254,7 +269,7 @@ var ObservableV2 = class {
   }
 };
 
-// node_modules/lib0/math.js
+// node_modules/yjs/node_modules/lib0/math.js
 var floor = Math.floor;
 var abs = Math.abs;
 var min = (a, b) => a < b ? a : b;
@@ -262,7 +277,7 @@ var max = (a, b) => a > b ? a : b;
 var isNaN = Number.isNaN;
 var isNegativeZero = (n) => n !== 0 ? n < 0 : 1 / n < 0;
 
-// node_modules/lib0/binary.js
+// node_modules/yjs/node_modules/lib0/binary.js
 var BIT1 = 1;
 var BIT2 = 2;
 var BIT3 = 4;
@@ -304,7 +319,7 @@ var BITS29 = BIT30 - 1;
 var BITS30 = BIT31 - 1;
 var BITS31 = 2147483647;
 
-// node_modules/lib0/number.js
+// node_modules/yjs/node_modules/lib0/number.js
 var MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 var MIN_SAFE_INTEGER = Number.MIN_SAFE_INTEGER;
 var LOWEST_INT32 = 1 << 31;
@@ -312,7 +327,7 @@ var isInteger = Number.isInteger || ((num) => typeof num === "number" && isFinit
 var isNaN2 = Number.isNaN;
 var parseInt = Number.parseInt;
 
-// node_modules/lib0/string.js
+// node_modules/yjs/node_modules/lib0/string.js
 var fromCharCode = String.fromCharCode;
 var fromCodePoint = String.fromCodePoint;
 var MAX_UTF16_CHARACTER = fromCharCode(65535);
@@ -320,7 +335,7 @@ var toLowerCase = (s) => s.toLowerCase();
 var trimLeftRegex = /^\s*/g;
 var trimLeft = (s) => s.replace(trimLeftRegex, "");
 var fromCamelCaseRegex = /([A-Z])/g;
-var fromCamelCase = (s, separator) => trimLeft(s.replace(fromCamelCaseRegex, (match) => `${separator}${toLowerCase(match)}`));
+var fromCamelCase = (s, separator) => trimLeft(s.replace(fromCamelCaseRegex, (match2) => `${separator}${toLowerCase(match2)}`));
 var _encodeUtf8Polyfill = (str) => {
   const encodedString = unescape(encodeURIComponent(str));
   const len = encodedString.length;
@@ -341,8 +356,9 @@ var utf8TextDecoder = typeof TextDecoder === "undefined" ? null : new TextDecode
 if (utf8TextDecoder && utf8TextDecoder.decode(new Uint8Array()).length === 1) {
   utf8TextDecoder = null;
 }
+var repeat = (source, n) => unfold(n, () => source).join("");
 
-// node_modules/lib0/encoding.js
+// node_modules/yjs/node_modules/lib0/encoding.js
 var Encoder = class {
   constructor() {
     this.cpos = 0;
@@ -649,7 +665,7 @@ var StringEncoder = class {
   }
 };
 
-// node_modules/lib0/error.js
+// node_modules/yjs/node_modules/lib0/error.js
 var create3 = (s) => new Error(s);
 var methodUnimplemented = () => {
   throw create3("Method unimplemented");
@@ -658,12 +674,12 @@ var unexpectedCase = () => {
   throw create3("Unexpected case");
 };
 
-// node_modules/lib0/decoding.js
+// node_modules/yjs/node_modules/lib0/decoding.js
 var errorUnexpectedEndOfArray = create3("Unexpected end of array");
 var errorIntegerOutOfRange = create3("Integer out of Range");
 var Decoder = class {
   /**
-   * @param {Uint8Array} uint8Array Binary data to decode
+   * @param {Uint8Array<Buf>} uint8Array Binary data to decode
    */
   constructor(uint8Array) {
     this.arr = uint8Array;
@@ -901,11 +917,11 @@ var StringDecoder = class {
   }
 };
 
-// node_modules/lib0/webcrypto.js
+// node_modules/yjs/node_modules/lib0/webcrypto.js
 var subtle = crypto.subtle;
 var getRandomValues = crypto.getRandomValues.bind(crypto);
 
-// node_modules/lib0/random.js
+// node_modules/yjs/node_modules/lib0/random.js
 var uint32 = () => getRandomValues(new Uint32Array(1))[0];
 var uuidv4Template = "10000000-1000-4000-8000" + -1e11;
 var uuidv4 = () => uuidv4Template.replace(
@@ -914,20 +930,20 @@ var uuidv4 = () => uuidv4Template.replace(
   (c) => (c ^ uint32() & 15 >> c / 4).toString(16)
 );
 
-// node_modules/lib0/time.js
+// node_modules/yjs/node_modules/lib0/time.js
 var getUnixTime = Date.now;
 
-// node_modules/lib0/promise.js
+// node_modules/yjs/node_modules/lib0/promise.js
 var create4 = (f) => (
   /** @type {Promise<T>} */
   new Promise(f)
 );
 var all = Promise.all.bind(Promise);
 
-// node_modules/lib0/conditions.js
+// node_modules/yjs/node_modules/lib0/conditions.js
 var undefinedToNull = (v) => v === void 0 ? null : v;
 
-// node_modules/lib0/storage.js
+// node_modules/yjs/node_modules/lib0/storage.js
 var VarStoragePolyfill = class {
   constructor() {
     this.map = /* @__PURE__ */ new Map();
@@ -957,7 +973,12 @@ try {
 }
 var varStorage = _localStorage;
 
-// node_modules/lib0/object.js
+// node_modules/yjs/node_modules/lib0/trait/equality.js
+var EqualityTraitSymbol = Symbol("Equality");
+var equals = (a, b) => a === b || !!a?.[EqualityTraitSymbol]?.(b) || false;
+
+// node_modules/yjs/node_modules/lib0/object.js
+var isObject = (o) => typeof o === "object";
 var assign = Object.assign;
 var keys = Object.keys;
 var forEach = (obj, f) => {
@@ -972,7 +993,7 @@ var isEmpty = (obj) => {
   }
   return true;
 };
-var every = (obj, f) => {
+var every2 = (obj, f) => {
   for (const key in obj) {
     if (!f(obj[key], key)) {
       return false;
@@ -981,7 +1002,7 @@ var every = (obj, f) => {
   return true;
 };
 var hasProperty = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-var equalFlat = (a, b) => a === b || size(a) === size(b) && every(a, (val, key) => (val !== void 0 || hasProperty(b, key)) && b[key] === val);
+var equalFlat = (a, b) => a === b || size(a) === size(b) && every2(a, (val, key) => (val !== void 0 || hasProperty(b, key)) && equals(b[key], val));
 var freeze = Object.freeze;
 var deepFreeze = (o) => {
   for (const key in o) {
@@ -993,7 +1014,7 @@ var deepFreeze = (o) => {
   return freeze(o);
 };
 
-// node_modules/lib0/function.js
+// node_modules/yjs/node_modules/lib0/function.js
 var callAll = (fs, args2, i = 0) => {
   try {
     for (; i < fs.length; i++) {
@@ -1006,9 +1027,83 @@ var callAll = (fs, args2, i = 0) => {
   }
 };
 var id = (a) => a;
+var equalityDeep = (a, b) => {
+  if (a === b) {
+    return true;
+  }
+  if (a == null || b == null || a.constructor !== b.constructor && (a.constructor || Object) !== (b.constructor || Object)) {
+    return false;
+  }
+  if (a[EqualityTraitSymbol] != null) {
+    return a[EqualityTraitSymbol](b);
+  }
+  switch (a.constructor) {
+    case ArrayBuffer:
+      a = new Uint8Array(a);
+      b = new Uint8Array(b);
+    // eslint-disable-next-line no-fallthrough
+    case Uint8Array: {
+      if (a.byteLength !== b.byteLength) {
+        return false;
+      }
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+          return false;
+        }
+      }
+      break;
+    }
+    case Set: {
+      if (a.size !== b.size) {
+        return false;
+      }
+      for (const value of a) {
+        if (!b.has(value)) {
+          return false;
+        }
+      }
+      break;
+    }
+    case Map: {
+      if (a.size !== b.size) {
+        return false;
+      }
+      for (const key of a.keys()) {
+        if (!b.has(key) || !equalityDeep(a.get(key), b.get(key))) {
+          return false;
+        }
+      }
+      break;
+    }
+    case void 0:
+    case Object:
+      if (size(a) !== size(b)) {
+        return false;
+      }
+      for (const key in a) {
+        if (!hasProperty(a, key) || !equalityDeep(a[key], b[key])) {
+          return false;
+        }
+      }
+      break;
+    case Array:
+      if (a.length !== b.length) {
+        return false;
+      }
+      for (let i = 0; i < a.length; i++) {
+        if (!equalityDeep(a[i], b[i])) {
+          return false;
+        }
+      }
+      break;
+    default:
+      return false;
+  }
+  return true;
+};
 var isOneOf = (value, options) => options.includes(value);
 
-// node_modules/lib0/environment.js
+// node_modules/yjs/node_modules/lib0/environment.js
 var isNode = typeof process !== "undefined" && process.release && /node|io\.js/.test(process.release.name) && Object.prototype.toString.call(typeof process !== "undefined" ? process : 0) === "[object process]";
 var isMac = typeof navigator !== "undefined" ? /Mac/.test(navigator.platform) : false;
 var params;
@@ -1061,7 +1156,7 @@ var forceColor = isNode && isOneOf(process.env.FORCE_COLOR, ["true", "1", "2"]);
 var supportsColor = forceColor || !hasParam("--no-colors") && // @todo deprecate --no-colors
 !hasConf("no-color") && (!isNode || process.stdout.isTTY) && (!isNode || hasParam("--color") || getVariable("COLORTERM") !== null || (getVariable("TERM") || "").includes("color"));
 
-// node_modules/lib0/buffer.js
+// node_modules/yjs/node_modules/lib0/buffer.js
 var createUint8ArrayFromLen = (len) => new Uint8Array(len);
 var copyUint8Array = (uint8Array) => {
   const newBuf = createUint8ArrayFromLen(uint8Array.byteLength);
@@ -1069,7 +1164,7 @@ var copyUint8Array = (uint8Array) => {
   return newBuf;
 };
 
-// node_modules/lib0/pair.js
+// node_modules/yjs/node_modules/lib0/pair.js
 var Pair = class {
   /**
    * @param {L} left
@@ -1082,15 +1177,770 @@ var Pair = class {
 };
 var create5 = (left, right) => new Pair(left, right);
 
-// node_modules/lib0/dom.js
+// node_modules/yjs/node_modules/lib0/prng.js
+var bool = (gen) => gen.next() >= 0.5;
+var int53 = (gen, min2, max2) => floor(gen.next() * (max2 + 1 - min2) + min2);
+var int32 = (gen, min2, max2) => floor(gen.next() * (max2 + 1 - min2) + min2);
+var int31 = (gen, min2, max2) => int32(gen, min2, max2);
+var letter = (gen) => fromCharCode(int31(gen, 97, 122));
+var word = (gen, minLen = 0, maxLen = 20) => {
+  const len = int31(gen, minLen, maxLen);
+  let str = "";
+  for (let i = 0; i < len; i++) {
+    str += letter(gen);
+  }
+  return str;
+};
+var oneOf = (gen, array) => array[int31(gen, 0, array.length - 1)];
+
+// node_modules/yjs/node_modules/lib0/schema.js
+var schemaSymbol = Symbol("0schema");
+var ValidationError = class {
+  constructor() {
+    this._rerrs = [];
+  }
+  /**
+   * @param {string?} path
+   * @param {string} expected
+   * @param {string} has
+   * @param {string?} message
+   */
+  extend(path, expected, has, message = null) {
+    this._rerrs.push({ path, expected, has, message });
+  }
+  toString() {
+    const s = [];
+    for (let i = this._rerrs.length - 1; i > 0; i--) {
+      const r = this._rerrs[i];
+      s.push(repeat(" ", (this._rerrs.length - i) * 2) + `${r.path != null ? `[${r.path}] ` : ""}${r.has} doesn't match ${r.expected}. ${r.message}`);
+    }
+    return s.join("\n");
+  }
+};
+var shapeExtends = (a, b) => {
+  if (a === b) return true;
+  if (a == null || b == null || a.constructor !== b.constructor) return false;
+  if (a[EqualityTraitSymbol]) return equals(a, b);
+  if (isArray(a)) {
+    return every(
+      a,
+      (aitem) => some(b, (bitem) => shapeExtends(aitem, bitem))
+    );
+  } else if (isObject(a)) {
+    return every2(
+      a,
+      (aitem, akey) => shapeExtends(aitem, b[akey])
+    );
+  }
+  return false;
+};
+var Schema = class {
+  // this.shape must not be defined on Schema. Otherwise typecheck on metatypes (e.g. $$object) won't work as expected anymore
+  /**
+   * If true, the more things are added to the shape the more objects this schema will accept (e.g.
+   * union). By default, the more objects are added, the the fewer objects this schema will accept.
+   * @protected
+   */
+  static _dilutes = false;
+  /**
+   * @param {Schema<any>} other
+   */
+  extends(other) {
+    let [a, b] = [
+      /** @type {any} */
+      this.shape,
+      /** @type {any} */
+      other.shape
+    ];
+    if (
+      /** @type {typeof Schema<any>} */
+      this.constructor._dilutes
+    ) [b, a] = [a, b];
+    return shapeExtends(a, b);
+  }
+  /**
+   * Overwrite this when necessary. By default, we only check the `shape` property which every shape
+   * should have.
+   * @param {Schema<any>} other
+   */
+  equals(other) {
+    return this.constructor === other.constructor && equalityDeep(this.shape, other.shape);
+  }
+  [schemaSymbol]() {
+    return true;
+  }
+  /**
+   * @param {object} other
+   */
+  [EqualityTraitSymbol](other) {
+    return this.equals(
+      /** @type {any} */
+      other
+    );
+  }
+  /**
+   * Use `schema.validate(obj)` with a typed parameter that is already of typed to be an instance of
+   * Schema. Validate will check the structure of the parameter and return true iff the instance
+   * really is an instance of Schema.
+   *
+   * @param {T} o
+   * @return {boolean}
+   */
+  validate(o) {
+    return this.check(o);
+  }
+  /* c8 ignore start */
+  /**
+   * Similar to validate, but this method accepts untyped parameters.
+   *
+   * @param {any} _o
+   * @param {ValidationError} [_err]
+   * @return {_o is T}
+   */
+  check(_o, _err) {
+    methodUnimplemented();
+  }
+  /* c8 ignore stop */
+  /**
+   * @type {Schema<T?>}
+   */
+  get nullable() {
+    return $union(this, $null);
+  }
+  /**
+   * @type {$Optional<Schema<T>>}
+   */
+  get optional() {
+    return new $Optional(
+      /** @type {Schema<T>} */
+      this
+    );
+  }
+  /**
+   * Cast a variable to a specific type. Returns the casted value, or throws an exception otherwise.
+   * Use this if you know that the type is of a specific type and you just want to convince the type
+   * system.
+   *
+   * **Do not rely on these error messages!**
+   * Performs an assertion check only if not in a production environment.
+   *
+   * @template OO
+   * @param {OO} o
+   * @return {Extract<OO, T> extends never ? T : (OO extends Array<never> ? T : Extract<OO,T>)}
+   */
+  cast(o) {
+    assert(o, this);
+    return (
+      /** @type {any} */
+      o
+    );
+  }
+  /**
+   * EXPECTO PATRONUM!! 🪄
+   * This function protects against type errors. Though it may not work in the real world.
+   *
+   * "After all this time?"
+   * "Always." - Snape, talking about type safety
+   *
+   * Ensures that a variable is a a specific type. Returns the value, or throws an exception if the assertion check failed.
+   * Use this if you know that the type is of a specific type and you just want to convince the type
+   * system.
+   *
+   * Can be useful when defining lambdas: `s.lambda(s.$number, s.$void).expect((n) => n + 1)`
+   *
+   * **Do not rely on these error messages!**
+   * Performs an assertion check if not in a production environment.
+   *
+   * @param {T} o
+   * @return {o extends T ? T : never}
+   */
+  expect(o) {
+    assert(o, this);
+    return o;
+  }
+};
+var $ConstructedBy = class extends Schema {
+  /**
+   * @param {C} c
+   * @param {((o:Instance<C>)=>boolean)|null} check
+   */
+  constructor(c, check) {
+    super();
+    this.shape = c;
+    this._c = check;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is C extends ((...args:any[]) => infer T) ? T : (C extends (new (...args:any[]) => any) ? InstanceType<C> : never)} o
+   */
+  check(o, err = void 0) {
+    const c = o?.constructor === this.shape && (this._c == null || this._c(o));
+    !c && err?.extend(null, this.shape.name, o?.constructor.name, o?.constructor !== this.shape ? "Constructor match failed" : "Check failed");
+    return c;
+  }
+};
+var $constructedBy = (c, check = null) => new $ConstructedBy(c, check);
+var $$constructedBy = $constructedBy($ConstructedBy);
+var $Custom = class extends Schema {
+  /**
+   * @param {(o:any) => boolean} check
+   */
+  constructor(check) {
+    super();
+    this.shape = check;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} err
+   * @return {o is any}
+   */
+  check(o, err) {
+    const c = this.shape(o);
+    !c && err?.extend(null, "custom prop", o?.constructor.name, "failed to check custom prop");
+    return c;
+  }
+};
+var $custom = (check) => new $Custom(check);
+var $$custom = $constructedBy($Custom);
+var $Literal = class extends Schema {
+  /**
+   * @param {Array<T>} literals
+   */
+  constructor(literals) {
+    super();
+    this.shape = literals;
+  }
+  /**
+   *
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is T}
+   */
+  check(o, err) {
+    const c = this.shape.some((a) => a === o);
+    !c && err?.extend(null, this.shape.join(" | "), o.toString());
+    return c;
+  }
+};
+var $literal = (...literals) => new $Literal(literals);
+var $$literal = $constructedBy($Literal);
+var _regexEscape = (
+  /** @type {any} */
+  RegExp.escape || /** @type {(str:string) => string} */
+  ((str) => str.replace(/[().|&,$^[\]]/g, (s) => "\\" + s))
+);
+var _schemaStringTemplateToRegex = (s) => {
+  if ($string.check(s)) {
+    return [_regexEscape(s)];
+  }
+  if ($$literal.check(s)) {
+    return (
+      /** @type {Array<string|number>} */
+      s.shape.map((v) => v + "")
+    );
+  }
+  if ($$number.check(s)) {
+    return ["[+-]?\\d+.?\\d*"];
+  }
+  if ($$string.check(s)) {
+    return [".*"];
+  }
+  if ($$union.check(s)) {
+    return s.shape.map(_schemaStringTemplateToRegex).flat(1);
+  }
+  unexpectedCase();
+};
+var $StringTemplate = class extends Schema {
+  /**
+   * @param {T} shape
+   */
+  constructor(shape) {
+    super();
+    this.shape = shape;
+    this._r = new RegExp("^" + shape.map(_schemaStringTemplateToRegex).map((opts) => `(${opts.join("|")})`).join("") + "$");
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is CastStringTemplateArgsToTemplate<T>}
+   */
+  check(o, err) {
+    const c = this._r.exec(o) != null;
+    !c && err?.extend(null, this._r.toString(), o.toString(), "String doesn't match string template.");
+    return c;
+  }
+};
+var $$stringTemplate = $constructedBy($StringTemplate);
+var isOptionalSymbol = Symbol("optional");
+var $Optional = class extends Schema {
+  /**
+   * @param {S} shape
+   */
+  constructor(shape) {
+    super();
+    this.shape = shape;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is (Unwrap<S>|undefined)}
+   */
+  check(o, err) {
+    const c = o === void 0 || this.shape.check(o);
+    !c && err?.extend(null, "undefined (optional)", "()");
+    return c;
+  }
+  get [isOptionalSymbol]() {
+    return true;
+  }
+};
+var $$optional = $constructedBy($Optional);
+var $Never = class extends Schema {
+  /**
+   * @param {any} _o
+   * @param {ValidationError} [err]
+   * @return {_o is never}
+   */
+  check(_o, err) {
+    err?.extend(null, "never", typeof _o);
+    return false;
+  }
+};
+var $never = new $Never();
+var $$never = $constructedBy($Never);
+var $Object = class _$Object extends Schema {
+  /**
+   * @param {S} shape
+   * @param {boolean} partial
+   */
+  constructor(shape, partial = false) {
+    super();
+    this.shape = shape;
+    this._isPartial = partial;
+  }
+  static _dilutes = true;
+  /**
+   * @type {Schema<Partial<$ObjectToType<S>>>}
+   */
+  get partial() {
+    return new _$Object(this.shape, true);
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} err
+   * @return {o is $ObjectToType<S>}
+   */
+  check(o, err) {
+    if (o == null) {
+      err?.extend(null, "object", "null");
+      return false;
+    }
+    return every2(this.shape, (vv, vk) => {
+      const c = this._isPartial && !hasProperty(o, vk) || vv.check(o[vk], err);
+      !c && err?.extend(vk.toString(), vv.toString(), typeof o[vk], "Object property does not match");
+      return c;
+    });
+  }
+};
+var $object = (def) => (
+  /** @type {any} */
+  new $Object(def)
+);
+var $$object = $constructedBy($Object);
+var $objectAny = $custom((o) => o != null && (o.constructor === Object || o.constructor == null));
+var $Record = class extends Schema {
+  /**
+   * @param {Keys} keys
+   * @param {Values} values
+   */
+  constructor(keys2, values) {
+    super();
+    this.shape = {
+      keys: keys2,
+      values
+    };
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} err
+   * @return {o is { [key in Unwrap<Keys>]: Unwrap<Values> }}
+   */
+  check(o, err) {
+    return o != null && every2(o, (vv, vk) => {
+      const ck = this.shape.keys.check(vk, err);
+      !ck && err?.extend(vk + "", "Record", typeof o, ck ? "Key doesn't match schema" : "Value doesn't match value");
+      return ck && this.shape.values.check(vv, err);
+    });
+  }
+};
+var $record = (keys2, values) => new $Record(keys2, values);
+var $$record = $constructedBy($Record);
+var $Tuple = class extends Schema {
+  /**
+   * @param {S} shape
+   */
+  constructor(shape) {
+    super();
+    this.shape = shape;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} err
+   * @return {o is { [K in keyof S]: S[K] extends Schema<infer Type> ? Type : never }}
+   */
+  check(o, err) {
+    return o != null && every2(this.shape, (vv, vk) => {
+      const c = (
+        /** @type {Schema<any>} */
+        vv.check(o[vk], err)
+      );
+      !c && err?.extend(vk.toString(), "Tuple", typeof vv);
+      return c;
+    });
+  }
+};
+var $tuple = (...def) => new $Tuple(def);
+var $$tuple = $constructedBy($Tuple);
+var $Array = class extends Schema {
+  /**
+   * @param {Array<S>} v
+   */
+  constructor(v) {
+    super();
+    this.shape = v.length === 1 ? v[0] : new $Union(v);
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is Array<S extends Schema<infer T> ? T : never>} o
+   */
+  check(o, err) {
+    const c = isArray(o) && every(o, (oi) => this.shape.check(oi));
+    !c && err?.extend(null, "Array", "");
+    return c;
+  }
+};
+var $array = (...def) => new $Array(def);
+var $$array = $constructedBy($Array);
+var $arrayAny = $custom((o) => isArray(o));
+var $InstanceOf = class extends Schema {
+  /**
+   * @param {new (...args:any) => T} constructor
+   * @param {((o:T) => boolean)|null} check
+   */
+  constructor(constructor, check) {
+    super();
+    this.shape = constructor;
+    this._c = check;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} err
+   * @return {o is T}
+   */
+  check(o, err) {
+    const c = o instanceof this.shape && (this._c == null || this._c(o));
+    !c && err?.extend(null, this.shape.name, o?.constructor.name);
+    return c;
+  }
+};
+var $instanceOf = (c, check = null) => new $InstanceOf(c, check);
+var $$instanceOf = $constructedBy($InstanceOf);
+var $$schema = $instanceOf(Schema);
+var $Lambda = class extends Schema {
+  /**
+   * @param {Args} args
+   */
+  constructor(args2) {
+    super();
+    this.len = args2.length - 1;
+    this.args = $tuple(...args2.slice(-1));
+    this.res = args2[this.len];
+  }
+  /**
+   * @param {any} f
+   * @param {ValidationError} err
+   * @return {f is _LArgsToLambdaDef<Args>}
+   */
+  check(f, err) {
+    const c = f.constructor === Function && f.length <= this.len;
+    !c && err?.extend(null, "function", typeof f);
+    return c;
+  }
+};
+var $$lambda = $constructedBy($Lambda);
+var $function = $custom((o) => typeof o === "function");
+var $Intersection = class extends Schema {
+  /**
+   * @param {T} v
+   */
+  constructor(v) {
+    super();
+    this.shape = v;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is Intersect<UnwrapArray<T>>}
+   */
+  check(o, err) {
+    const c = every(this.shape, (check) => check.check(o, err));
+    !c && err?.extend(null, "Intersectinon", typeof o);
+    return c;
+  }
+};
+var $$intersect = $constructedBy($Intersection, (o) => o.shape.length > 0);
+var $Union = class extends Schema {
+  static _dilutes = true;
+  /**
+   * @param {Array<Schema<S>>} v
+   */
+  constructor(v) {
+    super();
+    this.shape = v;
+  }
+  /**
+   * @param {any} o
+   * @param {ValidationError} [err]
+   * @return {o is S}
+   */
+  check(o, err) {
+    const c = some(this.shape, (vv) => vv.check(o, err));
+    err?.extend(null, "Union", typeof o);
+    return c;
+  }
+};
+var $union = (...schemas) => schemas.findIndex(($s) => $$union.check($s)) >= 0 ? $union(...schemas.map(($s) => $($s)).map(($s) => $$union.check($s) ? $s.shape : [$s]).flat(1)) : schemas.length === 1 ? schemas[0] : new $Union(schemas);
+var $$union = (
+  /** @type {Schema<$Union<any>>} */
+  $constructedBy($Union)
+);
+var _t = () => true;
+var $any = $custom(_t);
+var $$any = (
+  /** @type {Schema<Schema<any>>} */
+  $constructedBy($Custom, (o) => o.shape === _t)
+);
+var $bigint = $custom((o) => typeof o === "bigint");
+var $$bigint = (
+  /** @type {Schema<Schema<BigInt>>} */
+  $custom((o) => o === $bigint)
+);
+var $symbol = $custom((o) => typeof o === "symbol");
+var $$symbol = (
+  /** @type {Schema<Schema<Symbol>>} */
+  $custom((o) => o === $symbol)
+);
+var $number = $custom((o) => typeof o === "number");
+var $$number = (
+  /** @type {Schema<Schema<number>>} */
+  $custom((o) => o === $number)
+);
+var $string = $custom((o) => typeof o === "string");
+var $$string = (
+  /** @type {Schema<Schema<string>>} */
+  $custom((o) => o === $string)
+);
+var $boolean = $custom((o) => typeof o === "boolean");
+var $$boolean = (
+  /** @type {Schema<Schema<Boolean>>} */
+  $custom((o) => o === $boolean)
+);
+var $undefined = $literal(void 0);
+var $$undefined = (
+  /** @type {Schema<Schema<undefined>>} */
+  $constructedBy($Literal, (o) => o.shape.length === 1 && o.shape[0] === void 0)
+);
+var $void = $literal(void 0);
+var $null = $literal(null);
+var $$null = (
+  /** @type {Schema<Schema<null>>} */
+  $constructedBy($Literal, (o) => o.shape.length === 1 && o.shape[0] === null)
+);
+var $uint8Array = $constructedBy(Uint8Array);
+var $$uint8Array = (
+  /** @type {Schema<Schema<Uint8Array>>} */
+  $constructedBy($ConstructedBy, (o) => o.shape === Uint8Array)
+);
+var $primitive = $union($number, $string, $null, $undefined, $bigint, $boolean, $symbol);
+var $json = (() => {
+  const $jsonArr = (
+    /** @type {$Array<$any>} */
+    $array($any)
+  );
+  const $jsonRecord = (
+    /** @type {$Record<$string,$any>} */
+    $record($string, $any)
+  );
+  const $json2 = $union($number, $string, $null, $boolean, $jsonArr, $jsonRecord);
+  $jsonArr.shape = $json2;
+  $jsonRecord.shape.values = $json2;
+  return $json2;
+})();
+var $ = (o) => {
+  if ($$schema.check(o)) {
+    return (
+      /** @type {any} */
+      o
+    );
+  } else if ($objectAny.check(o)) {
+    const o2 = {};
+    for (const k in o) {
+      o2[k] = $(o[k]);
+    }
+    return (
+      /** @type {any} */
+      $object(o2)
+    );
+  } else if ($arrayAny.check(o)) {
+    return (
+      /** @type {any} */
+      $union(...o.map($))
+    );
+  } else if ($primitive.check(o)) {
+    return (
+      /** @type {any} */
+      $literal(o)
+    );
+  } else if ($function.check(o)) {
+    return (
+      /** @type {any} */
+      $constructedBy(
+        /** @type {any} */
+        o
+      )
+    );
+  }
+  unexpectedCase();
+};
+var assert = production ? () => {
+} : (o, schema) => {
+  const err = new ValidationError();
+  if (!schema.check(o, err)) {
+    throw create3(`Expected value to be of type ${schema.constructor.name}.
+${err.toString()}`);
+  }
+};
+var PatternMatcher = class {
+  /**
+   * @param {Schema<State>} [$state]
+   */
+  constructor($state) {
+    this.patterns = [];
+    this.$state = $state;
+  }
+  /**
+   * @template P
+   * @template R
+   * @param {P} pattern
+   * @param {(o:NoInfer<Unwrap<ReadSchema<P>>>,s:State)=>R} handler
+   * @return {PatternMatcher<State,Patterns|Pattern<Unwrap<ReadSchema<P>>,R>>}
+   */
+  if(pattern, handler) {
+    this.patterns.push({ if: $(pattern), h: handler });
+    return this;
+  }
+  /**
+   * @template R
+   * @param {(o:any,s:State)=>R} h
+   */
+  else(h) {
+    return this.if($any, h);
+  }
+  /**
+   * @return {State extends undefined
+   *   ? <In extends Unwrap<Patterns['if']>>(o:In,state?:undefined)=>PatternMatchResult<Patterns,In>
+   *   : <In extends Unwrap<Patterns['if']>>(o:In,state:State)=>PatternMatchResult<Patterns,In>}
+   */
+  done() {
+    return (
+      /** @type {any} */
+      (o, s) => {
+        for (let i = 0; i < this.patterns.length; i++) {
+          const p = this.patterns[i];
+          if (p.if.check(o)) {
+            return p.h(o, s);
+          }
+        }
+        throw create3("Unhandled pattern");
+      }
+    );
+  }
+};
+var match = (state) => new PatternMatcher(
+  /** @type {any} */
+  state
+);
+var _random = (
+  /** @type {any} */
+  match(
+    /** @type {Schema<prng.PRNG>} */
+    $any
+  ).if($$number, (_o, gen) => int53(gen, MIN_SAFE_INTEGER, MAX_SAFE_INTEGER)).if($$string, (_o, gen) => word(gen)).if($$boolean, (_o, gen) => bool(gen)).if($$bigint, (_o, gen) => BigInt(int53(gen, MIN_SAFE_INTEGER, MAX_SAFE_INTEGER))).if($$union, (o, gen) => random(gen, oneOf(gen, o.shape))).if($$object, (o, gen) => {
+    const res = {};
+    for (const k in o.shape) {
+      let prop = o.shape[k];
+      if ($$optional.check(prop)) {
+        if (bool(gen)) {
+          continue;
+        }
+        prop = prop.shape;
+      }
+      res[k] = _random(prop, gen);
+    }
+    return res;
+  }).if($$array, (o, gen) => {
+    const arr = [];
+    const n = int32(gen, 0, 42);
+    for (let i = 0; i < n; i++) {
+      arr.push(random(gen, o.shape));
+    }
+    return arr;
+  }).if($$literal, (o, gen) => {
+    return oneOf(gen, o.shape);
+  }).if($$null, (o, gen) => {
+    return null;
+  }).if($$lambda, (o, gen) => {
+    const res = random(gen, o.res);
+    return () => res;
+  }).if($$any, (o, gen) => random(gen, oneOf(gen, [
+    $number,
+    $string,
+    $null,
+    $undefined,
+    $bigint,
+    $boolean,
+    $array($number),
+    $record($union("a", "b", "c"), $number)
+  ]))).if($$record, (o, gen) => {
+    const res = {};
+    const keysN = int53(gen, 0, 3);
+    for (let i = 0; i < keysN; i++) {
+      const key = random(gen, o.shape.keys);
+      const val = random(gen, o.shape.values);
+      res[key] = val;
+    }
+    return res;
+  }).done()
+);
+var random = (gen, schema) => (
+  /** @type {any} */
+  _random($(schema), gen)
+);
+
+// node_modules/yjs/node_modules/lib0/dom.js
 var doc = (
   /** @type {Document} */
   typeof document !== "undefined" ? document : {}
 );
+var $fragment = $custom((el) => el.nodeType === DOCUMENT_FRAGMENT_NODE);
 var domParser = (
   /** @type {DOMParser} */
   typeof DOMParser !== "undefined" ? new DOMParser() : null
 );
+var $element = $custom((el) => el.nodeType === ELEMENT_NODE);
+var $text = $custom((el) => el.nodeType === TEXT_NODE);
 var mapToStyleString = (m) => map(m, (value, key) => `${key}:${value};`).join("");
 var ELEMENT_NODE = doc.ELEMENT_NODE;
 var TEXT_NODE = doc.TEXT_NODE;
@@ -1099,11 +1949,12 @@ var COMMENT_NODE = doc.COMMENT_NODE;
 var DOCUMENT_NODE = doc.DOCUMENT_NODE;
 var DOCUMENT_TYPE_NODE = doc.DOCUMENT_TYPE_NODE;
 var DOCUMENT_FRAGMENT_NODE = doc.DOCUMENT_FRAGMENT_NODE;
+var $node = $custom((el) => el.nodeType === DOCUMENT_NODE);
 
-// node_modules/lib0/symbol.js
+// node_modules/yjs/node_modules/lib0/symbol.js
 var create6 = Symbol;
 
-// node_modules/lib0/logging.common.js
+// node_modules/yjs/node_modules/lib0/logging.common.js
 var BOLD = create6();
 var UNBOLD = create6();
 var BLUE = create6();
@@ -1145,7 +1996,7 @@ var computeNoColorLoggingArgs = (args2) => {
 };
 var lastLoggingTime = getUnixTime();
 
-// node_modules/lib0/logging.js
+// node_modules/yjs/node_modules/lib0/logging.js
 var _browserStyleMap = {
   [BOLD]: create5("font-weight", "bold"),
   [UNBOLD]: create5("font-weight", "normal"),
@@ -1215,7 +2066,7 @@ var warn = (...args2) => {
 };
 var vconsoles = create2();
 
-// node_modules/lib0/iterator.js
+// node_modules/yjs/node_modules/lib0/iterator.js
 var createIterator = (next) => ({
   /**
    * @return {IterableIterator<T>}
@@ -1259,9 +2110,12 @@ var iterateDeletedStructs = (transaction, ds, f) => ds.clients.forEach((deletes,
     /** @type {Array<GC|Item>} */
     transaction.doc.store.clients.get(clientid)
   );
-  for (let i = 0; i < deletes.length; i++) {
-    const del = deletes[i];
-    iterateStructs(transaction, structs, del.clock, del.len, f);
+  if (structs != null) {
+    const lastStruct = structs[structs.length - 1];
+    const clockState = lastStruct.id.clock + lastStruct.length;
+    for (let i = 0, del = deletes[i]; i < deletes.length && del.clock < clockState; del = deletes[++i]) {
+      iterateStructs(transaction, structs, del.clock, del.len, f);
+    }
   }
 });
 var findIndexDS = (dis, clock) => {
@@ -2791,7 +3645,8 @@ var tryMergeDeleteSet = (ds, store) => {
   });
 };
 var cleanupTransactions = (transactionCleanups, i) => {
-  if (i < transactionCleanups.length) {
+  console.log("cleanup transactions");
+  while (i < transactionCleanups.length) {
     const transaction = transactionCleanups[i];
     const doc2 = transaction.doc;
     const store = doc2.store;
@@ -2895,14 +3750,13 @@ var cleanupTransactions = (transactionCleanups, i) => {
         doc2.emit("subdocs", [{ loaded: subdocsLoaded, added: subdocsAdded, removed: subdocsRemoved }, doc2, transaction]);
         subdocsRemoved.forEach((subdoc) => subdoc.destroy());
       }
-      if (transactionCleanups.length <= i + 1) {
+      if (transactionCleanups.length <= ++i) {
         doc2._transactionCleanups = [];
         doc2.emit("afterAllTransactions", [doc2, transactionCleanups]);
-      } else {
-        cleanupTransactions(transactionCleanups, i + 1);
       }
     }
   }
+  console.log("cleaned transactions");
 };
 var transact = (doc2, f, origin = null, local = true) => {
   const transactionCleanups = doc2._transactionCleanups;
@@ -3024,7 +3878,7 @@ var popStackItem = (undoManager, stack, eventType) => {
 };
 var UndoManager = class extends ObservableV2 {
   /**
-   * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Accepts either a single type, or an array of types
+   * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Limits the scope of the UndoManager. If this is set to a ydoc instance, all changes on that ydoc will be undone. If set to a specific type, only changes on that type or its children will be undone. Also accepts an array of types.
    * @param {UndoManagerOptions} options
    */
   constructor(typeScope, {
@@ -3117,6 +3971,8 @@ var UndoManager = class extends ObservableV2 {
     });
   }
   /**
+   * Extend the scope.
+   *
    * @param {Array<AbstractType<any> | Doc> | AbstractType<any> | Doc} ytypes
    */
   addToScope(ytypes) {
@@ -3556,7 +4412,7 @@ var YEvent = class {
     return isDeleted(this.transaction.deleteSet, struct.id);
   }
   /**
-   * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any, newValue: any }>}
+   * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any }>}
    */
   get keys() {
     if (this._keys === null) {
@@ -4250,6 +5106,8 @@ var typeMapSet = (transaction, parent, key, value) => {
       case Boolean:
       case Array:
       case String:
+      case Date:
+      case BigInt:
         content = new ContentAny([value]);
         break;
       case Uint8Array:
@@ -6240,11 +7098,13 @@ var YXmlElement = class _YXmlElement extends YXmlFragment {
     const el = new _YXmlElement(this.nodeName);
     const attrs = this.getAttributes();
     forEach(attrs, (value, key) => {
-      if (typeof value === "string") {
-        el.setAttribute(key, value);
-      }
+      el.setAttribute(
+        key,
+        /** @type {any} */
+        value
+      );
     });
-    el.insert(0, this.toArray().map((item) => item instanceof AbstractType ? item.clone() : item));
+    el.insert(0, this.toArray().map((v) => v instanceof AbstractType ? v.clone() : v));
     return el;
   }
   /**
@@ -8093,7 +8953,7 @@ if (glo[importIdentifier] === true) {
 }
 glo[importIdentifier] = true;
 
-// node_modules/uuid/dist/esm-browser/stringify.js
+// ../node_modules/uuid/dist/esm-browser/stringify.js
 var byteToHex = [];
 for (let i = 0; i < 256; ++i) {
   byteToHex.push((i + 256).toString(16).slice(1));
@@ -8102,7 +8962,7 @@ function unsafeStringify(arr, offset = 0) {
   return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
 
-// node_modules/uuid/dist/esm-browser/rng.js
+// ../node_modules/uuid/dist/esm-browser/rng.js
 var getRandomValues2;
 var rnds8 = new Uint8Array(16);
 function rng() {
@@ -8115,11 +8975,11 @@ function rng() {
   return getRandomValues2(rnds8);
 }
 
-// node_modules/uuid/dist/esm-browser/native.js
+// ../node_modules/uuid/dist/esm-browser/native.js
 var randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
 var native_default = { randomUUID };
 
-// node_modules/uuid/dist/esm-browser/v4.js
+// ../node_modules/uuid/dist/esm-browser/v4.js
 function v4(options, buf, offset) {
   if (native_default.randomUUID && !buf && !options) {
     return native_default.randomUUID();
@@ -8535,6 +9395,23 @@ var ServerXmlDocument = class {
 
 // src/entrypoint.ts
 var import_base_64 = __toESM(require_base64());
+function uint8ArrayToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 32768;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+function base64ToUint8Array(base642) {
+  const binary = atob(base642);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 var ClientProtocol = class {
   constructor(onClientUpdate) {
     this.doc = new Doc();
@@ -8566,7 +9443,7 @@ function getState2(documentID, vector) {
   } else {
     state = encodeStateAsUpdate(server.doc);
   }
-  return import_base_64.default.encode(String.fromCharCode(...state));
+  return uint8ArrayToBase64(state);
 }
 function getStateVector2(documentID) {
   const server = documents.get(documentID);
@@ -8574,7 +9451,7 @@ function getStateVector2(documentID) {
     throw new Error("Document not registered: " + documentID);
   }
   const state = encodeStateVector(server.doc);
-  return import_base_64.default.encode(String.fromCharCode(...state));
+  return uint8ArrayToBase64(state);
 }
 function applyBackendChanges(documentID, base64Changes) {
   const server = documents.get(documentID);
@@ -8598,10 +9475,9 @@ function registerDocument(id2, base64Data, undo = false, sendUpdateToBackend, se
     throw new Error("document is already registered " + id2);
   }
   const clientProtocol = new ClientProtocol((update) => {
-    const str = String.fromCharCode(...update);
     const msg = JSON.stringify({
       documentID: id2,
-      data: import_base_64.default.encode(str)
+      data: uint8ArrayToBase64(update)
     });
     const fn = sendUpdateToBackend ?? onSendUpdateToBackend;
     if (fn) {
@@ -8633,9 +9509,11 @@ export {
   ServerXmlDocument,
   applyBackendChanges,
   applyChanges,
+  base64ToUint8Array,
   getState2 as getState,
   getStateVector2 as getStateVector,
   registerDocument,
+  uint8ArrayToBase64,
   unregisterDocument
 };
 /*! Bundled license information:
