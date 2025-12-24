@@ -15,7 +15,6 @@ export class AgentDescription {
     public readonly description: string;
     public readonly outputSchema?: Record<string, any>;
     public readonly inputSchema?: Record<string, any>;
-    public readonly requires: Requirement[];
     public readonly labels: string[];
     public readonly supportsTools: boolean;
 
@@ -25,7 +24,6 @@ export class AgentDescription {
         description,
         outputSchema,
         inputSchema,
-        requires,
         labels,
         supportsTools,
     }: {
@@ -34,7 +32,6 @@ export class AgentDescription {
         description: string;
         outputSchema?: Record<string, any>;
         inputSchema?: Record<string, any>;
-        requires?: Requirement[];
         labels?: string[];
         supportsTools: boolean;
     }) {
@@ -43,7 +40,6 @@ export class AgentDescription {
         this.description = description;
         this.outputSchema = outputSchema;
         this.inputSchema = inputSchema;
-        this.requires = Array.isArray(requires) ? requires : [];
         this.labels = Array.isArray(labels) ? labels : [];
         this.supportsTools = supportsTools ?? false;
     }
@@ -60,7 +56,6 @@ export class AgentDescription {
             output_schema: this.outputSchema,
             labels: this.labels,
             supports_tools: this.supportsTools,
-            requires: this.requires.map((requirement) => requirement.toJson()),
         };
     }
 
@@ -68,22 +63,6 @@ export class AgentDescription {
      * Creates an AgentDescription from a JSON-like object.
      */
     public static fromJson(a: Record<string, any>): AgentDescription {
-        // If 'requires' is present, parse each entry as either a RequiredToolkit or a RequiredSchema
-        let requires: Requirement[] = [];
-
-        if (Array.isArray(a["requires"])) {
-            requires = a["requires"].map((e: Record<string, any>) => {
-                if (e["toolkit"] != null) {
-                    return RequiredToolkit.fromJson(e);
-                }
-
-                if (e["schema"] != null) {
-                    return RequiredSchema.fromJson(e);
-                }
-                // Adjust or throw an error if needed
-                throw new Error("Invalid requirement object");
-            });
-        }
 
         // Collect label strings, filtering out non-string items
         let labels: string[] = [];
@@ -97,7 +76,6 @@ export class AgentDescription {
             description: a["description"] ?? "",
             inputSchema: a["input_schema"] ?? undefined,
             outputSchema: a["output_schema"] ?? undefined,
-            requires,
             supportsTools: a["supports_tools"] === true,
             labels,
         });

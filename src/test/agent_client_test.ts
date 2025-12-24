@@ -154,16 +154,11 @@ describe("AgentDescription", () => {
         const description = AgentDescription.fromJson(minimal);
 
         expect(description.title).to.equal("");
-        expect(description.requires).to.deep.equal([]);
         expect(description.labels).to.deep.equal([]);
         expect(description.supportsTools).to.equal(false);
     });
 
     it("serialises to JSON", () => {
-        const requires = [
-            new RequiredToolkit({ name: "toolkit", tools: ["adder"] }),
-            new RequiredSchema({ name: "adder-schema" }),
-        ];
 
         const agent = new AgentDescription({
             name: "adder",
@@ -173,7 +168,6 @@ describe("AgentDescription", () => {
             outputSchema: { type: "object" },
             labels: ["math"],
             supportsTools: true,
-            requires,
         });
 
         const json = agent.toJson();
@@ -186,7 +180,6 @@ describe("AgentDescription", () => {
             output_schema: { type: "object" },
             labels: ["math"],
             supports_tools: true,
-            requires: requires.map((req) => req.toJson()),
         });
 
         const roundTripped = AgentDescription.fromJson(json);
@@ -197,9 +190,6 @@ describe("AgentDescription", () => {
         expect(roundTripped.outputSchema).to.deep.equal(agent.outputSchema);
         expect(roundTripped.labels).to.deep.equal(agent.labels);
         expect(roundTripped.supportsTools).to.equal(agent.supportsTools);
-        expect(roundTripped.requires.map((r) => r.toJson())).to.deep.equal(
-            requires.map((r) => r.toJson())
-        );
     });
 });
 
