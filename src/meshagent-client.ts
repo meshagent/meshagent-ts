@@ -76,7 +76,7 @@ export interface ProjectStorageMountSpec {
     read_only?: boolean;
 }
 
-export interface ServiceStorageMountsSpec {
+export interface ContainerMountSpec {
     room?: RoomStorageMountSpec[];
     project?: ProjectStorageMountSpec[];
 }
@@ -101,7 +101,7 @@ export interface ContainerSpec {
     environment?: EnvironmentVariable[] | null;
     secrets?: string[];
     pull_secret?: string | null;
-    storage?: ServiceStorageMountsSpec;
+    storage?: ContainerMountSpec;
     api_key?: ServiceApiKeySpec;
 }
 
