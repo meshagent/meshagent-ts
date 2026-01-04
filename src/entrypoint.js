@@ -2794,8 +2794,7 @@ var tryMergeDeleteSet = (ds, store) => {
   });
 };
 var cleanupTransactions = (transactionCleanups, i) => {
-  console.log("cleanup transactions");
-  while (i < transactionCleanups.length) {
+  if (i < transactionCleanups.length) {
     const transaction = transactionCleanups[i];
     const doc2 = transaction.doc;
     const store = doc2.store;
@@ -2824,15 +2823,19 @@ var cleanupTransactions = (transactionCleanups, i) => {
               event._path = null;
             });
             events.sort((event1, event2) => event1.path.length - event2.path.length);
-            callEventHandlerListeners(type._dEH, events, transaction);
+            fs.push(() => {
+              callEventHandlerListeners(type._dEH, events, transaction);
+            });
+          }
+        });
+        fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
+        fs.push(() => {
+          if (transaction._needFormattingCleanup) {
+            cleanupYTextAfterTransaction(transaction);
           }
         });
       });
-      fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
       callAll(fs, []);
-      if (transaction._needFormattingCleanup) {
-        cleanupYTextAfterTransaction(transaction);
-      }
     } finally {
       if (doc2.gc) {
         tryGcDeleteSet(ds, store, doc2.gcFilter);
@@ -2899,13 +2902,14 @@ var cleanupTransactions = (transactionCleanups, i) => {
         doc2.emit("subdocs", [{ loaded: subdocsLoaded, added: subdocsAdded, removed: subdocsRemoved }, doc2, transaction]);
         subdocsRemoved.forEach((subdoc) => subdoc.destroy());
       }
-      if (transactionCleanups.length <= ++i) {
+      if (transactionCleanups.length <= i + 1) {
         doc2._transactionCleanups = [];
         doc2.emit("afterAllTransactions", [doc2, transactionCleanups]);
+      } else {
+        cleanupTransactions(transactionCleanups, i + 1);
       }
     }
   }
-  console.log("cleaned transactions");
 };
 var transact = (doc2, f, origin = null, local = true) => {
   const transactionCleanups = doc2._transactionCleanups;
