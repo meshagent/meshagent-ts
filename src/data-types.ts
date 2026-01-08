@@ -50,6 +50,29 @@ export abstract class DataType {
   }
 }
 
+
+/**
+ * BoolDataType
+ */
+export class BoolDataType extends DataType {
+  constructor() {
+    super();
+  }
+
+  public static override fromJson(data: any): IntDataType {
+    if (data.type !== "bool") {
+      throw new Error(`Expected type 'bool', got '${data.type}'`);
+    }
+    return new BoolDataType();
+  }
+
+  public toJson(): Record<string, unknown> {
+    return { type: "bool" };
+  }
+}
+_dataTypes["bool"] = BoolDataType;
+
+
 /**
  * IntDataType
  */
