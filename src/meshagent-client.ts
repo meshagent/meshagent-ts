@@ -992,21 +992,21 @@ export class Meshagent {
 
     // Mailboxes ---------------------------------------------------------------
 
-    async createMailbox(params: { projectId: string; address: string; room: string; queue: string }): Promise<void> {
-        const { projectId, address, room, queue } = params;
+    async createMailbox(params: { projectId: string; address: string; room: string; queue: string, isPublic: boolean }): Promise<void> {
+        const { projectId, address, room, queue, isPublic } = params;
         await this.request(`/accounts/projects/${projectId}/mailboxes`, {
             method: "POST",
-            json: { address, room, queue },
+            json: { address, room, queue, "public":isPublic },
             action: "create mailbox",
             responseType: "void",
         });
     }
 
-    async updateMailbox(params: { projectId: string; address: string; room: string; queue: string }): Promise<void> {
-        const { projectId, address, room, queue } = params;
+    async updateMailbox(params: { projectId: string; address: string; room: string; queue: string, isPublic: boolean }): Promise<void> {
+        const { projectId, address, room, queue, isPublic } = params;
         await this.request(`/accounts/projects/${projectId}/mailboxes/${address}`, {
             method: "PUT",
-            json: { room, queue },
+            json: { room, queue, "public" : isPublic },
             action: "update mailbox",
             responseType: "void",
         });
