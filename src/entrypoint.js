@@ -8548,16 +8548,17 @@ var ServerXmlDocument = class {
 
 // src/entrypoint.ts
 var import_base_64 = __toESM(require_base64());
+var import_base_642 = __toESM(require_base64());
 function uint8ArrayToBase64(bytes) {
   let binary = "";
   const chunkSize = 32768;
   for (let i = 0; i < bytes.length; i += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
-  return btoa(binary);
+  return (0, import_base_642.encode)(binary);
 }
 function base64ToUint8Array(base642) {
-  const binary = atob(base642);
+  const binary = (0, import_base_642.decode)(base642);
   const len = binary.length;
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) {
