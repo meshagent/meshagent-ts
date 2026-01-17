@@ -241,7 +241,7 @@ describe("agent_client_test", function () {
 
         for (let i = 0; i < agents.length; i++) {
             let agent = agents[i];
-            expect(agent.name).to.equal("add");
+            expect(agent.name).to.equal("client1");
         }
     });
 
