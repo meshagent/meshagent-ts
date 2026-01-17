@@ -247,7 +247,7 @@ describe("agent_client_test", function () {
 
     it("test_can_ask_agent", async () => {
         const result = await client1.agents.ask({
-            agent: "add",
+            agent: "client1",
             arguments: { a: 1, b: 2 },
         });
 
