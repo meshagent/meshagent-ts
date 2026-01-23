@@ -76,11 +76,11 @@ export class AgentChatContext {
 
 /*
 -------------------------------------------------------------------------
-AgentCallContext
+TaskContext
 -------------------------------------------------------------------------
 */
 
-export class AgentCallContext {
+export class TaskContext {
     private readonly _jwt: string;
     private readonly _chat: AgentChatContext;
     private readonly _apiUrl: string;
@@ -308,76 +308,17 @@ export abstract class RemoteTaskRunner {
     }
 
     async start(): Promise<void> {
-        const handler = this._ask.bind(this);
-
-        this.client.protocol.addHandler("agent.ask", handler);
-
-        await this._register();
     }
 
     async stop(): Promise<void> {
-        await this._unregister();
-
+    
         this.client.protocol.removeHandler("agent.ask");
-    }
-
-    protected async _register(): Promise<void> {
-        const res = await this.client.sendRequest("agent.register_agent", {
-            name: this.name,
-            description: this.description,
-            input_schema: this.inputSchema,
-            output_schema: this.outputSchema,
-            supports_tools: this.supportsTools,
-            requires: this.required.map((r) => ({
-                toolkit: r.name,
-                tools: r.tools,
-            })),
-        }) as JsonResponse;
-
-        this._registrationId = res.json["id"];
-    }
-
-    protected async _unregister(): Promise<void> {
-        if (!this._registrationId) return;
-
-        await this.client.sendRequest("agent.unregister_agent", {id: this._registrationId});
     }
 
     /**
      * Called when an "ask" request arrives. Must be implemented by subclass.
      * This method should return the result as an object.
      */
-    abstract ask(context: AgentCallContext, arguments_: Record<string, any>): Promise<Record<string, any>>;
+    abstract ask(context: TaskContext, arguments_: Record<string, any>): Promise<Record<string, any>>;
 
-    private async _ask(protocol: Protocol, messageId: number, msgType: string, data?: Uint8Array): Promise<void> {
-        // Example logging
-        console.info("_ask handler invoked with data", data);
-
-        try {
-            const [ message, _ ] = unpackMessage(data!)
-            console.info("got message", message);
-
-            const jwt = message["jwt"] as string;
-            const args = message["arguments"] as Record<string, any>;
-            const task_id = message["task_id"] as string;
-            const context_json = message["context"] as Record<string, any>;
-            const api_url = message["api_url"] as string;
-
-            const chat = AgentChatContext.fromJson(context_json);
-            const callContext = new AgentCallContext({chat, jwt, api_url});
-
-            const answer = await this.ask(callContext, args);
-            const encoded = packMessage({task_id, answer});
-
-            await protocol.send("agent.ask_response", encoded);
-
-        } catch (e: any) {
-            const rawError = {
-                task_id: "",
-                error: String(e),
-            };
-
-            await protocol.send("agent.ask_response", packMessage(rawError));
-        }
-    }
 }

@@ -3,10 +3,9 @@
 import { expect } from "chai";
 
 import {
-    AgentDescription,
     RequiredSchema,
     AgentsClient,
-    AgentCallContext,
+    TaskContext,
     FileResponse,
     JsonResponse,
     TextResponse,
@@ -136,62 +135,12 @@ class AddAgent extends RemoteTaskRunner {
         });
     }
 
-    async ask(context: AgentCallContext, args: Record<string, any>): Promise<Record<string, any>> {
+    async ask(context: TaskContext, args: Record<string, any>): Promise<Record<string, any>> {
         return {
             sum: args.a + args.b,
         };
     }
 }
-
-describe("AgentDescription", () => {
-
-    it("defaults optional fields when omitted", () => {
-        const minimal = {
-            name: "simple-agent",
-            description: "A simple agent",
-        };
-
-        const description = AgentDescription.fromJson(minimal);
-
-        expect(description.title).to.equal("");
-        expect(description.labels).to.deep.equal([]);
-        expect(description.supportsTools).to.equal(false);
-    });
-
-    it("serialises to JSON", () => {
-
-        const agent = new AgentDescription({
-            name: "adder",
-            title: "Adder",
-            description: "Adds numbers",
-            inputSchema: { type: "object" },
-            outputSchema: { type: "object" },
-            labels: ["math"],
-            supportsTools: true,
-        });
-
-        const json = agent.toJson();
-
-        expect(json).to.deep.equal({
-            name: "adder",
-            title: "Adder",
-            description: "Adds numbers",
-            input_schema: { type: "object" },
-            output_schema: { type: "object" },
-            labels: ["math"],
-            supports_tools: true,
-        });
-
-        const roundTripped = AgentDescription.fromJson(json);
-        expect(roundTripped.name).to.equal(agent.name);
-        expect(roundTripped.title).to.equal(agent.title);
-        expect(roundTripped.description).to.equal(agent.description);
-        expect(roundTripped.inputSchema).to.deep.equal(agent.inputSchema);
-        expect(roundTripped.outputSchema).to.deep.equal(agent.outputSchema);
-        expect(roundTripped.labels).to.deep.equal(agent.labels);
-        expect(roundTripped.supportsTools).to.equal(agent.supportsTools);
-    });
-});
 
 describe("agent_client_test", function () {
     // Increase timeout if necessary for WebSocket connections
@@ -235,84 +184,6 @@ describe("agent_client_test", function () {
         client2.dispose();
     });
 
-    it("test_can_list_agents", async () => {
-        const agents = await client1.agents.listAgents();
-        expect(agents.length).to.greaterThanOrEqual(1, `Expected at least 1 agent, got ${agents.length}`);
-
-        for (let i = 0; i < agents.length; i++) {
-            let agent = agents[i];
-            expect(agent.name).to.equal("client1");
-        }
-    });
-
-    it("test_can_ask_agent", async () => {
-        const result = await client1.agents.ask({
-            agent: "client1",
-            arguments: { a: 1, b: 2 },
-        });
-
-        expect(result).to.be.instanceOf(JsonResponse);
-        expect(result.json).to.have.property("sum");
-        expect(result.json.sum).to.equal(3);
-    });
-
-    it("test_ask_includes_optional_arguments", async () => {
-        const calls: { type: string; payload: Record<string, any> }[] = [];
-        const fakeRoom = {
-            async sendRequest(type: string, payload: Record<string, any>) {
-                calls.push({ type, payload });
-                return new JsonResponse({ json: { answer: { result: "ok" } } });
-            },
-        };
-
-        const agentsClient = new AgentsClient({ room: fakeRoom as unknown as RoomClient });
-        const onBehalfOf = new RemoteParticipant(fakeRoom as unknown as RoomClient, "participant-123", "tester");
-        const requires = [new RequiredToolkit({ name: "test-toolkit", tools: ["alpha"] })];
-
-        const response = await agentsClient.ask({
-            agent: "test-agent",
-            arguments: { foo: "bar" },
-            onBehalfOf,
-            requires
-        });
-
-        expect(calls).to.have.lengthOf(1);
-        expect(calls[0].type).to.equal("agent.ask");
-
-        expect(calls[0].payload).to.deep.equal({
-            agent: "test-agent",
-            arguments: { foo: "bar" },
-            on_behalf_of_id: "participant-123",
-            requires: requires.map((req) => req.toJson()),
-        });
-
-        expect(response).to.be.instanceOf(JsonResponse);
-        expect(response.json).to.deep.equal({ result: "ok" });
-    });
-
-    it("test_ask_omits_optional_arguments_when_not_provided", async () => {
-        let received: Record<string, any> | undefined;
-        const fakeRoom = {
-            async sendRequest(type: string, payload: Record<string, any>) {
-                received = payload;
-                return new JsonResponse({ json: { answer: { status: "ok" } } });
-            },
-        };
-
-        const agentsClient = new AgentsClient({ room: fakeRoom as unknown as RoomClient });
-
-        const response = await agentsClient.ask({
-            agent: "simple-agent",
-            arguments: { ping: true },
-        });
-
-        expect(received).to.deep.equal({
-            agent: "simple-agent",
-            arguments: { ping: true },
-        });
-
-        expect(response.json).to.deep.equal({ status: "ok" });
-    });
 
     it("test_toolkit_description_json_round_trip", () => {
         const rawToolkit = {

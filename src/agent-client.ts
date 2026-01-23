@@ -284,37 +284,6 @@ export class AgentsClient {
     }
 
     /**
-     * Asks a question to the specified agent, optionally passing toolkits.
-     * Returns the "answer" field from the JSON response.
-     */
-    public async ask(params: {
-        agent: string;
-        arguments: Record<string, any>;
-        onBehalfOf?: RemoteParticipant;
-        requires?: Requirement[];
-    }): Promise<JsonResponse> {
-        const { agent, arguments: args, onBehalfOf, requires } = params;
-
-        const payload: Record<string, any> = {
-            agent,
-            arguments: args,
-        };
-
-        if (onBehalfOf) {
-            payload["on_behalf_of_id"] = onBehalfOf.id;
-        }
-
-        if (requires && requires.length > 0) {
-            payload["requires"] = requires.map((req) => req.toJson());
-        }
-
-        const result = (await this.client.sendRequest("agent.ask", payload)) as JsonResponse;
-        const answer = (result.json["answer"] ?? {}) as Record<string, any>;
-
-        return new JsonResponse({ json: answer });
-    }
-
-    /**
      * Lists available toolkits.
      */
     public async listToolkits(): Promise<ToolkitDescription[]> {
@@ -331,16 +300,6 @@ export class AgentsClient {
 
         return toolkits;
     }
-
-    /**
-     * Lists available agents, returning an array of AgentDescription.
-     */
-    public async listAgents(): Promise<AgentDescription[]> {
-        const result = (await this.client.sendRequest("agent.list_agents", {})) as JsonResponse;
-
-        return (result.json["agents"] || []).map(AgentDescription.fromJson);
-    }
-
     /**
      * Invokes a tool on a specified toolkit with arguments, returning a Response.
      */
