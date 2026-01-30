@@ -8,6 +8,15 @@ import { DataType } from "./data-types";
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
 
 /**
+ * Reference to a table for SQL queries.
+ */
+export interface TableRef {
+  name: string;
+  namespace?: string[];
+  alias?: string;
+}
+
+/**
  * A client for interacting with the 'database' extension on the room server.
  */
 export class DatabaseClient {
@@ -200,6 +209,34 @@ export class DatabaseClient {
     records: any;
   }): Promise<void> {
     await this.room.sendRequest("database.merge", { table, on, records });
+  }
+
+  /**
+   * Execute a SQL query against one or more tables.
+   *
+   * @param query SQL statement to execute.
+   * @param tables Tables to register for the query.
+   * @param params Typed parameters for DataFusion parameter binding.
+   * @returns A list of matching records.
+   */
+  public async sql({ query, tables, params }: {
+    query: string;
+    tables: TableRef[];
+    params?: Record<string, any>;
+  }): Promise<Array<Record<string, any>>> {
+    const payload: Record<string, any> = {
+      query,
+      tables,
+      params,
+    };
+
+    const response = await this.room.sendRequest("database.sql", payload);
+    if (response instanceof JsonResponse) {
+      if (response?.json?.results) {
+        return response.json.results;
+      }
+    }
+    return [];
   }
 
   /**
