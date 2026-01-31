@@ -12,6 +12,7 @@ import { MessagingClient } from "./messaging-client";
 import { QueuesClient } from "./queues-client";
 import { DatabaseClient } from "./database-client";
 import { AgentsClient } from "./agent-client";
+import { SecretsClient } from "./secrets-client";
 
 import { RoomEvent } from "./room-event";
 import { ErrorResponse, Response, unpackResponse } from "./response";
@@ -38,6 +39,7 @@ export class RoomClient {
     public readonly queues: QueuesClient;
     public readonly database: DatabaseClient;
     public readonly agents: AgentsClient;
+    public readonly secrets: SecretsClient;
 
     private _pendingRequests: Map<number, Completer<any>> = new Map();
     private _ready = new Completer<boolean>();
@@ -58,6 +60,7 @@ export class RoomClient {
         this.queues = new QueuesClient({room: this});
         this.database = new DatabaseClient({room: this});
         this.agents = new AgentsClient({room: this});
+        this.secrets = new SecretsClient({room: this});
     }
 
     get localParticipant(): LocalParticipant | null {

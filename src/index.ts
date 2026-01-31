@@ -21,6 +21,7 @@ export * from './room-server-client';
 export * from './runtime';
 export * from './schema';
 export * from './storage-client';
+export * from './secrets-client';
 export * from './stream-controller';
 export * from './sync-client';
 export * from './api_keys';
