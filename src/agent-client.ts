@@ -286,8 +286,23 @@ export class AgentsClient {
     /**
      * Lists available toolkits.
      */
-    public async listToolkits(): Promise<ToolkitDescription[]> {
-        const result = (await this.client.sendRequest("agent.list_toolkits", {})) as JsonResponse;
+    public async listToolkits(params?: {
+        participantId?: string;
+        participantName?: string;
+        timeout?: number;
+    }): Promise<ToolkitDescription[]> {
+        const request: Record<string, any> = {};
+        if (params?.participantId != null) {
+            request["participant_id"] = params.participantId;
+        }
+        if (params?.participantName != null) {
+            request["participant_name"] = params.participantName;
+        }
+        if (params?.timeout !== undefined) {
+            request["timeout"] = params.timeout;
+        }
+
+        const result = (await this.client.sendRequest("agent.list_toolkits", request)) as JsonResponse;
         const tools = result.json["tools"] as Record<string, any>;
         const toolkits: ToolkitDescription[] = [];
 
