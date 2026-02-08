@@ -123,21 +123,24 @@ export class ToolkitDescription {
     public readonly description: string;
     public readonly tools: ToolDescription[];
     public readonly thumbnailUrl?: string;
+    public readonly participantId?: string;
 
     private _byName: Map<string, ToolDescription>;
 
-    constructor({ title, name, description, tools, thumbnailUrl }: {
+    constructor({ title, name, description, tools, thumbnailUrl, participantId }: {
         title: string;
         name: string;
         description: string;
         tools: ToolDescription[];
         thumbnailUrl?: string;
+        participantId?: string;
     }) {
         this.title = title;
         this.name = name;
         this.description = description;
         this.tools = tools;
         this.thumbnailUrl = thumbnailUrl;
+        this.participantId = participantId;
 
         // Build the map from tool name -> ToolDescription
         this._byName = new Map<string, ToolDescription>(this.tools.map((tool) => [tool.name, tool]));
@@ -160,6 +163,7 @@ export class ToolkitDescription {
             description: this.description,
             title: this.title,
             thumbnail_url: this.thumbnailUrl,
+            participant_id: this.participantId,
             tools: this.tools.map((tool) => ({
                 name: tool.name,
                 title: tool.title,
@@ -182,6 +186,7 @@ export class ToolkitDescription {
         const finalName = name ?? json["name"] ?? "";
         const description = json["description"] ?? "";
         const thumbnailUrl = json["thumbnail_url"] ?? undefined;
+        const participantId = json["participant_id"] ?? undefined;
 
         // We can have tools as a List or Map in the original structure
         const toolsList: ToolDescription[] = [];
@@ -229,6 +234,7 @@ export class ToolkitDescription {
             name: finalName,
             description,
             thumbnailUrl,
+            participantId,
             tools: toolsList,
         });
     }

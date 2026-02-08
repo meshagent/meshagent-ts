@@ -26,7 +26,11 @@ export abstract class Requirement {
    */
   public static fromJson(r: Record<string, any>): Requirement {
     if ("toolkit" in r) {
-      return new RequiredToolkit({ name: r["toolkit"], tools: r["tools"] });
+      return new RequiredToolkit({
+        name: r["toolkit"],
+        tools: r["tools"],
+        participantName: r["participant_name"],
+      });
     }
 
     if ("schema" in r) {
@@ -47,17 +51,28 @@ export abstract class Requirement {
  */
 export class RequiredToolkit extends Requirement {
   public readonly tools?: string[];
+  public readonly participantName?: string;
 
-  constructor({ name, tools }: { name: string; tools?: string[] }) {
+  constructor({
+    name,
+    tools,
+    participantName,
+  }: {
+    name: string;
+    tools?: string[];
+    participantName?: string;
+  }) {
     super({name});
 
     this.tools = tools;
+    this.participantName = participantName;
   }
 
   public toJson(): Record<string, any> {
     return {
       toolkit: this.name,
       tools: this.tools,
+      participant_name: this.participantName,
     };
   }
 }
