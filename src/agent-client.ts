@@ -163,7 +163,9 @@ export class ToolkitDescription {
             description: this.description,
             title: this.title,
             thumbnail_url: this.thumbnailUrl,
-            participant_id: this.participantId,
+            ...(this.participantId !== undefined && {
+                participant_id: this.participantId,
+            }),
             tools: this.tools.map((tool) => ({
                 name: tool.name,
                 title: tool.title,
