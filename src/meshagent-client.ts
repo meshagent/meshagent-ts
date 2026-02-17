@@ -97,6 +97,7 @@ export interface ServiceMetadata {
 
 export interface ContainerSpec {
     command?: string | null;
+    working_dir?: string | null;
     image: string;
     environment?: EnvironmentVariable[] | null;
     secrets?: string[];
