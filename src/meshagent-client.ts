@@ -38,6 +38,7 @@ export interface RoomInfo {
     id: string;
     name: string;
     metadata: Record<string, unknown>;
+    annotations: Record<string, string>;
 }
 
 export interface ProjectRoomGrant {
@@ -417,7 +418,7 @@ export class Meshagent {
         if (!data || typeof data !== "object") {
             throw new RoomException("Invalid room payload");
         }
-        const { id, name, metadata } = data as any;
+        const { id, name, metadata, annotations } = data as any;
         if (typeof id !== "string" || typeof name !== "string") {
             throw new RoomException("Invalid room payload: missing id or name");
         }
@@ -425,6 +426,7 @@ export class Meshagent {
             id,
             name,
             metadata: metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : {},
+            annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
         };
     }
 
@@ -1178,12 +1180,13 @@ export class Meshagent {
 
     // Rooms -------------------------------------------------------------------
 
-    async createRoom(params: { projectId: string; name: string; ifNotExists?: boolean; metadata?: Record<string, unknown>; permissions?: Record<string, ApiScope> }): Promise<RoomInfo> {
-        const { projectId, name, ifNotExists = false, metadata, permissions } = params;
+    async createRoom(params: { projectId: string; name: string; ifNotExists?: boolean; metadata?: Record<string, unknown>; annotations?: Record<string, string>; permissions?: Record<string, ApiScope> }): Promise<RoomInfo> {
+        const { projectId, name, ifNotExists = false, metadata, annotations, permissions } = params;
         const payload: Record<string, unknown> = {
             name,
             if_not_exists: Boolean(ifNotExists),
             metadata,
+            annotations,
         };
         if (permissions) {
             const serialized: Record<string, unknown> = {};
@@ -1207,10 +1210,22 @@ export class Meshagent {
         return this.parseRoom(data);
     }
 
-    async updateRoom(projectId: string, roomId: string, name: string): Promise<void> {
+    async updateRoom(
+        projectId: string,
+        roomId: string,
+        name: string,
+        options: { metadata?: Record<string, unknown>; annotations?: Record<string, string> } = {},
+    ): Promise<void> {
+        const payload: Record<string, unknown> = { name };
+        if (options.metadata !== undefined) {
+            payload["metadata"] = options.metadata;
+        }
+        if (options.annotations !== undefined) {
+            payload["annotations"] = options.annotations;
+        }
         await this.request(`/accounts/projects/${projectId}/rooms/${roomId}`, {
             method: "PUT",
-            json: { name },
+            json: payload,
             action: "update room",
             responseType: "void",
         });
