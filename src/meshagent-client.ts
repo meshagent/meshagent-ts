@@ -196,6 +196,7 @@ function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
 export interface Mailbox {
     address: string;
     room: string;
+    roomId?: string;
     queue: string;
 }
 
@@ -1024,11 +1025,14 @@ export class Meshagent {
             if (!item || typeof item !== "object") {
                 throw new RoomException("Invalid mailbox payload");
             }
-            const { address, room, queue } = item as any;
+            const { address, room, room_id, queue } = item as any;
             if (typeof address !== "string" || typeof room !== "string" || typeof queue !== "string") {
                 throw new RoomException("Invalid mailbox payload: missing fields");
             }
-            return { address, room, queue };
+            if (room_id !== undefined && typeof room_id !== "string") {
+                throw new RoomException("Invalid mailbox payload: invalid room_id");
+            }
+            return { address, room, roomId: room_id, queue };
         });
     }
 
