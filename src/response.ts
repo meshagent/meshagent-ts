@@ -1,14 +1,15 @@
 import { packMessage, splitMessageHeader, splitMessagePayload } from "./utils";
 
-/** Represents a network or protocol-level chunk with a method to pack into bytes. */
-export interface Chunk {
+/** Represents protocol-level response content with a method to pack into bytes. */
+export interface Content {
   pack(): Uint8Array;
 }
+export type Chunk = Content;
 
 /**
  * Minimally replicate chunk classes:
  */
-export class LinkChunk implements Chunk {
+export class LinkChunk implements Content {
     public url: string;
     public name: string;
 
@@ -40,7 +41,7 @@ export class LinkChunk implements Chunk {
   }
 }
 
-export class FileChunk implements Chunk {
+export class FileChunk implements Content {
   public data: Uint8Array;
   public name: string;
   public mimeType: string;
@@ -76,7 +77,7 @@ export class FileChunk implements Chunk {
   }
 }
 
-export class TextChunk implements Chunk {
+export class TextChunk implements Content {
   public text: string;
 
   constructor({text}: {text: string}) {
@@ -163,7 +164,7 @@ export class EmptyChunk implements Chunk {
 }
 
 /** A dictionary to map 'type' => function to unpack. */
-const _chunkTypes: Record<string, (header: Record<string, any>, payload: Uint8Array) => Chunk> = {
+const _chunkTypes: Record<string, (header: Record<string, any>, payload: Uint8Array) => Content> = {
   empty: EmptyChunk.unpack,
   error: ErrorChunk.unpack,
   file: FileChunk.unpack,
@@ -175,7 +176,7 @@ const _chunkTypes: Record<string, (header: Record<string, any>, payload: Uint8Ar
 /**
  * Unpacks a response from a combined packet.
  */
-export function unpackChunk(data: Uint8Array): Chunk {
+export function unpackChunk(data: Uint8Array): Content {
   const header = JSON.parse(splitMessageHeader(data));
   const payload = splitMessagePayload(data);
   const typeKey = header["type"];
@@ -188,6 +189,23 @@ export function unpackChunk(data: Uint8Array): Chunk {
 }
 
 /** @deprecated use unpackChunk */
-export function unpackResponse(data: Uint8Array): Chunk {
+export function unpackResponse(data: Uint8Array): Content {
+  return unpackChunk(data);
+}
+
+export type LinkContent = LinkChunk;
+export const LinkContent = LinkChunk;
+export type FileContent = FileChunk;
+export const FileContent = FileChunk;
+export type TextContent = TextChunk;
+export const TextContent = TextChunk;
+export type JsonContent = JsonChunk;
+export const JsonContent = JsonChunk;
+export type ErrorContent = ErrorChunk;
+export const ErrorContent = ErrorChunk;
+export type EmptyContent = EmptyChunk;
+export const EmptyContent = EmptyChunk;
+
+export function unpackContent(data: Uint8Array): Content {
   return unpackChunk(data);
 }
