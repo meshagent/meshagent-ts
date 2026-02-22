@@ -15,7 +15,7 @@ import { AgentsClient } from "./agent-client";
 import { SecretsClient } from "./secrets-client";
 
 import { RoomEvent } from "./room-event";
-import { ErrorResponse, Response, unpackResponse } from "./response";
+import { Chunk, ErrorChunk, unpackChunk } from "./response";
 
 /**
  * Represents a request/response structure for your protocol.
@@ -106,10 +106,10 @@ export class RoomClient {
      * @param data Additional data for the request
      * @returns A promise resolving to the server response
      */
-    public async sendRequest(type: string, request: RequestHeader, data?: Uint8Array): Promise<Response> {
+    public async sendRequest(type: string, request: RequestHeader, data?: Uint8Array): Promise<Chunk> {
         const requestId = this.protocol.getNextMessageId();
 
-        const pr = new Completer<Response>();
+        const pr = new Completer<Chunk>();
 
         this._pendingRequests.set(requestId, pr);
 
@@ -129,7 +129,7 @@ export class RoomClient {
             return;
         }
 
-        const response = unpackResponse(data);
+        const response = unpackChunk(data);
 
         console.log("GOT RESPONSE", response);
 
@@ -142,7 +142,7 @@ export class RoomClient {
             const pr = this._pendingRequests.get(messageId)!;
 
             this._pendingRequests.delete(messageId);
-            if (response instanceof ErrorResponse) {
+            if (response instanceof ErrorChunk) {
                 pr.reject(new Error(response.text));
             } else {
                 pr.resolve(response);

@@ -1,5 +1,5 @@
 import { RoomClient } from "./room-client";
-import { EmptyResponse, FileResponse, JsonResponse } from "./response";
+import { EmptyChunk, FileChunk, JsonChunk } from "./response";
 
 export interface SecretInfo {
   id: string;
@@ -40,10 +40,10 @@ export class SecretsClient {
     if (forIdentity) req.for_identity = forIdentity;
 
     const response = await this.client.sendRequest("secrets.set_secret", req, data);
-    if (response instanceof EmptyResponse || response instanceof JsonResponse) {
+    if (response instanceof EmptyChunk || response instanceof JsonChunk) {
       return;
     }
-    throw new Error("Invalid response received, expected EmptyResponse or JsonResponse");
+    throw new Error("Invalid response received, expected EmptyChunk or JsonChunk");
   }
 
   public async getSecret({
@@ -52,7 +52,7 @@ export class SecretsClient {
   }: {
     secretId: string;
     delegatedTo?: string;
-  }): Promise<FileResponse | null> {
+  }): Promise<FileChunk | null> {
     const req: Record<string, any> = {
       secret_id: secretId,
     };
@@ -60,19 +60,19 @@ export class SecretsClient {
     if (delegatedTo) req.delegated_to = delegatedTo;
 
     const response = await this.client.sendRequest("secrets.get_secret", req);
-    if (response instanceof EmptyResponse) {
+    if (response instanceof EmptyChunk) {
       return null;
     }
-    if (response instanceof FileResponse) {
+    if (response instanceof FileChunk) {
       return response;
     }
-    throw new Error("Invalid response received, expected FileResponse or EmptyResponse");
+    throw new Error("Invalid response received, expected FileChunk or EmptyChunk");
   }
 
   public async listSecrets(): Promise<SecretInfo[]> {
     const response = await this.client.sendRequest("secrets.list_secrets", {});
-    if (!(response instanceof JsonResponse)) {
-      throw new Error("Invalid response received, expected JsonResponse");
+    if (!(response instanceof JsonChunk)) {
+      throw new Error("Invalid response received, expected JsonChunk");
     }
 
     const secrets = Array.isArray(response.json?.secrets) ? response.json.secrets : [];
@@ -97,10 +97,10 @@ export class SecretsClient {
     if (delegatedTo) req.delegated_to = delegatedTo;
 
     const response = await this.client.sendRequest("secrets.delete_secret", req);
-    if (response instanceof EmptyResponse || response instanceof JsonResponse) {
+    if (response instanceof EmptyChunk || response instanceof JsonChunk) {
       return;
     }
-    throw new Error("Invalid response received, expected EmptyResponse or JsonResponse");
+    throw new Error("Invalid response received, expected EmptyChunk or JsonChunk");
   }
 
   public async deleteRequestedSecret({
@@ -119,9 +119,9 @@ export class SecretsClient {
     if (delegatedTo) req.delegated_to = delegatedTo;
 
     const response = await this.client.sendRequest("secrets.delete_requested_secret", req);
-    if (response instanceof EmptyResponse || response instanceof JsonResponse) {
+    if (response instanceof EmptyChunk || response instanceof JsonChunk) {
       return;
     }
-    throw new Error("Invalid response received, expected EmptyResponse or JsonResponse");
+    throw new Error("Invalid response received, expected EmptyChunk or JsonChunk");
   }
 }

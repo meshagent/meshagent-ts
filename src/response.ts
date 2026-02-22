@@ -1,14 +1,14 @@
 import { packMessage, splitMessageHeader, splitMessagePayload } from "./utils";
 
-/** Represents a network or protocol-level response with a method to pack into bytes. */
-export interface Response {
+/** Represents a network or protocol-level chunk with a method to pack into bytes. */
+export interface Chunk {
   pack(): Uint8Array;
 }
 
-/** 
- * Minimally replicate "Response" classes:
+/**
+ * Minimally replicate chunk classes:
  */
-export class LinkResponse implements Response {
+export class LinkChunk implements Chunk {
     public url: string;
     public name: string;
 
@@ -21,7 +21,7 @@ export class LinkResponse implements Response {
   }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new LinkResponse({
+    return new LinkChunk({
       url: header["url"],
       name: header["name"]!,
     });
@@ -36,11 +36,11 @@ export class LinkResponse implements Response {
   }
 
   toString(): string {
-    return `LinkResponse (${this.name}): ${this.url}`;
+    return `LinkChunk (${this.name}): ${this.url}`;
   }
 }
 
-export class FileResponse implements Response {
+export class FileChunk implements Chunk {
   public data: Uint8Array;
   public name: string;
   public mimeType: string;
@@ -56,7 +56,7 @@ export class FileResponse implements Response {
   }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new FileResponse({
+    return new FileChunk({
         data: payload,
         name: header["name"],
         mimeType: header["mime_type"],
@@ -72,11 +72,11 @@ export class FileResponse implements Response {
   }
 
   toString(): string {
-    return `FileResponse (${this.name}): ${this.mimeType}`;
+    return `FileChunk (${this.name}): ${this.mimeType}`;
   }
 }
 
-export class TextResponse implements Response {
+export class TextChunk implements Chunk {
   public text: string;
 
   constructor({text}: {text: string}) {
@@ -84,7 +84,7 @@ export class TextResponse implements Response {
   }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new TextResponse({
+    return new TextChunk({
         text: header["text"],
     });
   }
@@ -97,12 +97,12 @@ export class TextResponse implements Response {
   }
 
   toString(): string {
-    return `TextResponse: ${this.text}`;
+    return `TextChunk: ${this.text}`;
   }
 }
 
 /** Example JSON-based response class. */
-export class JsonResponse implements Response {
+export class JsonChunk implements Chunk {
   public json: Record<string, any>;
 
   constructor({json}: {json: Record<string, any>}) {
@@ -110,7 +110,7 @@ export class JsonResponse implements Response {
   }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new JsonResponse({json: header["json"]});
+    return new JsonChunk({json: header["json"]});
   }
 
   pack(): Uint8Array {
@@ -121,11 +121,11 @@ export class JsonResponse implements Response {
   }
 
   toString(): string {
-    return `JsonResponse: ${JSON.stringify(this.json)}`;
+    return `JsonChunk: ${JSON.stringify(this.json)}`;
   }
 }
 
-export class ErrorResponse implements Response {
+export class ErrorChunk implements Chunk {
   public text: string;
 
   constructor({text}: {text: string}) {
@@ -133,7 +133,7 @@ export class ErrorResponse implements Response {
   }
 
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new ErrorResponse({text: header["text"]});
+    return new ErrorChunk({text: header["text"]});
   }
 
   pack(): Uint8Array {
@@ -144,13 +144,13 @@ export class ErrorResponse implements Response {
   }
 
   toString(): string {
-    return `ErrorResponse: ${this.text}`;
+    return `ErrorChunk: ${this.text}`;
   }
 }
 
-export class EmptyResponse implements Response {
+export class EmptyChunk implements Chunk {
   static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new EmptyResponse();
+    return new EmptyChunk();
   }
 
   pack(): Uint8Array {
@@ -158,32 +158,36 @@ export class EmptyResponse implements Response {
   }
 
   toString(): string {
-    return `EmptyResponse`;
+    return `EmptyChunk`;
   }
 }
 
 /** A dictionary to map 'type' => function to unpack. */
-const _responseTypes: Record<string, (header: Record<string, any>, payload: Uint8Array) => Response> = {
-  empty: EmptyResponse.unpack,
-  error: ErrorResponse.unpack,
-  file: FileResponse.unpack,
-  json: JsonResponse.unpack,
-  link: LinkResponse.unpack,
-  text: TextResponse.unpack,
+const _chunkTypes: Record<string, (header: Record<string, any>, payload: Uint8Array) => Chunk> = {
+  empty: EmptyChunk.unpack,
+  error: ErrorChunk.unpack,
+  file: FileChunk.unpack,
+  json: JsonChunk.unpack,
+  link: LinkChunk.unpack,
+  text: TextChunk.unpack,
 };
 
 /**
  * Unpacks a response from a combined packet.
  */
-export function unpackResponse(data: Uint8Array): Response {
+export function unpackChunk(data: Uint8Array): Chunk {
   const header = JSON.parse(splitMessageHeader(data));
   const payload = splitMessagePayload(data);
   const typeKey = header["type"];
 
-  if (!_responseTypes[typeKey]) {
-    throw new Error(`Unknown response type: ${typeKey}`);
+  if (!_chunkTypes[typeKey]) {
+    throw new Error(`Unknown chunk type: ${typeKey}`);
   }
 
-  return _responseTypes[typeKey](header, payload);
+  return _chunkTypes[typeKey](header, payload);
 }
 
+/** @deprecated use unpackChunk */
+export function unpackResponse(data: Uint8Array): Chunk {
+  return unpackChunk(data);
+}

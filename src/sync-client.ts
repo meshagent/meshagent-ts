@@ -4,7 +4,7 @@ import { Protocol } from "./protocol";
 import { MeshSchema } from "./schema";
 import { StreamController } from "./stream-controller";
 import { MeshDocument, RoomServerException } from "./room-server-client";
-import { JsonResponse } from "./response";
+import { JsonChunk } from "./response";
 import { splitMessageHeader, splitMessagePayload, decoder, encoder, RefCount } from "./utils";
 import { unregisterDocument, applyBackendChanges } from "./runtime";
 import { Completer } from "./completer";
@@ -150,7 +150,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
 
     try {
       // Possibly returns a JSON response with schema
-      const result = (await this.client.sendRequest("room.connect", { path, create})) as JsonResponse;
+      const result = (await this.client.sendRequest("room.connect", { path, create})) as JsonChunk;
 
       // parse the schema
       const schema = MeshSchema.fromJson(result.json["schema"]);

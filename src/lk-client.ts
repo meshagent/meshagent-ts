@@ -1,5 +1,5 @@
 import { RoomClient } from './room-client';
-import { JsonResponse } from './response';
+import { JsonChunk } from './response';
 
 export class LivekitConnectionInfo {
     public url: string;
@@ -29,7 +29,7 @@ export class LivekitClient {
         const response = (await this.room.sendRequest(
             'livekit.connect',
             { breakout_room: breakoutRoom }
-        )) as JsonResponse;
+        )) as JsonChunk;
 
         if (!response || !response.json) {
             throw new Error('Failed to get connection info');

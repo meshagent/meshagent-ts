@@ -3,7 +3,7 @@
 import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
-import { Response, ErrorResponse, JsonResponse } from "./response";
+import { Chunk, ErrorChunk, JsonChunk } from "./response";
 import { packMessage, unpackMessage } from "./utils";
 
 export class AgentChatContext {
@@ -133,9 +133,9 @@ export abstract class Tool {
     }
 
     /**
-     * Executes the tool with the given arguments, returning a Response.
+     * Executes the tool with the given arguments, returning a Chunk.
      */
-    abstract execute(arguments_: Record<string, any>): Promise<Response>;
+    abstract execute(arguments_: Record<string, any>): Promise<Chunk>;
 }
 
 /*
@@ -176,7 +176,7 @@ export abstract class Toolkit {
         return json;
     }
 
-    async execute(name: string, args: Record<string, any>): Promise<Response> {
+    async execute(name: string, args: Record<string, any>): Promise<Chunk> {
         return this.getTool(name).execute(args);
     }
 }
@@ -232,9 +232,9 @@ export abstract class RemoteToolkit extends Toolkit {
             description: this.description,
             tools: this.getTools(),
             public: public_,
-        }) as JsonResponse;
+        }) as JsonChunk;
 
-        // Assume response is a JsonResponse
+        // Assume response is a JsonChunk
         const json = response.json;
 
         this._registrationId = json["id"];
@@ -259,7 +259,7 @@ export abstract class RemoteToolkit extends Toolkit {
 
         } catch (e: any) {
             // On error
-            const err = new ErrorResponse({text: String(e)});
+            const err = new ErrorChunk({text: String(e)});
 
             await this.client.protocol.send("agent.tool_call_response", err.pack(), messageId);
         }

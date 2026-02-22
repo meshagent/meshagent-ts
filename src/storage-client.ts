@@ -3,7 +3,7 @@
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { FileDeletedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
-import { JsonResponse, FileResponse } from "./response";
+import { JsonChunk, FileChunk } from "./response";
 import { unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 
@@ -77,7 +77,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
    * Lists files in the given path, returning an array of StorageEntry objects.
    */
   public async list(path: string): Promise<StorageEntry[]> {
-    const response = (await this.client.sendRequest("storage.list", { path })) as JsonResponse;
+    const response = (await this.client.sendRequest("storage.list", { path })) as JsonChunk;
     const files = response.json["files"] as Array<Record<string, any>>;
     const entries = files.map((f) => {
       return new StorageEntry({
@@ -100,7 +100,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
    * Opens a file at a given path, returning a FileHandle.
    */
   public async open(path: string, {overwrite = false}: {overwrite: boolean}): Promise<FileHandle> {
-    const response = (await this.client.sendRequest("storage.open", { path, overwrite })) as JsonResponse;
+    const response = (await this.client.sendRequest("storage.open", { path, overwrite })) as JsonChunk;
 
     return new FileHandle({id: response.json["handle"]});
   }
@@ -109,7 +109,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
    * Checks if a path exists in storage.
    */
   public async exists(path: string): Promise<boolean> {
-    const result = (await this.client.sendRequest("storage.exists", { path })) as JsonResponse;
+    const result = (await this.client.sendRequest("storage.exists", { path })) as JsonChunk;
 
     return result.json["exists"];
   }
@@ -129,10 +129,10 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   }
 
   /**
-   * Downloads a file at the given path, returning a FileResponse (which may contain its data).
+   * Downloads a file at the given path, returning a FileChunk (which may contain its data).
    */
-  public async download(path: string): Promise<FileResponse> {
-    const response = (await this.client.sendRequest("storage.download", { path })) as FileResponse;
+  public async download(path: string): Promise<FileChunk> {
+    const response = (await this.client.sendRequest("storage.download", { path })) as FileChunk;
 
     return response;
   }
@@ -141,7 +141,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
    * Returns a download URL for the file at path.
    */
   public async downloadUrl(path: string): Promise<string> {
-    const response = (await this.client.sendRequest("storage.download_url", { path })) as JsonResponse;
+    const response = (await this.client.sendRequest("storage.download_url", { path })) as JsonChunk;
 
     return response.json["url"];
   }
