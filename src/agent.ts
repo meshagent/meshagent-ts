@@ -296,7 +296,28 @@ export abstract class RemoteToolkit extends Toolkit {
         try {
             const [ message, _ ] = unpackMessage(data!);
             const toolName = message["name"] as string;
-            const args = message["arguments"] as Record<string, any>;
+            const rawArguments = message["arguments"];
+            let args: Record<string, any>;
+            if (
+                rawArguments &&
+                typeof rawArguments === "object" &&
+                !Array.isArray(rawArguments) &&
+                "type" in rawArguments
+            ) {
+                const content = rawArguments as Record<string, any>;
+                const contentType = content["type"];
+                if (contentType === "json") {
+                    args = (content["json"] as Record<string, any>) ?? {};
+                } else if (contentType === "empty") {
+                    args = {};
+                } else {
+                    throw new Error(
+                        `tool '${toolName}' requires JSON object input, received content type '${String(contentType)}'`,
+                    );
+                }
+            } else {
+                args = (rawArguments as Record<string, any>) ?? {};
+            }
 
             const response = await this.execute(toolName, args);
             await this.client.protocol.send("agent.tool_call_response", response.pack(), messageId);
