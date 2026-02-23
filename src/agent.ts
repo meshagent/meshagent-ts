@@ -4,6 +4,7 @@ import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
 import { Chunk, ErrorChunk, JsonChunk } from "./response";
+import { ToolContentSpec } from "./tool-content-type";
 import { packMessage, unpackMessage } from "./utils";
 
 export class AgentChatContext {
@@ -115,21 +116,63 @@ export abstract class Tool {
     public readonly name: string;
     public readonly description: string;
     public readonly title: string;
-    public readonly inputSchema: Record<string, any>;
+    public readonly inputSpec?: ToolContentSpec;
+    public readonly outputSpec?: ToolContentSpec;
     public readonly thumbnailUrl?: string;
 
-    constructor({ name, description, title, inputSchema, thumbnailUrl }: {
+    constructor({ name, description, title, inputSchema, inputSpec, outputSpec, outputSchema, thumbnailUrl }: {
         name: string;
         description: string;
         title: string;
-        inputSchema: Record<string, any>;
+        inputSchema?: Record<string, any>;
+        inputSpec?: ToolContentSpec;
+        outputSpec?: ToolContentSpec;
+        outputSchema?: Record<string, any>;
         thumbnailUrl?: string;
     }) {
         this.name = name;
         this.description = description;
         this.title = title;
-        this.inputSchema = inputSchema;
+        if (inputSpec !== undefined && inputSchema !== undefined) {
+            this.inputSpec = new ToolContentSpec({
+                types: [...inputSpec.types],
+                stream: inputSpec.stream,
+                schema: inputSchema,
+            });
+        } else if (inputSpec !== undefined) {
+            this.inputSpec = inputSpec;
+        } else if (inputSchema !== undefined) {
+            this.inputSpec = new ToolContentSpec({
+                types: ["json"],
+                stream: false,
+                schema: inputSchema,
+            });
+        }
+
+        if (outputSpec !== undefined && outputSchema !== undefined) {
+            this.outputSpec = new ToolContentSpec({
+                types: [...outputSpec.types],
+                stream: outputSpec.stream,
+                schema: outputSchema,
+            });
+        } else if (outputSpec !== undefined) {
+            this.outputSpec = outputSpec;
+        } else if (outputSchema !== undefined) {
+            this.outputSpec = new ToolContentSpec({
+                types: ["json"],
+                stream: false,
+                schema: outputSchema,
+            });
+        }
         this.thumbnailUrl = thumbnailUrl;
+    }
+
+    public get inputSchema(): Record<string, any> | undefined {
+        return this.inputSpec?.schema as Record<string, any> | undefined;
+    }
+
+    public get outputSchema(): Record<string, any> | undefined {
+        return this.outputSpec?.schema as Record<string, any> | undefined;
     }
 
     /**
@@ -169,7 +212,8 @@ export abstract class Toolkit {
             json[tool.name] = {
                 description: tool.description,
                 title: tool.title,
-                input_schema: tool.inputSchema,
+                input_spec: tool.inputSpec?.toJson(),
+                output_spec: tool.outputSpec?.toJson(),
                 thumbnail_url: tool.thumbnailUrl,
             };
         }

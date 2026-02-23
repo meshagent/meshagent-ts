@@ -5,6 +5,7 @@ import { RoomClient } from "./room-client";
 import { Chunk, JsonChunk } from "./response";
 import { RemoteParticipant } from "./participant";
 import { Requirement, RequiredToolkit, RequiredSchema } from "./requirement";
+import { ToolContentSpec } from "./tool-content-type";
 
 /**
  * Example of a "ToolDescription" / "ToolkitDescription" class
@@ -13,17 +14,21 @@ export class ToolDescription {
     public title: string;
     public name: string;
     public description: string;
-    public inputSchema: Record<string, any>;
+    public inputSpec?: ToolContentSpec;
+    public outputSpec?: ToolContentSpec;
     public defs?: Record<string, any>;
     public thumbnailUrl?: string;
     public pricing?: string;
     public supportsContext?: boolean;
 
-    constructor({ title, name, description, inputSchema, thumbnailUrl, defs, pricing, supportsContext }: {
+    constructor({ title, name, description, inputSchema, inputSpec, outputSpec, outputSchema, thumbnailUrl, defs, pricing, supportsContext }: {
         title: string;
         name: string;
         description: string;
-        inputSchema: Record<string, any>;
+        inputSchema?: Record<string, any>;
+        inputSpec?: ToolContentSpec;
+        outputSpec?: ToolContentSpec;
+        outputSchema?: Record<string, any>;
         thumbnailUrl?: string;
         defs?: Record<string, any>;
         pricing?: string;
@@ -32,11 +37,49 @@ export class ToolDescription {
         this.title = title;
         this.name = name;
         this.description = description;
-        this.inputSchema = inputSchema;
+        if (inputSpec !== undefined && inputSchema !== undefined) {
+            this.inputSpec = new ToolContentSpec({
+                types: [...inputSpec.types],
+                stream: inputSpec.stream,
+                schema: inputSchema,
+            });
+        } else if (inputSpec !== undefined) {
+            this.inputSpec = inputSpec;
+        } else if (inputSchema !== undefined) {
+            this.inputSpec = new ToolContentSpec({
+                types: ["json"],
+                stream: false,
+                schema: inputSchema,
+            });
+        }
+
+        if (outputSpec !== undefined && outputSchema !== undefined) {
+            this.outputSpec = new ToolContentSpec({
+                types: [...outputSpec.types],
+                stream: outputSpec.stream,
+                schema: outputSchema,
+            });
+        } else if (outputSpec !== undefined) {
+            this.outputSpec = outputSpec;
+        } else if (outputSchema !== undefined) {
+            this.outputSpec = new ToolContentSpec({
+                types: ["json"],
+                stream: false,
+                schema: outputSchema,
+            });
+        }
         this.thumbnailUrl = thumbnailUrl;
         this.defs = defs;
         this.pricing = pricing;
         this.supportsContext = supportsContext ?? false;
+    }
+
+    public get inputSchema(): Record<string, any> | undefined {
+        return this.inputSpec?.schema as Record<string, any> | undefined;
+    }
+
+    public get outputSchema(): Record<string, any> | undefined {
+        return this.outputSpec?.schema as Record<string, any> | undefined;
     }
 }
 
@@ -93,9 +136,12 @@ export class ToolkitDescription {
                 name: tool.name,
                 title: tool.title,
                 description: tool.description,
-                input_schema: tool.inputSchema,
+                input_spec: tool.inputSpec?.toJson(),
+                output_spec: tool.outputSpec?.toJson(),
                 thumbnail_url: tool.thumbnailUrl,
                 defs: tool.defs,
+                pricing: tool.pricing,
+                supports_context: tool.supportsContext,
             })),
         };
     }
@@ -125,10 +171,13 @@ export class ToolkitDescription {
                         name: tool["name"],
                         description: tool["description"],
                         inputSchema: tool["input_schema"],
+                        inputSpec: ToolContentSpec.fromJson(tool["input_spec"]),
+                        outputSchema: tool["output_schema"],
+                        outputSpec: ToolContentSpec.fromJson(tool["output_spec"]),
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
                         pricing: tool["pricing"],
-                        supportsContext: tool["supportsContext"],
+                        supportsContext: tool["supports_context"] ?? tool["supportsContext"],
                     })
                 );
             }
@@ -145,10 +194,13 @@ export class ToolkitDescription {
                         name: toolName,
                         description: tool["description"],
                         inputSchema: tool["input_schema"],
+                        inputSpec: ToolContentSpec.fromJson(tool["input_spec"]),
+                        outputSchema: tool["output_schema"],
+                        outputSpec: ToolContentSpec.fromJson(tool["output_spec"]),
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
                         pricing: tool["pricing"],
-                        supportsContext: tool["supportsContext"],
+                        supportsContext: tool["supports_context"] ?? tool["supportsContext"],
                     })
                 );
             }
@@ -254,6 +306,14 @@ export class AgentsClient {
         tool: string;
         arguments: Record<string, any>;
     }): Promise<Chunk> {
-        return await this.client.sendRequest("agent.invoke_tool", params) as JsonChunk;
+        const request: Record<string, any> = {
+            toolkit: params.toolkit,
+            tool: params.tool,
+            arguments: {
+                type: "json",
+                json: params.arguments,
+            },
+        };
+        return await this.client.sendRequest("agent.invoke_tool", request);
     }
 }

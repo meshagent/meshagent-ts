@@ -26,4 +26,5 @@ export * from './stream-controller';
 export * from './sync-client';
 export * from './api_keys';
 export * from './helpers';
+export * from './tool-content-type';
 export * from './utils';
