@@ -1,5 +1,5 @@
 import { RoomClient } from "./room-client";
-import { JsonChunk } from "./response";
+import { JsonContent } from "./response";
 import { DataType } from "./data-types";
 
 /**
@@ -34,7 +34,7 @@ export class DatabaseClient {
    * @returns A promise resolving to an array of table names.
    */
   public async listTables(): Promise<string[]> {
-    const response = await this.room.sendRequest("database.list_tables", {}) as JsonChunk;
+    const response = await this.room.sendRequest("database.list_tables", {}) as JsonContent;
 
     // Safely extract tables from response JSON
     return response?.json?.tables ?? [];
@@ -231,7 +231,7 @@ export class DatabaseClient {
     };
 
     const response = await this.room.sendRequest("database.sql", payload);
-    if (response instanceof JsonChunk) {
+    if (response instanceof JsonContent) {
       if (response?.json?.results) {
         return response.json.results;
       }
@@ -286,7 +286,7 @@ export class DatabaseClient {
     }
 
     const response = await this.room.sendRequest("database.search", payload);
-    if (response instanceof JsonChunk) {
+    if (response instanceof JsonContent) {
       if (response?.json?.results) {
         return response.json.results;
       }
@@ -349,7 +349,7 @@ export class DatabaseClient {
    * @returns An object containing index information.
    */
   public async listIndexes({ table }: { table: string }): Promise<Record<string, any>> {
-    const response = await this.room.sendRequest("database.list_indexes", { table }) as JsonChunk;
+    const response = await this.room.sendRequest("database.list_indexes", { table }) as JsonContent;
 
     return response?.json ?? {};
   }

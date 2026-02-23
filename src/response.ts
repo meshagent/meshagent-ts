@@ -4,16 +4,15 @@ import { packMessage, splitMessageHeader, splitMessagePayload } from "./utils";
 export interface Content {
   pack(): Uint8Array;
 }
-export type Chunk = Content;
 
 /**
- * Minimally replicate chunk classes:
+ * Content envelope for a remote link.
  */
-export class LinkChunk implements Content {
-    public url: string;
-    public name: string;
+export class LinkContent implements Content {
+  public url: string;
+  public name: string;
 
-  constructor({url, name}: {
+  constructor({ url, name }: {
     url: string;
     name: string;
   }) {
@@ -21,8 +20,8 @@ export class LinkChunk implements Content {
     this.name = name;
   }
 
-  static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new LinkChunk({
+  static unpack(header: Record<string, any>, _payload: Uint8Array): LinkContent {
+    return new LinkContent({
       url: header["url"],
       name: header["name"]!,
     });
@@ -37,16 +36,16 @@ export class LinkChunk implements Content {
   }
 
   toString(): string {
-    return `LinkChunk (${this.name}): ${this.url}`;
+    return `LinkContent (${this.name}): ${this.url}`;
   }
 }
 
-export class FileChunk implements Content {
+export class FileContent implements Content {
   public data: Uint8Array;
   public name: string;
   public mimeType: string;
 
-  constructor({data, name, mimeType}: {
+  constructor({ data, name, mimeType }: {
     data: Uint8Array;
     name: string;
     mimeType: string;
@@ -56,11 +55,11 @@ export class FileChunk implements Content {
     this.mimeType = mimeType;
   }
 
-  static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new FileChunk({
-        data: payload,
-        name: header["name"],
-        mimeType: header["mime_type"],
+  static unpack(header: Record<string, any>, payload: Uint8Array): FileContent {
+    return new FileContent({
+      data: payload,
+      name: header["name"],
+      mimeType: header["mime_type"],
     });
   }
 
@@ -73,20 +72,20 @@ export class FileChunk implements Content {
   }
 
   toString(): string {
-    return `FileChunk (${this.name}): ${this.mimeType}`;
+    return `FileContent (${this.name}): ${this.mimeType}`;
   }
 }
 
-export class TextChunk implements Content {
+export class TextContent implements Content {
   public text: string;
 
-  constructor({text}: {text: string}) {
+  constructor({ text }: { text: string }) {
     this.text = text;
   }
 
-  static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new TextChunk({
-        text: header["text"],
+  static unpack(header: Record<string, any>, _payload: Uint8Array): TextContent {
+    return new TextContent({
+      text: header["text"],
     });
   }
 
@@ -98,20 +97,19 @@ export class TextChunk implements Content {
   }
 
   toString(): string {
-    return `TextChunk: ${this.text}`;
+    return `TextContent: ${this.text}`;
   }
 }
 
-/** Example JSON-based response class. */
-export class JsonChunk implements Chunk {
+export class JsonContent implements Content {
   public json: Record<string, any>;
 
-  constructor({json}: {json: Record<string, any>}) {
+  constructor({ json }: { json: Record<string, any> }) {
     this.json = json;
   }
 
-  static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new JsonChunk({json: header["json"]});
+  static unpack(header: Record<string, any>, _payload: Uint8Array): JsonContent {
+    return new JsonContent({ json: header["json"] });
   }
 
   pack(): Uint8Array {
@@ -122,19 +120,19 @@ export class JsonChunk implements Chunk {
   }
 
   toString(): string {
-    return `JsonChunk: ${JSON.stringify(this.json)}`;
+    return `JsonContent: ${JSON.stringify(this.json)}`;
   }
 }
 
-export class ErrorChunk implements Chunk {
+export class ErrorContent implements Content {
   public text: string;
 
-  constructor({text}: {text: string}) {
+  constructor({ text }: { text: string }) {
     this.text = text;
   }
 
-  static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new ErrorChunk({text: header["text"]});
+  static unpack(header: Record<string, any>, _payload: Uint8Array): ErrorContent {
+    return new ErrorContent({ text: header["text"] });
   }
 
   pack(): Uint8Array {
@@ -145,13 +143,13 @@ export class ErrorChunk implements Chunk {
   }
 
   toString(): string {
-    return `ErrorChunk: ${this.text}`;
+    return `ErrorContent: ${this.text}`;
   }
 }
 
-export class EmptyChunk implements Chunk {
-  static unpack(header: Record<string, any>, payload: Uint8Array) {
-    return new EmptyChunk();
+export class EmptyContent implements Content {
+  static unpack(_header: Record<string, any>, _payload: Uint8Array): EmptyContent {
+    return new EmptyContent();
   }
 
   pack(): Uint8Array {
@@ -159,53 +157,31 @@ export class EmptyChunk implements Chunk {
   }
 
   toString(): string {
-    return `EmptyChunk`;
+    return `EmptyContent`;
   }
 }
 
-/** A dictionary to map 'type' => function to unpack. */
-const _chunkTypes: Record<string, (header: Record<string, any>, payload: Uint8Array) => Content> = {
-  empty: EmptyChunk.unpack,
-  error: ErrorChunk.unpack,
-  file: FileChunk.unpack,
-  json: JsonChunk.unpack,
-  link: LinkChunk.unpack,
-  text: TextChunk.unpack,
+/** A dictionary to map protocol `type` => unpack function. */
+const _contentTypes: Record<string, (header: Record<string, any>, payload: Uint8Array) => Content> = {
+  empty: EmptyContent.unpack,
+  error: ErrorContent.unpack,
+  file: FileContent.unpack,
+  json: JsonContent.unpack,
+  link: LinkContent.unpack,
+  text: TextContent.unpack,
 };
 
 /**
- * Unpacks a response from a combined packet.
+ * Unpacks a content envelope from a combined packet.
  */
-export function unpackChunk(data: Uint8Array): Content {
+export function unpackContent(data: Uint8Array): Content {
   const header = JSON.parse(splitMessageHeader(data));
   const payload = splitMessagePayload(data);
   const typeKey = header["type"];
 
-  if (!_chunkTypes[typeKey]) {
-    throw new Error(`Unknown chunk type: ${typeKey}`);
+  if (!_contentTypes[typeKey]) {
+    throw new Error(`Unknown content type: ${typeKey}`);
   }
 
-  return _chunkTypes[typeKey](header, payload);
-}
-
-/** @deprecated use unpackChunk */
-export function unpackResponse(data: Uint8Array): Content {
-  return unpackChunk(data);
-}
-
-export type LinkContent = LinkChunk;
-export const LinkContent = LinkChunk;
-export type FileContent = FileChunk;
-export const FileContent = FileChunk;
-export type TextContent = TextChunk;
-export const TextContent = TextChunk;
-export type JsonContent = JsonChunk;
-export const JsonContent = JsonChunk;
-export type ErrorContent = ErrorChunk;
-export const ErrorContent = ErrorChunk;
-export type EmptyContent = EmptyChunk;
-export const EmptyContent = EmptyChunk;
-
-export function unpackContent(data: Uint8Array): Content {
-  return unpackChunk(data);
+  return _contentTypes[typeKey](header, payload);
 }

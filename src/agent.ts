@@ -3,7 +3,7 @@
 import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
-import { Chunk, ErrorChunk, JsonChunk } from "./response";
+import { Content, ErrorContent, JsonContent } from "./response";
 import { ToolContentSpec } from "./tool-content-type";
 import { packMessage, unpackMessage } from "./utils";
 
@@ -176,9 +176,9 @@ export abstract class Tool {
     }
 
     /**
-     * Executes the tool with the given arguments, returning a Chunk.
+     * Executes the tool with the given arguments, returning a Content.
      */
-    abstract execute(arguments_: Record<string, any>): Promise<Chunk>;
+    abstract execute(arguments_: Record<string, any>): Promise<Content>;
 }
 
 /*
@@ -220,7 +220,7 @@ export abstract class Toolkit {
         return json;
     }
 
-    async execute(name: string, args: Record<string, any>): Promise<Chunk> {
+    async execute(name: string, args: Record<string, any>): Promise<Content> {
         return this.getTool(name).execute(args);
     }
 }
@@ -276,9 +276,9 @@ export abstract class RemoteToolkit extends Toolkit {
             description: this.description,
             tools: this.getTools(),
             public: public_,
-        }) as JsonChunk;
+        }) as JsonContent;
 
-        // Assume response is a JsonChunk
+        // Assume response is a JsonContent
         const json = response.json;
 
         this._registrationId = json["id"];
@@ -324,7 +324,7 @@ export abstract class RemoteToolkit extends Toolkit {
 
         } catch (e: any) {
             // On error
-            const err = new ErrorChunk({text: String(e)});
+            const err = new ErrorContent({text: String(e)});
 
             await this.client.protocol.send("agent.tool_call_response", err.pack(), messageId);
         }

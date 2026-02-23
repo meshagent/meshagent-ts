@@ -2,7 +2,7 @@
 
 // Replace these with your real imports:
 import { RoomClient } from "./room-client";
-import { Chunk, JsonChunk } from "./response";
+import { Content, JsonContent } from "./response";
 import { RemoteParticipant } from "./participant";
 import { Requirement, RequiredToolkit, RequiredSchema } from "./requirement";
 import { ToolContentSpec } from "./tool-content-type";
@@ -285,7 +285,7 @@ export class AgentsClient {
             request["timeout"] = params.timeout;
         }
 
-        const result = (await this.client.sendRequest("agent.list_toolkits", request)) as JsonChunk;
+        const result = (await this.client.sendRequest("agent.list_toolkits", request)) as JsonContent;
         const tools = result.json["tools"] as Record<string, any>;
         const toolkits: ToolkitDescription[] = [];
 
@@ -299,13 +299,13 @@ export class AgentsClient {
         return toolkits;
     }
     /**
-     * Invokes a tool on a specified toolkit with arguments, returning a Chunk.
+     * Invokes a tool on a specified toolkit with arguments, returning a Content.
      */
     public async invokeTool(params: {
         toolkit: string;
         tool: string;
         arguments: Record<string, any>;
-    }): Promise<Chunk> {
+    }): Promise<Content> {
         const request: Record<string, any> = {
             toolkit: params.toolkit,
             tool: params.tool,

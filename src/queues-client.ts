@@ -1,5 +1,5 @@
 import { RoomClient } from "./room-client";
-import { EmptyChunk, JsonChunk } from "./response";
+import { EmptyContent, JsonContent } from "./response";
 
 
 export class Queue {
@@ -27,7 +27,7 @@ export class QueuesClient {
    * Returns a list of queues from the server.
    */
   public async list(): Promise<Queue[]> {
-    const response = (await this.client.sendRequest("queues.list", {})) as JsonChunk;
+    const response = (await this.client.sendRequest("queues.list", {})) as JsonContent;
     const queues = response.json["queues"] as Array<Record<string, any>>;
 
     return queues.map((q) => new Queue({ name: q["name"], size: q["size"] }));
@@ -62,7 +62,7 @@ export class QueuesClient {
   }
 
   /**
-   * Receives a message from a queue. Returns null if the response is EmptyChunk, or the JSON if it's a JsonChunk.
+   * Receives a message from a queue. Returns null if the response is EmptyContent, or the JSON if it's a JsonContent.
    */
   public async receive(name: string, { create = true, wait = true } : { create?: boolean, wait?: boolean }): Promise<Record<string, any> | null> {
     const response = await this.client.sendRequest("queues.receive", {
@@ -71,12 +71,12 @@ export class QueuesClient {
       wait,
     });
 
-    if (response instanceof EmptyChunk) {
+    if (response instanceof EmptyContent) {
       return null;
 
     } else {
-      // If not empty, assume it's a JsonChunk
-      return (response as JsonChunk).json;
+      // If not empty, assume it's a JsonContent
+      return (response as JsonContent).json;
     }
   }
 }

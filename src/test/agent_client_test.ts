@@ -6,10 +6,10 @@ import {
     RequiredSchema,
     AgentsClient,
     TaskContext,
-    FileChunk,
-    JsonChunk,
-    TextChunk,
-    EmptyChunk,
+    FileContent,
+    JsonContent,
+    TextContent,
+    EmptyContent,
     RemoteTaskRunner,
     RemoteToolkit,
     RemoteParticipant,
@@ -46,7 +46,7 @@ class AddToolJson extends Tool {
     }
 
     async execute({ a, b }: { a: number; b: number }) {
-        return new JsonChunk({
+        return new JsonContent({
             json: { c: a + b }
         });
     }
@@ -63,7 +63,7 @@ class EmptyTool extends Tool {
     }
 
     async execute({ context, a, b }: { context: any; a: number; b: number }) {
-        return new EmptyChunk();
+        return new EmptyContent();
     }
 }
 
@@ -78,7 +78,7 @@ class AddToolText extends Tool {
     }
 
     async execute({ context, a, b }: { context: any; a: number; b: number }) {
-        return new TextChunk({ text: String(a + b) });
+        return new TextContent({ text: String(a + b) });
     }
 }
 
@@ -93,7 +93,7 @@ class FileTool extends Tool {
     }
 
     async execute({ context, a, b }: { context: any; a: number; b: number }) {
-        return new FileChunk({
+        return new FileContent({
             data: encoder.encode("hello world"),
             name: "hello.text",
             mimeType: "application/text",
@@ -281,7 +281,7 @@ describe("agent_client_test", function () {
             toolkit: "test-toolkit",
             tool: "add-file",
             arguments: { a: 1, b: 2 },
-        })) as FileChunk;
+        })) as FileContent;
 
         const dt1 = decoder.decode(result1.data);
         expect(dt1).to.be.a("string");
@@ -292,7 +292,7 @@ describe("agent_client_test", function () {
             toolkit: "test-toolkit",
             tool: "add-json",
             arguments: { a: 1, b: 2 },
-        })) as JsonChunk;
+        })) as JsonContent;
 
         expect(result2.json).to.be.an("object");
         expect(result2.json["c"]).to.equal(3);
@@ -302,7 +302,7 @@ describe("agent_client_test", function () {
             toolkit: "test-toolkit",
             tool: "add-text",
             arguments: { a: 1, b: 2 },
-        })) as TextChunk;
+        })) as TextContent;
 
         expect(result3.text).to.be.a("string");
         expect(result3.text).to.equal("3");
@@ -313,14 +313,14 @@ describe("agent_client_test", function () {
             tool: "add-none",
             arguments: { a: 1, b: 2 },
         });
-        expect(result4).to.be.instanceOf(EmptyChunk);
+        expect(result4).to.be.instanceOf(EmptyContent);
 
         // 5) add-file (again)
         const result5 = (await client1.agents.invokeTool({
             toolkit: "test-toolkit",
             tool: "add-file",
             arguments: { a: 1, b: 2 },
-        })) as FileChunk;
+        })) as FileContent;
 
         expect(result5).to.be.an("object");
         expect(result5.name).to.equal("hello.text");
