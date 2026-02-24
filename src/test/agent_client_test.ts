@@ -3,17 +3,11 @@
 import { expect } from "chai";
 
 import {
-    RequiredSchema,
-    AgentsClient,
-    TaskContext,
     FileContent,
     JsonContent,
     TextContent,
     EmptyContent,
-    RemoteTaskRunner,
     RemoteToolkit,
-    RemoteParticipant,
-    RequiredToolkit,
     RoomClient,
     Tool,
     ToolkitDescription,
@@ -118,37 +112,12 @@ class RemoteTestToolkit extends RemoteToolkit {
     }
 }
 
-// A minimal test agent
-class AddAgent extends RemoteTaskRunner {
-    constructor(client: RoomClient) {
-        super({
-            client: client,
-            name: "add",
-            description: "Adds two numbers",
-            inputSchema: addSchema,
-            outputSchema: {
-                type: "object",
-                required: ["sum"],
-                additionalProperties: false,
-                properties: { sum: { type: "number" } },
-            },
-        });
-    }
-
-    async ask(context: TaskContext, args: Record<string, any>): Promise<Record<string, any>> {
-        return {
-            sum: args.a + args.b,
-        };
-    }
-}
-
 describe("agent_client_test", function () {
     // Increase timeout if necessary for WebSocket connections
     this.timeout(30000);
 
     let client1: RoomClient;
     let client2: RoomClient;
-    let agent: AddAgent;
 
     before(async () => {
         const config = getConfig();
@@ -170,16 +139,9 @@ describe("agent_client_test", function () {
 
         await client1.start();
         await client2.start();
-
-        // Create and start an agent
-        agent = new AddAgent(client1);
-
-        await agent.start();
     });
 
     after(async () => {
-        await agent.stop();
-
         client1.dispose();
         client2.dispose();
     });

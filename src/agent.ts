@@ -5,107 +5,7 @@ import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
 import { Content, ErrorContent, JsonContent } from "./response";
 import { ToolContentSpec } from "./tool-content-type";
-import { packMessage, unpackMessage } from "./utils";
-
-export class AgentChatContext {
-    messages: Array<Record<string, any>>;
-    readonly systemRole: string;
-
-    constructor({messages, systemRole = "system"}: {
-        messages?: Array<Record<string, any>>;
-        systemRole?: string;
-    }) {
-        // Deep copy if needed:
-        this.messages = messages ? [...messages] : [];
-        this.systemRole = systemRole;
-    }
-
-    appendRules(rules: string[]): void {
-        let systemMessage = this.messages.find((m) => m["role"] === this.systemRole);
-
-        if (!systemMessage) {
-            systemMessage = { role: this.systemRole, content: "" };
-            this.messages.push(systemMessage);
-        }
-
-        const plan = `
-        Rules:
-            -${rules.join("\n-")}
-        `;
-        systemMessage["content"] += plan;
-    }
-
-    appendUserMessage(message: string): void {
-        this.messages.push({ role: "user", content: message });
-    }
-
-    appendUserImage(url: string): void {
-        this.messages.push({
-            role: "user",
-            content: [
-                {
-                    type: "image_url",
-                    image_url: { url: url, detail: "auto" },
-                },
-            ],
-        });
-    }
-
-    copy(): AgentChatContext {
-        // Deep clone using JSON
-        const cloned = JSON.parse(JSON.stringify(this.messages));
-        return new AgentChatContext({
-            messages: cloned,
-            systemRole: this.systemRole,
-        });
-    }
-
-    toJson(): Record<string, any> {
-        return {
-            messages: this.messages,
-            system_role: this.systemRole,
-        };
-    }
-
-    static fromJson(json: Record<string, any>): AgentChatContext {
-        return new AgentChatContext({
-            messages: json["messages"] as Array<Record<string, any>>,
-            systemRole: json["system_role"] || "system",
-        });
-    }
-}
-
-/*
--------------------------------------------------------------------------
-TaskContext
--------------------------------------------------------------------------
-*/
-
-export class TaskContext {
-    private readonly _jwt: string;
-    private readonly _chat: AgentChatContext;
-    private readonly _apiUrl: string;
-
-    constructor({ chat, jwt, api_url }: {
-        chat: AgentChatContext;
-        jwt: string;
-        api_url: string;
-    }) {
-        this._jwt = jwt;
-        this._chat = chat;
-        this._apiUrl = api_url;
-    }
-
-    get chat(): AgentChatContext {
-        return this._chat;
-    }
-    get jwt(): string {
-        return this._jwt;
-    }
-    get api_url(): string {
-        return this._apiUrl;
-    }
-}
+import { unpackMessage } from "./utils";
 
 /*
 -------------------------------------------------------------------------
@@ -384,6 +284,6 @@ export abstract class RemoteTaskRunner {
      * Called when an "ask" request arrives. Must be implemented by subclass.
      * This method should return the result as an object.
      */
-    abstract ask(context: TaskContext, arguments_: Record<string, any>): Promise<Record<string, any>>;
+    abstract ask(arguments_: Record<string, any>): Promise<Record<string, any>>;
 
 }
