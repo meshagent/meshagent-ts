@@ -9,6 +9,20 @@ import { splitMessageHeader, splitMessagePayload, decoder, encoder, RefCount } f
 import { unregisterDocument, applyBackendChanges } from "./runtime";
 import { Completer } from "./completer";
 
+function normalizeSyncPath(path: string): string {
+  let normalized = path;
+  while (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
+  }
+  while (normalized.startsWith("/")) {
+    normalized = normalized.slice(1);
+  }
+  if (normalized === ".") {
+    return "";
+  }
+  return normalized;
+}
+
 export interface SyncClientEvent {
     type: string;
     doc: MeshDocument;
@@ -87,7 +101,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     const payload = splitMessagePayload(bytes || new Uint8Array());
 
     const header = JSON.parse(headerStr);
-    const path = header["path"];
+    const path = normalizeSyncPath(header["path"]);
 
     const isConnecting = this._connectingDocuments[path];
     if (isConnecting) {
@@ -123,6 +137,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   }
 
   async create(path: string, json?: Record<string, any>): Promise<void> {
+    path = normalizeSyncPath(path);
     await this.client.sendRequest("room.create", { path, json });
   }
 
@@ -131,6 +146,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * may be created server-side if it doesn't exist.
    */
   async open(path: string, {create = true}: {create?: boolean} = {}): Promise<MeshDocument> {
+    path = normalizeSyncPath(path);
     const pending = this._connectingDocuments[path];
 
     if (pending) {
@@ -182,6 +198,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * Closes a doc at the given path.
    */
   async close(path: string): Promise<void> {
+    path = normalizeSyncPath(path);
     const pending = this._connectingDocuments[path];
 
     if (pending) {
@@ -214,6 +231,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
    * Immediately sends sync data for a doc at the given path.
    */
   async sync(path: string, data: Uint8Array): Promise<void> {
+    path = normalizeSyncPath(path);
     await this.client.sendRequest("room.sync", { path }, data);
   }
 }
