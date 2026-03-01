@@ -21,10 +21,13 @@ export type Uint8List = Uint8Array;
 ------------------------------------------------------------------------- */
 
 export class RoomServerException extends Error {
-  constructor(message: string) {
+  public readonly code?: number;
+
+  constructor(message: string, code?: number) {
     super(message);
 
     this.name = "RoomServerException";
+    this.code = code;
   }
 }
 
@@ -92,4 +95,3 @@ export class MeshDocument extends RuntimeDocument {
     unregisterDocument(this.id);
   }
 }
-

@@ -13,6 +13,7 @@ import { QueuesClient } from "./queues-client";
 import { DatabaseClient } from "./database-client";
 import { AgentsClient } from "./agent-client";
 import { SecretsClient } from "./secrets-client";
+import { RoomServerException } from "./room-server-client";
 
 import { RoomEvent } from "./room-event";
 import { Content, ErrorContent, unpackContent } from "./response";
@@ -143,7 +144,7 @@ export class RoomClient {
 
             this._pendingRequests.delete(messageId);
             if (response instanceof ErrorContent) {
-                pr.reject(new Error(response.text));
+                pr.reject(new RoomServerException(response.text, response.code));
             } else {
                 pr.resolve(response);
             }

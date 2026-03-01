@@ -126,24 +126,42 @@ export class JsonContent implements Content {
 
 export class ErrorContent implements Content {
   public text: string;
+  public code?: number;
 
-  constructor({ text }: { text: string }) {
+  constructor({ text, code }: { text: string; code?: number }) {
     this.text = text;
+    this.code = code;
   }
 
   static unpack(header: Record<string, any>, _payload: Uint8Array): ErrorContent {
-    return new ErrorContent({ text: header["text"] });
+    const rawCode = header["code"];
+    let code: number | undefined;
+    if (typeof rawCode === "number" && Number.isInteger(rawCode)) {
+      code = rawCode;
+    } else if (typeof rawCode === "string") {
+      const parsed = Number.parseInt(rawCode, 10);
+      if (!Number.isNaN(parsed)) {
+        code = parsed;
+      }
+    }
+    return new ErrorContent({ text: header["text"], code });
   }
 
   pack(): Uint8Array {
-    return packMessage({
+    const header: Record<string, any> = {
       type: "error",
       text: this.text,
-    });
+    };
+    if (this.code !== undefined) {
+      header["code"] = this.code;
+    }
+    return packMessage(header);
   }
 
   toString(): string {
-    return `ErrorContent: ${this.text}`;
+    return this.code !== undefined
+      ? `ErrorContent: ${this.text} (${this.code})`
+      : `ErrorContent: ${this.text}`;
   }
 }
 

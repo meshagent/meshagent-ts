@@ -1,6 +1,7 @@
 import "./agent_client_test";
 import "./database_client_test";
 import "./document_test";
+import "./error_content_test";
 import "./messaging_client_test";
 import "./participant_token_test";
 import "./queues_client_test";
