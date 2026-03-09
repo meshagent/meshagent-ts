@@ -293,14 +293,8 @@ export class RoomClient {
             request["caller_context"] = params.callerContext;
         }
 
-        const response = await this.sendRequest("room.invoke_tool", request);
-        if (!(response instanceof ControlContent) || response.method !== "open") {
-            this._toolCallStreams.delete(toolCallId);
-            controller.close();
-            throw new RoomServerException(`unexpected return type from ${params.toolkit}.${params.tool}`);
-        }
-
-        void this._streamInvokeToolRequestChunks(toolCallId, params.input).catch((error: unknown) => {
+        const requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input);
+        void requestTask.catch((error: unknown) => {
             const stream = this._toolCallStreams.get(toolCallId);
             if (!stream) {
                 return;
@@ -309,6 +303,13 @@ export class RoomClient {
             stream.close();
             this._toolCallStreams.delete(toolCallId);
         });
+
+        const response = await this.sendRequest("room.invoke_tool", request);
+        if (!(response instanceof ControlContent) || response.method !== "open") {
+            this._toolCallStreams.delete(toolCallId);
+            controller.close();
+            throw new RoomServerException(`unexpected return type from ${params.toolkit}.${params.tool}`);
+        }
 
         return {
             [Symbol.asyncIterator](): AsyncIterator<Content> {
