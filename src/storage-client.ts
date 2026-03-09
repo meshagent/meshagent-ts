@@ -455,7 +455,7 @@ class _StorageUploadInputStream {
   private closed = false;
   private pendingPulls = 0;
   private waitingResolver: (() => void) | null = null;
-  private pendingChunk = new Uint8Array(0);
+  private pendingChunk: Uint8Array = new Uint8Array(0);
   private pendingOffset = 0;
   private sourceExhausted = false;
 
