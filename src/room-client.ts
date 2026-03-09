@@ -274,6 +274,7 @@ export class RoomClient {
     }): Promise<AsyncIterable<Content>> {
         const toolCallId = `${Date.now()}-${this.protocol.getNextMessageId()}-${Math.random().toString(16).slice(2)}`;
         const controller = new StreamController<Content>();
+        const responseIterator = controller.stream[Symbol.asyncIterator]();
         this._toolCallStreams.set(toolCallId, controller);
 
         const request: Record<string, any> = {
@@ -309,7 +310,11 @@ export class RoomClient {
             this._toolCallStreams.delete(toolCallId);
         });
 
-        return controller.stream;
+        return {
+            [Symbol.asyncIterator](): AsyncIterator<Content> {
+                return responseIterator;
+            },
+        };
     }
 
     private async _sendToolCallRequestChunk(toolCallId: string, chunk: Content): Promise<void> {
