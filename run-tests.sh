@@ -21,7 +21,11 @@ if $SETUP_SERVER; then
     python3 -m venv $VIRTUAL_ENV
     PATH="$VIRTUAL_ENV/bin:$PATH"
 
-    pip3 install uv
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "uv must already be installed when running meshagent-ts tests with server setup enabled." >&2
+        exit 1
+    fi
+
     uv pip install --no-cache-dir \
                 ../meshagent-api \
                 ../meshagent-agents \
