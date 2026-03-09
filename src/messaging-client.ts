@@ -12,6 +12,29 @@ import { Completer } from "./completer";
 
 type StreamWriterCompleter = Completer<MessageStreamWriter>; // Stub or actual
 
+const globalScope = globalThis as typeof globalThis & {
+  Buffer?: {
+    from(data: Uint8Array): { toString(encoding: string): string };
+  };
+  btoa?: (data: string) => string;
+};
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (globalScope.Buffer) {
+    return globalScope.Buffer.from(bytes).toString("base64");
+  }
+
+  if (!globalScope.btoa) {
+    throw new Error("base64 encoding is not available in this runtime");
+  }
+
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return globalScope.btoa(binary);
+}
+
 
 /**
  * Represents a chunk of data in a stream, with a header and optional data.
@@ -57,6 +80,28 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     this.client.protocol.addHandler("messaging.send", this._handleMessageSend.bind(this));
   }
 
+  private _messageInput(params: {
+    type: string;
+    message: Record<string, any>;
+    attachment?: Uint8Array;
+    toParticipantId?: string;
+  }): Record<string, any> {
+    const input: Record<string, any> = {
+      type: params.type,
+      message_json: JSON.stringify(params.message),
+    };
+
+    if (params.attachment !== undefined) {
+      input["attachment_base64"] = bytesToBase64(params.attachment);
+    }
+
+    if (params.toParticipantId !== undefined) {
+      input["to_participant_id"] = params.toParticipantId;
+    }
+
+    return input;
+  }
+
   /**
    * Creates a new stream to a participant, returning a MessageStreamWriter when ready.
    */
@@ -87,18 +132,27 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     message: Record<string, any>;
     attachment?: Uint8Array;
   }): Promise<void> {
-    await this.client.sendRequest("messaging.send", {
-        to_participant_id: to.id,
+    await this.client.invoke({
+      toolkit: "messaging",
+      tool: "send",
+      input: this._messageInput({
+        toParticipantId: to.id,
         type,
         message,
-      }, attachment);
+        attachment,
+      }),
+    });
   }
 
   /**
    * Enables the messaging subsystem, optionally passing a stream accept callback.
    */
   public async enable(onStreamAccept?: (reader: MessageStreamReader) => void): Promise<void> {
-    await this.client.sendRequest("messaging.enable", {});
+    await this.client.invoke({
+      toolkit: "messaging",
+      tool: "enable",
+      input: {},
+    });
 
     this._onStreamAcceptCallback = onStreamAccept;
   }
@@ -107,7 +161,11 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
    * Disables the messaging subsystem.
    */
   public async disable(): Promise<void> {
-    await this.client.sendRequest("messaging.disable", {});
+    await this.client.invoke({
+      toolkit: "messaging",
+      tool: "disable",
+      input: {},
+    });
   }
 
   /**
@@ -118,7 +176,11 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     message: Record<string, any>;
     attachment?: Uint8Array;
   }): Promise<void> {
-    await this.client.sendRequest("messaging.broadcast", {type, message}, attachment);
+    await this.client.invoke({
+      toolkit: "messaging",
+      tool: "broadcast",
+      input: this._messageInput({ type, message, attachment }),
+    });
   }
 
   /**

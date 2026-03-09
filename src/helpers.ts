@@ -24,11 +24,12 @@ export async function deploySchema({ room, schema, name, overwrite = true }: {
 }): Promise<void> {
     validateSchemaName(name);
 
-    const handle = await room.storage.open(`.schemas/${name}.json`, { overwrite });
     const data = Buffer.from(JSON.stringify(schema.toJson()), 'utf-8');
+    async function* singleChunk(): AsyncIterable<Uint8Array> {
+        yield data;
+    }
 
-    await room.storage.write(handle, data);
-    await room.storage.close(handle);
+    await room.storage.uploadStream(`.schemas/${name}.json`, singleChunk(), { overwrite, size: data.length });
 }
 
 /**
@@ -126,4 +127,3 @@ export async function websocketProtocol({ participantName, roomName, role, proje
 
     return new WebSocketClientProtocol({ url, token: jwt });
 }
-

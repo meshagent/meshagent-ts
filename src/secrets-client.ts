@@ -1,5 +1,5 @@
 import { RoomClient } from "./room-client";
-import { EmptyContent, FileContent, JsonContent } from "./response";
+import { BinaryContent, EmptyContent, FileContent, JsonContent } from "./response";
 
 export interface SecretInfo {
   id: string;
@@ -13,6 +13,10 @@ export class SecretsClient {
 
   constructor({ room }: { room: RoomClient }) {
     this.client = room;
+  }
+
+  private unexpectedResponse(operation: string): Error {
+    return new Error(`unexpected return type from secrets.${operation}`);
   }
 
   public async setSecret({
@@ -30,20 +34,25 @@ export class SecretsClient {
     delegatedTo?: string;
     forIdentity?: string;
   }): Promise<void> {
-    const req: Record<string, any> = {
-      secret_id: secretId,
-    };
-
-    if (mimeType) req.type = mimeType;
-    if (name) req.name = name;
-    if (delegatedTo) req.delegated_to = delegatedTo;
-    if (forIdentity) req.for_identity = forIdentity;
-
-    const response = await this.client.sendRequest("secrets.set_secret", req, data);
+    const response = await this.client.invoke({
+      toolkit: "secrets",
+      tool: "set_secret",
+      input: new BinaryContent({
+        data,
+        headers: {
+          secret_id: secretId,
+          type: mimeType ?? null,
+          name: name ?? null,
+          delegated_to: delegatedTo ?? null,
+          for_identity: forIdentity ?? null,
+          has_data: true,
+        },
+      }),
+    });
     if (response instanceof EmptyContent || response instanceof JsonContent) {
       return;
     }
-    throw new Error("Invalid response received, expected EmptyContent or JsonContent");
+    throw this.unexpectedResponse("set_secret");
   }
 
   public async getSecret({
@@ -55,24 +64,25 @@ export class SecretsClient {
   }): Promise<FileContent | null> {
     const req: Record<string, any> = {
       secret_id: secretId,
+      type: null,
+      name: null,
+      delegated_to: delegatedTo ?? null,
     };
 
-    if (delegatedTo) req.delegated_to = delegatedTo;
-
-    const response = await this.client.sendRequest("secrets.get_secret", req);
+    const response = await this.client.invoke({ toolkit: "secrets", tool: "get_secret", input: req });
     if (response instanceof EmptyContent) {
       return null;
     }
     if (response instanceof FileContent) {
       return response;
     }
-    throw new Error("Invalid response received, expected FileContent or EmptyContent");
+    throw this.unexpectedResponse("get_secret");
   }
 
   public async listSecrets(): Promise<SecretInfo[]> {
-    const response = await this.client.sendRequest("secrets.list_secrets", {});
+    const response = await this.client.invoke({ toolkit: "secrets", tool: "list_secrets", input: {} });
     if (!(response instanceof JsonContent)) {
-      throw new Error("Invalid response received, expected JsonContent");
+      throw this.unexpectedResponse("list_secrets");
     }
 
     const secrets = Array.isArray(response.json?.secrets) ? response.json.secrets : [];
@@ -93,14 +103,14 @@ export class SecretsClient {
   }): Promise<void> {
     const req: Record<string, any> = {
       id: secretId,
+      delegated_to: delegatedTo ?? null,
     };
-    if (delegatedTo) req.delegated_to = delegatedTo;
 
-    const response = await this.client.sendRequest("secrets.delete_secret", req);
+    const response = await this.client.invoke({ toolkit: "secrets", tool: "delete_secret", input: req });
     if (response instanceof EmptyContent || response instanceof JsonContent) {
       return;
     }
-    throw new Error("Invalid response received, expected EmptyContent or JsonContent");
+    throw this.unexpectedResponse("delete_secret");
   }
 
   public async deleteRequestedSecret({
@@ -115,13 +125,13 @@ export class SecretsClient {
     const req: Record<string, any> = {
       url,
       type,
+      delegated_to: delegatedTo ?? null,
     };
-    if (delegatedTo) req.delegated_to = delegatedTo;
 
-    const response = await this.client.sendRequest("secrets.delete_requested_secret", req);
+    const response = await this.client.invoke({ toolkit: "secrets", tool: "delete_requested_secret", input: req });
     if (response instanceof EmptyContent || response instanceof JsonContent) {
       return;
     }
-    throw new Error("Invalid response received, expected EmptyContent or JsonContent");
+    throw this.unexpectedResponse("delete_requested_secret");
   }
 }

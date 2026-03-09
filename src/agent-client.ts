@@ -1,10 +1,7 @@
 // agents_client.ts
 
-// Replace these with your real imports:
 import { RoomClient } from "./room-client";
-import { Content, JsonContent } from "./response";
-import { RemoteParticipant } from "./participant";
-import { Requirement, RequiredToolkit, RequiredSchema } from "./requirement";
+import { Content } from "./response";
 import { ToolContentSpec } from "./tool-content-type";
 
 /**
@@ -263,7 +260,7 @@ export class AgentsClient {
         url: string;
         arguments: Record<string, any>;
     }): Promise<void> {
-        await this.client.sendRequest("agent.call", params);
+        await this.client.call(params);
     }
 
     /**
@@ -274,29 +271,7 @@ export class AgentsClient {
         participantName?: string;
         timeout?: number;
     }): Promise<ToolkitDescription[]> {
-        const request: Record<string, any> = {};
-        if (params?.participantId != null) {
-            request["participant_id"] = params.participantId;
-        }
-        if (params?.participantName != null) {
-            request["participant_name"] = params.participantName;
-        }
-        if (params?.timeout !== undefined) {
-            request["timeout"] = params.timeout;
-        }
-
-        const result = (await this.client.sendRequest("agent.list_toolkits", request)) as JsonContent;
-        const tools = result.json["tools"] as Record<string, any>;
-        const toolkits: ToolkitDescription[] = [];
-
-        for (const name of Object.keys(tools)) {
-            const data = tools[name];
-
-            // Example: if ToolkitDescription has a static fromJson(data, name), adapt as needed
-            toolkits.push(ToolkitDescription.fromJson(data, { name }));
-        }
-
-        return toolkits;
+        return await this.client.listToolkits(params);
     }
     /**
      * Invokes a tool on a specified toolkit with arguments, returning a Content.
@@ -306,14 +281,6 @@ export class AgentsClient {
         tool: string;
         arguments: Record<string, any>;
     }): Promise<Content> {
-        const request: Record<string, any> = {
-            toolkit: params.toolkit,
-            tool: params.tool,
-            arguments: {
-                type: "json",
-                json: params.arguments,
-            },
-        };
-        return await this.client.sendRequest("agent.invoke_tool", request);
+        return await this.client.invoke(params);
     }
 }

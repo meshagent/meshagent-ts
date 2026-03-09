@@ -77,9 +77,15 @@ export interface ProjectStorageMountSpec {
     read_only?: boolean;
 }
 
+export interface EmptyDirMountSpec {
+    path: string;
+    read_only?: boolean;
+}
+
 export interface ContainerMountSpec {
     room?: RoomStorageMountSpec[];
     project?: ProjectStorageMountSpec[];
+    empty_dirs?: EmptyDirMountSpec[];
 }
 
 export interface ServiceApiKeySpec {

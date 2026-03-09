@@ -2,12 +2,12 @@
 import { EventEmitter } from "./event-emitter";
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
-import { packMessage, decoder, unpackMessage } from "./utils";
+import { BinaryContent, Content, ControlContent, ErrorContent } from "./response";
+import { unpackMessage } from "./utils";
 import { RoomLogEvent } from "./room-event";
 
 /**
- * DeveloperClient listens for developer.log events,
- * logs them, and can watch/unwatch developer logs.
+ * DeveloperClient emits developer logs and streams them from the room.
  */
 export class DeveloperClient extends EventEmitter<RoomLogEvent> {
   private client: RoomClient;
@@ -21,49 +21,87 @@ export class DeveloperClient extends EventEmitter<RoomLogEvent> {
     this.client.protocol.addHandler("developer.log", this._handleDeveloperLog.bind(this));
   }
 
+  private _emitDeveloperLog(type: string, data: Record<string, any>): void {
+    const event = new RoomLogEvent({ type, data });
+    this.client.emit(event);
+    this.emit("log", event);
+  }
+
   /**
    * Handler for "developer.log" messages from the protocol.
    */
   private async _handleDeveloperLog(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
     // Decode the message
     const [ rawJson, _ ] = unpackMessage(bytes || new Uint8Array());
-    const event = new RoomLogEvent({
-        type: rawJson["type"],
-        data: rawJson["data"],
-    });
-
-    // Trigger an internal event on the RoomClient
-    // or do whatever you need with the data
-    this.client.emit(event);
-
-    this.emit("log", event);
+    this._emitDeveloperLog(rawJson["type"], rawJson["data"]);
   }
 
   /**
    * Sends a developer.log message with specified type and data.
    */
   async log(type: string, data: Record<string, any>): Promise<void> {
-    // Pack the message, then send
-    const message = packMessage({ type, data }, undefined);
-
-    await this.client.protocol.send("developer.log", message);
+    await this.client.invoke({
+      toolkit: "developer",
+      tool: "log",
+      input: { type, data },
+    });
   }
 
   /**
-   * Enables (watches) developer messages.
+   * Streams developer logs until the consumer stops iterating.
    */
-  async enable(): Promise<void> {
-    const message = packMessage({}, undefined);
+  async *logs(): AsyncIterable<RoomLogEvent> {
+    let resolveClosed: (() => void) | undefined;
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
 
-    await this.client.protocol.send("developer.watch", message);
-  }
+    const input = (async function* (): AsyncIterable<Content> {
+      await closed;
+    })();
 
-  /**
-   * Disables (unwatches) developer messages.
-   */
-  async disable(): Promise<void> {
-    const message = packMessage({}, undefined);
+    const stream = await this.client.invokeStream({
+      toolkit: "developer",
+      tool: "logs",
+      input,
+    });
 
-    await this.client.protocol.send("developer.unwatch", message);
+    try {
+      for await (const chunk of stream) {
+        if (chunk instanceof ErrorContent) {
+          throw new Error(chunk.text);
+        }
+        if (chunk instanceof ControlContent) {
+          if (chunk.method === "close") {
+            return;
+          }
+          throw new Error("unexpected return type from developer.logs");
+        }
+        if (!(chunk instanceof BinaryContent)) {
+          throw new Error("unexpected return type from developer.logs");
+        }
+
+        const logType = chunk.headers["type"];
+        if (typeof logType !== "string" || logType.length === 0) {
+          throw new Error("developer.logs returned a chunk without a valid type");
+        }
+
+        const decoded = chunk.data.length === 0
+          ? {}
+          : JSON.parse(new TextDecoder().decode(chunk.data));
+        if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
+          throw new Error("developer.logs returned invalid JSON data");
+        }
+
+        const event = new RoomLogEvent({ type: logType, data: decoded as Record<string, any> });
+        this.client.emit(event);
+        this.emit("log", event);
+        yield event;
+      }
+    } finally {
+      if (resolveClosed) {
+        resolveClosed();
+      }
+    }
   }
 }

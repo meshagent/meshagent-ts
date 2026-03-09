@@ -154,10 +154,10 @@ export abstract class RemoteToolkit extends Toolkit {
     }
 
     async start({ public_: isPublic = false }: { public_?: boolean } = {}): Promise<void> {
-        // Add a handler for agent.tool_call.<name>
+        // Add a handler for room.tool_call.<name>
         const handler = this._toolCall.bind(this);
 
-        this.client.protocol.addHandler(`agent.tool_call.${this.name}`, handler);
+        this.client.protocol.addHandler(`room.tool_call.${this.name}`, handler);
 
         await this._register(isPublic);
     }
@@ -166,11 +166,11 @@ export abstract class RemoteToolkit extends Toolkit {
         await this._unregister();
 
         // Remove the handler
-        this.client.protocol.removeHandler(`agent.tool_call.${this.name}`);
+        this.client.protocol.removeHandler(`room.tool_call.${this.name}`);
     }
 
     private async _register(public_: boolean): Promise<void> {
-        const response = await this.client.sendRequest("agent.register_toolkit", {
+        const response = await this.client.sendRequest("room.register_toolkit", {
             name: this.name,
             title: this.title,
             description: this.description,
@@ -187,7 +187,7 @@ export abstract class RemoteToolkit extends Toolkit {
     private async _unregister(): Promise<void> {
         if (!this._registrationId) return;
 
-        await this.client.sendRequest("agent.unregister_toolkit", {
+        await this.client.sendRequest("room.unregister_toolkit", {
             id: this._registrationId,
         });
     }
@@ -220,13 +220,13 @@ export abstract class RemoteToolkit extends Toolkit {
             }
 
             const response = await this.execute(toolName, args);
-            await this.client.protocol.send("agent.tool_call_response", response.pack(), messageId);
+            await this.client.protocol.send("room.tool_call_response", response.pack(), messageId);
 
         } catch (e: any) {
             // On error
             const err = new ErrorContent({text: String(e)});
 
-            await this.client.protocol.send("agent.tool_call_response", err.pack(), messageId);
+            await this.client.protocol.send("room.tool_call_response", err.pack(), messageId);
         }
     }
 }

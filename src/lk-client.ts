@@ -1,5 +1,6 @@
 import { RoomClient } from './room-client';
 import { JsonContent } from './response';
+import { RoomServerException } from './room-server-client';
 
 export class LivekitConnectionInfo {
     public url: string;
@@ -26,16 +27,20 @@ export class LivekitClient {
     public async getConnectionInfo({breakoutRoom}: {
         breakoutRoom?: string;
     }): Promise<LivekitConnectionInfo> {
-        const response = (await this.room.sendRequest(
-            'livekit.connect',
-            { breakout_room: breakoutRoom }
-        )) as JsonContent;
+        const response = await this.room.invoke({
+            toolkit: 'livekit',
+            tool: 'connect',
+            input: { breakout_room: breakoutRoom ?? null },
+        });
 
-        if (!response || !response.json) {
-            throw new Error('Failed to get connection info');
+        if (!(response instanceof JsonContent)) {
+            throw new RoomServerException('unexpected return type from livekit.connect');
         }
 
         const { url, token } = response.json;
+        if (typeof url !== 'string' || typeof token !== 'string') {
+            throw new RoomServerException('unexpected return type from livekit.connect');
+        }
 
         return new LivekitConnectionInfo({url, token});
     }

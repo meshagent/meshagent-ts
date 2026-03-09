@@ -1,255 +1,768 @@
-import { RoomClient } from "./room-client";
-import { JsonContent } from "./response";
 import { DataType } from "./data-types";
+import { RoomClient } from "./room-client";
+import { RoomServerException } from "./room-server-client";
+import { Content, ControlContent, ErrorContent, JsonContent } from "./response";
 
-/**
- * A literal type for controlling table creation mode.
- */
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
 
-/**
- * Reference to a table for SQL queries.
- */
 export interface TableRef {
   name: string;
   namespace?: string[];
   alias?: string;
 }
 
-/**
- * A client for interacting with the 'database' extension on the room server.
- */
+type TypedValue =
+  | { type: "null" }
+  | { type: "bool"; value: boolean }
+  | { type: "int"; value: number }
+  | { type: "float"; value: number }
+  | { type: "text"; value: string }
+  | { type: "binary"; data: string }
+  | { type: "date"; value: string }
+  | { type: "timestamp"; value: string }
+  | { type: "list"; items: TypedValue[] }
+  | { type: "struct"; fields: Array<{ name: string; value: TypedValue }> };
+
+type RowChunkJson = {
+  kind: "rows";
+  rows: Array<{
+    columns: Array<{
+      name: string;
+      value: TypedValue;
+    }>;
+  }>;
+};
+
+const globalScope = globalThis as typeof globalThis & {
+  Buffer?: {
+    from(data: Uint8Array | string, encoding?: string): { toString(encoding: string): string };
+  };
+  btoa?: (data: string) => string;
+  atob?: (data: string) => string;
+};
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (globalScope.Buffer) {
+    return globalScope.Buffer.from(bytes).toString("base64");
+  }
+
+  if (!globalScope.btoa) {
+    throw new Error("base64 encoding is not available in this runtime");
+  }
+
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return globalScope.btoa(binary);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  if (globalScope.Buffer) {
+    return Uint8Array.from(globalScope.Buffer.from(base64, "base64") as unknown as ArrayLike<number>);
+  }
+
+  if (!globalScope.atob) {
+    throw new Error("base64 decoding is not available in this runtime");
+  }
+
+  const binary = globalScope.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function metadataEntries(metadata?: Record<string, unknown>): Array<{ key: string; value: string }> | null {
+  if (metadata == null) {
+    return null;
+  }
+  return Object.entries(metadata).map(([key, value]) => ({
+    key,
+    value: typeof value === "string" ? value : JSON.stringify(encodeLegacyValue(value)),
+  }));
+}
+
+function toolkitDataTypeJson(dataType: DataType): Record<string, unknown> {
+  const json = dataType.toJson() as Record<string, unknown>;
+  const payload: Record<string, unknown> = {
+    type: json.type,
+    nullable: json.nullable ?? null,
+    metadata: metadataEntries(json.metadata as Record<string, unknown> | undefined),
+  };
+
+  if (json.type === "vector" || json.type === "list") {
+    payload.element_type = toolkitDataTypeJson(DataType.fromJson(json.element_type as Record<string, unknown>));
+  } else if (json.type === "struct") {
+    const fields = json.fields;
+    if (!Array.isArray(fields)) {
+      throw new RoomServerException("unexpected return type from database.inspect");
+    }
+    payload.fields = fields.map((field) => {
+      if (!isRecord(field) || typeof field.name !== "string" || !isRecord(field.data_type)) {
+        throw new RoomServerException("unexpected return type from database.inspect");
+      }
+      return {
+        name: field.name,
+        data_type: toolkitDataTypeJson(DataType.fromJson(field.data_type)),
+      };
+    });
+  }
+  if (json.type === "vector") {
+    payload.size = json.size;
+  }
+
+  return payload;
+}
+
+function schemaEntries(schema?: Record<string, DataType>): Array<Record<string, unknown>> | null {
+  if (schema == null) {
+    return null;
+  }
+  return Object.entries(schema).map(([name, dataType]) => ({
+    name,
+    data_type: toolkitDataTypeJson(dataType),
+  }));
+}
+
+function publicDataTypeJson(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new RoomServerException("unexpected return type from database.inspect");
+  }
+
+  const type = value.type;
+  if (typeof type !== "string") {
+    throw new RoomServerException("unexpected return type from database.inspect");
+  }
+
+  const metadataList = value.metadata;
+  let metadata: Record<string, string> | undefined;
+  if (metadataList != null) {
+    if (!Array.isArray(metadataList)) {
+      throw new RoomServerException("unexpected return type from database.inspect");
+    }
+    metadata = {};
+    for (const entry of metadataList) {
+      if (!isRecord(entry) || typeof entry.key !== "string" || typeof entry.value !== "string") {
+        throw new RoomServerException("unexpected return type from database.inspect");
+      }
+      metadata[entry.key] = entry.value;
+    }
+  }
+
+  const payload: Record<string, unknown> = {
+    type,
+    nullable: value.nullable,
+    metadata,
+  };
+
+  if (type === "vector") {
+    payload.size = value.size;
+    payload.element_type = publicDataTypeJson(value.element_type);
+  } else if (type === "list") {
+    payload.element_type = publicDataTypeJson(value.element_type);
+  } else if (type === "struct") {
+    const rawFields = value.fields;
+    if (!Array.isArray(rawFields)) {
+      throw new RoomServerException("unexpected return type from database.inspect");
+    }
+    payload.fields = Object.fromEntries(rawFields.map((field) => {
+      if (!isRecord(field) || typeof field.name !== "string") {
+        throw new RoomServerException("unexpected return type from database.inspect");
+      }
+      return [field.name, publicDataTypeJson(field.data_type)];
+    }));
+  }
+
+  return payload;
+}
+
+function encodeLegacyValue(value: unknown): unknown {
+  if (value instanceof Uint8Array) {
+    return {
+      encoding: "base64",
+      data: bytesToBase64(value),
+    };
+  }
+  if (value instanceof Date) {
+    return value.toISOString().replace("+00:00", "Z");
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => encodeLegacyValue(item));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entryValue]) => [key, encodeLegacyValue(entryValue)]));
+  }
+  return value;
+}
+
+function encodeStreamValue(value: unknown): TypedValue {
+  if (value == null) {
+    return { type: "null" };
+  }
+  if (typeof value === "boolean") {
+    return { type: "bool", value };
+  }
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) {
+      return { type: "int", value };
+    }
+    return { type: "float", value };
+  }
+  if (typeof value === "string") {
+    return { type: "text", value };
+  }
+  if (value instanceof Uint8Array) {
+    return {
+      type: "binary",
+      data: bytesToBase64(value),
+    };
+  }
+  if (value instanceof Date) {
+    return {
+      type: "timestamp",
+      value: value.toISOString().replace("+00:00", "Z"),
+    };
+  }
+  if (Array.isArray(value)) {
+    return {
+      type: "list",
+      items: value.map((item) => encodeStreamValue(item)),
+    };
+  }
+  if (isRecord(value)) {
+    return {
+      type: "struct",
+      fields: Object.entries(value).map(([name, fieldValue]) => ({
+        name,
+        value: encodeStreamValue(fieldValue),
+      })),
+    };
+  }
+  throw new RoomServerException(`database stream does not support value type ${typeof value}`);
+}
+
+function decodeStreamValue(value: unknown, operation: string): unknown {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    throw new RoomServerException(`unexpected return type from database.${operation}`);
+  }
+
+  switch (value.type) {
+    case "null":
+      return null;
+    case "bool":
+      if (typeof value.value !== "boolean") {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return value.value;
+    case "int":
+    case "float":
+      if (typeof value.value !== "number") {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return value.value;
+    case "text":
+    case "date":
+    case "timestamp":
+      if (typeof value.value !== "string") {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return value.value;
+    case "binary":
+      if (typeof value.data !== "string") {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return base64ToBytes(value.data);
+    case "list":
+      if (!Array.isArray(value.items)) {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return value.items.map((item) => decodeStreamValue(item, operation));
+    case "struct":
+      if (!Array.isArray(value.fields)) {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return Object.fromEntries(value.fields.map((field) => {
+        if (!isRecord(field) || typeof field.name !== "string") {
+          throw new RoomServerException(`unexpected return type from database.${operation}`);
+        }
+        return [field.name, decodeStreamValue(field.value, operation)];
+      }));
+    default:
+      throw new RoomServerException(`unexpected return type from database.${operation}`);
+  }
+}
+
+function rowsChunk(records: Array<Record<string, unknown>>): RowChunkJson {
+  return {
+    kind: "rows",
+    rows: records.map((record) => ({
+      columns: Object.entries(record).map(([name, value]) => ({
+        name,
+        value: encodeStreamValue(value),
+      })),
+    })),
+  };
+}
+
+function recordsFromRowsChunk(payload: unknown, operation: string): Array<Record<string, any>> {
+  if (!isRecord(payload) || payload.kind !== "rows" || !Array.isArray(payload.rows)) {
+    throw new RoomServerException(`unexpected return type from database.${operation}`);
+  }
+
+  return payload.rows.map((row) => {
+    if (!isRecord(row) || !Array.isArray(row.columns)) {
+      throw new RoomServerException(`unexpected return type from database.${operation}`);
+    }
+    return Object.fromEntries(row.columns.map((column) => {
+      if (!isRecord(column) || typeof column.name !== "string") {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+      return [column.name, decodeStreamValue(column.value, operation)];
+    }));
+  });
+}
+
+function rowChunkList(records: Array<Record<string, any>>, rowsPerChunk = 128): Array<Array<Record<string, any>>> {
+  if (rowsPerChunk <= 0) {
+    throw new RoomServerException("rowsPerChunk must be greater than zero");
+  }
+  const chunks: Array<Array<Record<string, any>>> = [];
+  for (let index = 0; index < records.length; index += rowsPerChunk) {
+    chunks.push(records.slice(index, index + rowsPerChunk));
+  }
+  return chunks;
+}
+
+async function* toAsyncIterable<T>(chunks: AsyncIterable<T> | Iterable<T>): AsyncIterable<T> {
+  if (Symbol.asyncIterator in Object(chunks)) {
+    for await (const chunk of chunks as AsyncIterable<T>) {
+      yield chunk;
+    }
+    return;
+  }
+  for (const chunk of chunks as Iterable<T>) {
+    yield chunk;
+  }
+}
+
+function buildWhereClause(where?: string | Record<string, any>): string | null {
+  if (where != null && typeof where === "object" && !Array.isArray(where)) {
+    return Object.entries(where)
+      .map(([key, value]) => `${key} = ${JSON.stringify(encodeLegacyValue(value))}`)
+      .join(" AND ");
+  }
+  if (typeof where === "string") {
+    return where;
+  }
+  return null;
+}
+
+class DatabaseWriteInputStream {
+  private readonly source: AsyncIterator<Array<Record<string, any>>>;
+  private readonly pulls: Array<() => void> = [];
+  private closed = false;
+
+  constructor(
+    private readonly start: Record<string, any>,
+    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>,
+  ) {
+    this.source = toAsyncIterable(chunks)[Symbol.asyncIterator]();
+  }
+
+  public requestNext(): void {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    this.pulls.push(() => undefined);
+  }
+
+  public close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    while (this.pulls.length > 0) {
+      const waiter = this.pulls.shift();
+      waiter?.();
+    }
+    void this.source.return?.();
+  }
+
+  private async waitForPull(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      this.pulls.push(resolve);
+    });
+  }
+
+  public async *stream(): AsyncIterable<Content> {
+    yield new JsonContent({ json: this.start });
+    while (!this.closed) {
+      await this.waitForPull();
+      if (this.closed) {
+        return;
+      }
+      const nextChunk = await this.source.next();
+      if (nextChunk.done) {
+        return;
+      }
+      if (nextChunk.value.length === 0) {
+        continue;
+      }
+      yield new JsonContent({ json: rowsChunk(nextChunk.value) });
+    }
+  }
+}
+
+class DatabaseReadInputStream {
+  private readonly pulls: Array<() => void> = [];
+  private closed = false;
+
+  constructor(private readonly start: Record<string, any>) {}
+
+  public requestNext(): void {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    this.pulls.push(() => undefined);
+  }
+
+  public close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    while (this.pulls.length > 0) {
+      const waiter = this.pulls.shift();
+      waiter?.();
+    }
+  }
+
+  private async waitForPull(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      this.pulls.push(resolve);
+    });
+  }
+
+  public async *stream(): AsyncIterable<Content> {
+    yield new JsonContent({ json: this.start });
+    while (!this.closed) {
+      await this.waitForPull();
+      if (this.closed) {
+        return;
+      }
+      yield new JsonContent({ json: { kind: "pull" } });
+    }
+  }
+}
+
 export class DatabaseClient {
   private room: RoomClient;
 
-  /**
-   * @param room The RoomClient used to send requests.
-   */
   constructor({room}: {room: RoomClient}) {
     this.room = room;
   }
 
-  /**
-   * List all tables in the database.
-   * @returns A promise resolving to an array of table names.
-   */
-  public async listTables(): Promise<string[]> {
-    const response = await this.room.sendRequest("database.list_tables", {}) as JsonContent;
-
-    // Safely extract tables from response JSON
-    return response?.json?.tables ?? [];
+  private _unexpectedResponseError(operation: string): RoomServerException {
+    return new RoomServerException(`unexpected return type from database.${operation}`);
   }
 
-  /**
-   * Private helper for creating a table.
-   *
-   * @param name The table name.
-   * @param data Optional initial data (array/object).
-   * @param schema Optional schema definition as a record of column->DataType.
-   * @param mode "create", "overwrite", or "create_if_not_exists" (default: "create").
-   */
-  private async createTable({ name, data, schema, mode = "create" }: {
+  private async invoke(operation: string, input: Record<string, any>): Promise<JsonContent | null> {
+    const response = await this.room.invoke({ toolkit: "database", tool: operation, input });
+    if (response instanceof JsonContent) {
+      return response;
+    }
+    if (response == null) {
+      return null;
+    }
+    return null;
+  }
+
+  private async invokeStream(operation: string, input: AsyncIterable<Content>): Promise<AsyncIterable<Content>> {
+    return await this.room.invokeStream({ toolkit: "database", tool: operation, input });
+  }
+
+  private async drainWriteStream(operation: string, input: DatabaseWriteInputStream): Promise<void> {
+    const response = await this.invokeStream(operation, input.stream());
+    try {
+      for await (const chunk of response) {
+        if (chunk instanceof ErrorContent) {
+          throw new RoomServerException(chunk.text, chunk.code);
+        }
+        if (chunk instanceof ControlContent) {
+          if (chunk.method === "close") {
+            return;
+          }
+          throw this._unexpectedResponseError(operation);
+        }
+        if (!(chunk instanceof JsonContent) || chunk.json.kind !== "pull") {
+          throw this._unexpectedResponseError(operation);
+        }
+        input.requestNext();
+      }
+    } finally {
+      input.close();
+    }
+  }
+
+  private async *streamRows(operation: string, start: Record<string, any>): AsyncIterable<Array<Record<string, any>>> {
+    const input = new DatabaseReadInputStream(start);
+    const response = await this.invokeStream(operation, input.stream());
+    input.requestNext();
+    try {
+      for await (const chunk of response) {
+        if (chunk instanceof ErrorContent) {
+          throw new RoomServerException(chunk.text, chunk.code);
+        }
+        if (chunk instanceof ControlContent) {
+          if (chunk.method === "close") {
+            return;
+          }
+          throw this._unexpectedResponseError(operation);
+        }
+        if (!(chunk instanceof JsonContent)) {
+          throw this._unexpectedResponseError(operation);
+        }
+        yield recordsFromRowsChunk(chunk.json, operation);
+        input.requestNext();
+      }
+    } finally {
+      input.close();
+    }
+  }
+
+  public async listTables(): Promise<string[]> {
+    const response = await this.invoke("list_tables", { namespace: null });
+    if (!(response instanceof JsonContent)) {
+      throw this._unexpectedResponseError("list_tables");
+    }
+    return Array.isArray(response.json.tables) ? response.json.tables as string[] : [];
+  }
+
+  private async createTable({
+    name,
+    data,
+    schema,
+    mode = "create",
+  }: {
     name: string;
-    data?: any;
+    data?: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
   }): Promise<void> {
-    let schemaDict: Record<string, any> | undefined;
-
-    if (schema) {
-      schemaDict = {};
-      for (const [key, value] of Object.entries(schema)) {
-        schemaDict[key] = value.toJson();
-      }
-    }
-
-    const payload: Record<string, any> = {
-      name,
-      data,
-      schema: schemaDict,
-      mode,
-    };
-
-    await this.room.sendRequest("database.create_table", payload);
+    const input = new DatabaseWriteInputStream(
+      {
+        kind: "start",
+        name,
+        fields: schemaEntries(schema),
+        mode,
+        namespace: null,
+        metadata: null,
+      },
+      data ?? [],
+    );
+    await this.drainWriteStream("create_table", input);
   }
 
-  /**
-   * Create a new table with a specific schema.
-   *
-   * @param name The table name.
-   * @param schema Optional schema definition.
-   * @param data Optional initial data.
-   * @param mode Controls creation behavior (default: "create").
-   */
   public async createTableWithSchema({ name, schema, data, mode = "create" }: {
     name: string;
     schema?: Record<string, DataType>;
     data?: Array<Record<string, any>>;
     mode?: CreateMode;
   }): Promise<void> {
-    return this.createTable({ name, schema, data, mode });
+    return this.createTable({
+      name,
+      schema,
+      data: data == null ? undefined : rowChunkList(data),
+      mode,
+    });
   }
 
-  /**
-   * Create a table from initial data, optionally specifying a mode.
-   *
-   * @param name Table name.
-   * @param data Array of records to initialize the table with.
-   * @param mode "create", "overwrite", or "create_if_not_exists".
-   */
   public async createTableFromData({ name, data, mode = "create" }: {
     name: string;
     data?: Array<Record<string, any>>;
     mode?: CreateMode;
   }): Promise<void> {
-    return this.createTable({ name, data, mode });
+    return this.createTable({
+      name,
+      data: data == null ? undefined : rowChunkList(data),
+      mode,
+    });
   }
 
-  /**
-   * Drop (delete) a table by name.
-   *
-   * @param name The table name.
-   * @param ignoreMissing If true, ignore if table doesn't exist.
-   */
+  public async createTableFromDataStream({ name, chunks, schema, mode = "create" }: {
+    name: string;
+    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    schema?: Record<string, DataType>;
+    mode?: CreateMode;
+  }): Promise<void> {
+    return this.createTable({ name, data: chunks, schema, mode });
+  }
+
   public async dropTable({ name, ignoreMissing = false }: {
     name: string;
     ignoreMissing?: boolean;
   }): Promise<void> {
-    await this.room.sendRequest("database.drop_table", { name, ignoreMissing });
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "drop_table",
+      input: { name, ignore_missing: ignoreMissing, namespace: null },
+    });
   }
 
-  /**
-   * Add new columns to an existing table.
-   *
-   * @param table Table name.
-   * @param newColumns A record of { columnName: defaultValueExpression }.
-   */
   public async addColumns({ table, newColumns }: {
     table: string;
     newColumns: Record<string, string>;
   }): Promise<void> {
-    await this.room.sendRequest("database.add_columns", {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "add_columns",
+      input: {
         table,
-        new_columns: newColumns
+        columns: Object.entries(newColumns).map(([name, valueSql]) => ({ name, value_sql: valueSql, data_type: null })),
+        namespace: null,
+      },
     });
   }
 
-  /**
-   * Drop columns from an existing table.
-   *
-   * @param table Table name.
-   * @param columns List of column names to drop.
-   */
   public async dropColumns({ table, columns }: {
     table: string;
     columns: string[];
   }): Promise<void> {
-    await this.room.sendRequest("database.drop_columns", { table, columns });
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "drop_columns",
+      input: { table, columns, namespace: null },
+    });
   }
 
-  /**
-   * Insert new records into a table.
-   *
-   * @param table Table name.
-   * @param records The record(s) to insert.
-   */
   public async insert({ table, records }: {
     table: string;
     records: Array<Record<string, any>>;
   }): Promise<void> {
-    await this.room.sendRequest("database.insert", { table, records });
+    await this.insertStream({ table, chunks: rowChunkList(records) });
   }
 
-  /**
-   * Update existing records in a table.
-   *
-   * @param table Table name.
-   * @param where SQL WHERE clause (e.g. "id = 123").
-   * @param values Key/value pairs for direct updates.
-   * @param valuesSql Key/value pairs for SQL-based expressions (e.g. {"col2": "col2 + 1"}).
-   */
+  public async insertStream({ table, chunks }: {
+    table: string;
+    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+  }): Promise<void> {
+    const input = new DatabaseWriteInputStream({
+      kind: "start",
+      table,
+      namespace: null,
+    }, chunks);
+    await this.drainWriteStream("insert", input);
+  }
+
   public async update({ table, where, values, valuesSql }: {
     table: string;
     where: string;
     values?: Record<string, any>;
     valuesSql?: Record<string, string>;
   }): Promise<void> {
-    const payload = {
-      table,
-      where,
-      values,
-      valuesSql,
-    };
-    await this.room.sendRequest("database.update", payload);
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "update",
+      input: {
+        table,
+        where,
+        values: values == null ? null : Object.entries(values).map(([column, value]) => ({ column, value_json: JSON.stringify(encodeLegacyValue(value)) })),
+        values_sql: valuesSql == null ? null : Object.entries(valuesSql).map(([column, expression]) => ({ column, expression })),
+        namespace: null,
+      },
+    });
   }
 
-  /**
-   * Delete records from a table.
-   *
-   * @param table Table name.
-   * @param where SQL WHERE clause (e.g. "id = 123").
-   */
   public async delete({ table, where }: {
     table: string;
     where: string;
   }): Promise<void> {
-    await this.room.sendRequest("database.delete", { table, where });
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "delete",
+      input: { table, where, namespace: null },
+    });
   }
 
-  /**
-   * Merge (upsert) records into a table.
-   *
-   * @param table Table name.
-   * @param on The column name to match on (e.g. "id").
-   * @param records The record(s) to merge.
-   */
   public async merge({ table, on, records }: {
     table: string;
     on: string;
-    records: any;
+    records: Array<Record<string, any>>;
   }): Promise<void> {
-    await this.room.sendRequest("database.merge", { table, on, records });
+    await this.mergeStream({ table, on, chunks: rowChunkList(records) });
   }
 
-  /**
-   * Execute a SQL query against one or more tables.
-   *
-   * @param query SQL statement to execute.
-   * @param tables Tables to register for the query.
-   * @param params Typed parameters for DataFusion parameter binding.
-   * @returns A list of matching records.
-   */
+  public async mergeStream({ table, on, chunks }: {
+    table: string;
+    on: string;
+    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+  }): Promise<void> {
+    const input = new DatabaseWriteInputStream({
+      kind: "start",
+      table,
+      on,
+      namespace: null,
+    }, chunks);
+    await this.drainWriteStream("merge", input);
+  }
+
   public async sql({ query, tables, params }: {
     query: string;
     tables: TableRef[];
     params?: Record<string, any>;
   }): Promise<Array<Record<string, any>>> {
-    const payload: Record<string, any> = {
-      query,
-      tables,
-      params,
-    };
-
-    const response = await this.room.sendRequest("database.sql", payload);
-    if (response instanceof JsonContent) {
-      if (response?.json?.results) {
-        return response.json.results;
-      }
+    const rows: Array<Record<string, any>> = [];
+    for await (const chunk of this.sqlStream({ query, tables, params })) {
+      rows.push(...chunk);
     }
-    return [];
+    return rows;
   }
 
-  /**
-   * Search for records in a table.
-   *
-   * @param table Table name.
-   * @param text Optional search text.
-   * @param vector Optional vector for similarity search.
-   * @param where A filter clause (SQL string) or values to match.
-   * @param limit Max results to return.
-   * @param select Specific columns to select.
-   * @returns A list of matching records.
-   */
+  public async *sqlStream({ query, tables, params }: {
+    query: string;
+    tables: TableRef[];
+    params?: Record<string, any>;
+  }): AsyncIterable<Array<Record<string, any>>> {
+    yield* this.streamRows("sql", {
+      kind: "start",
+      query,
+      tables,
+      params_json: params == null ? null : JSON.stringify(encodeLegacyValue(params)),
+    });
+  }
+
   public async search({ table, text, vector, where, limit, select }: {
     table: string;
     text?: string;
@@ -258,99 +771,83 @@ export class DatabaseClient {
     limit?: number;
     select?: string[];
   }): Promise<Array<Record<string, any>>> {
-    let whereClause = where;
-    // If 'where' is an object, convert to "key = value" AND-joined string.
-    if (where && typeof where === "object" && !Array.isArray(where)) {
-      const parts: string[] = [];
-      for (const [key, value] of Object.entries(where)) {
-        // Escape or JSON-stringify the value
-        parts.push(`${key} = ${JSON.stringify(value)}`);
-      }
-      whereClause = parts.join(" AND ");
+    const rows: Array<Record<string, any>> = [];
+    for await (const chunk of this.searchStream({ table, text, vector, where, limit, select })) {
+      rows.push(...chunk);
     }
+    return rows;
+  }
 
-    const payload: Record<string, any> = {
+  public async *searchStream({ table, text, vector, where, limit, select }: {
+    table: string;
+    text?: string;
+    vector?: number[];
+    where?: string | Record<string, any>;
+    limit?: number;
+    select?: string[];
+  }): AsyncIterable<Array<Record<string, any>>> {
+    yield* this.streamRows("search", {
+      kind: "start",
       table,
-      where: whereClause,
-      text,
-    };
-
-    if (limit !== undefined) {
-      payload.limit = limit;
-    }
-    if (select !== undefined) {
-      payload.select = select;
-    }
-    if (vector !== undefined) {
-      payload.vector = vector;
-    }
-
-    const response = await this.room.sendRequest("database.search", payload);
-    if (response instanceof JsonContent) {
-      if (response?.json?.results) {
-        return response.json.results;
-      }
-    }
-    return [];
+      text: text ?? null,
+      vector: vector ?? null,
+      text_columns: null,
+      where: buildWhereClause(where),
+      offset: null,
+      limit: limit ?? null,
+      select: select ?? null,
+      namespace: null,
+    });
   }
 
-  /**
-   * Optimize (compact/prune) a table.
-   *
-   * @param table Table name.
-   */
   public async optimize(table: string): Promise<void> {
-    await this.room.sendRequest("database.optimize", { table });
+    await this.room.invoke({ toolkit: "database", tool: "optimize", input: { table, namespace: null } });
   }
 
-  /**
-   * Create a vector index on a given column.
-   *
-   * @param table Table name.
-   * @param column Vector column name.
-   */
-  public async createVectorIndex({ table, column }: {
+  public async createVectorIndex({ table, column, replace = false }: {
     table: string;
     column: string;
+    replace?: boolean;
   }): Promise<void> {
-    await this.room.sendRequest("database.create_vector_index", { table, column });
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "create_vector_index",
+      input: { table, column, replace, namespace: null },
+    });
   }
 
-  /**
-   * Create a scalar index on a given column.
-   *
-   * @param table Table name.
-   * @param column Column name.
-   */
-  public async createScalarIndex({ table, column }: {
+  public async createScalarIndex({ table, column, replace = false }: {
     table: string;
     column: string;
+    replace?: boolean;
   }): Promise<void> {
-    await this.room.sendRequest("database.create_scalar_index", { table, column });
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "create_scalar_index",
+      input: { table, column, replace, namespace: null },
+    });
   }
 
-  /**
-   * Create a full-text search index on a given text column.
-   *
-   * @param table Table name.
-   * @param column Text column name.
-   */
-  public async createFullTextSearchIndex({ table, column }: {
+  public async createFullTextSearchIndex({ table, column, replace = false }: {
     table: string;
     column: string;
+    replace?: boolean;
   }): Promise<void> {
-    await this.room.sendRequest("database.create_full_text_search_index", { table, column });
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "create_full_text_search_index",
+      input: { table, column, replace, namespace: null },
+    });
   }
 
-  /**
-   * List all indexes on a table.
-   *
-   * @param table Table name.
-   * @returns An object containing index information.
-   */
-  public async listIndexes({ table }: { table: string }): Promise<Record<string, any>> {
-    const response = await this.room.sendRequest("database.list_indexes", { table }) as JsonContent;
-
-    return response?.json ?? {};
+  public async listIndexes({ table }: { table: string }): Promise<Array<Record<string, any>>> {
+    const response = await this.invoke("list_indexes", { table, namespace: null });
+    if (!(response instanceof JsonContent)) {
+      throw this._unexpectedResponseError("list_indexes");
+    }
+    if (!Array.isArray(response.json.indexes)) {
+      throw this._unexpectedResponseError("list_indexes");
+    }
+    return response.json.indexes as Array<Record<string, any>>;
   }
 }
