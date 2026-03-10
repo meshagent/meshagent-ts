@@ -3,6 +3,7 @@ export * from './agent-client';
 export * from './event-emitter';
 export * from './client';
 export * from './completer';
+export * from './containers-client';
 export * from './data-types';
 export * from './database-client';
 export * from './developer-client';

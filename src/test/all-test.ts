@@ -8,3 +8,4 @@ import "./queues_client_test";
 import "./room_client_stream_test";
 import "./storage_client_test";
 import "./keys_test";
+import "./container_client_test";

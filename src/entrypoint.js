@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../node_modules/base-64/base64.js
+// node_modules/base-64/base64.js
 var require_base64 = __commonJS({
-  "../node_modules/base-64/base64.js"(exports, module) {
+  "node_modules/base-64/base64.js"(exports, module) {
     (function(root) {
       var freeExports = typeof exports == "object" && exports;
       var freeModule = typeof module == "object" && module && module.exports == freeExports && module;
@@ -1259,12 +1259,9 @@ var iterateDeletedStructs = (transaction, ds, f) => ds.clients.forEach((deletes,
     /** @type {Array<GC|Item>} */
     transaction.doc.store.clients.get(clientid)
   );
-  if (structs != null) {
-    const lastStruct = structs[structs.length - 1];
-    const clockState = lastStruct.id.clock + lastStruct.length;
-    for (let i = 0, del = deletes[i]; i < deletes.length && del.clock < clockState; del = deletes[++i]) {
-      iterateStructs(transaction, structs, del.clock, del.len, f);
-    }
+  for (let i = 0; i < deletes.length; i++) {
+    const del = deletes[i];
+    iterateStructs(transaction, structs, del.clock, del.len, f);
   }
 });
 var findIndexDS = (dis, clock) => {
@@ -2823,19 +2820,15 @@ var cleanupTransactions = (transactionCleanups, i) => {
               event._path = null;
             });
             events.sort((event1, event2) => event1.path.length - event2.path.length);
-            fs.push(() => {
-              callEventHandlerListeners(type._dEH, events, transaction);
-            });
-          }
-        });
-        fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
-        fs.push(() => {
-          if (transaction._needFormattingCleanup) {
-            cleanupYTextAfterTransaction(transaction);
+            callEventHandlerListeners(type._dEH, events, transaction);
           }
         });
       });
+      fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
       callAll(fs, []);
+      if (transaction._needFormattingCleanup) {
+        cleanupYTextAfterTransaction(transaction);
+      }
     } finally {
       if (doc2.gc) {
         tryGcDeleteSet(ds, store, doc2.gcFilter);
@@ -3031,7 +3024,7 @@ var popStackItem = (undoManager, stack, eventType) => {
 };
 var UndoManager = class extends ObservableV2 {
   /**
-   * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Limits the scope of the UndoManager. If this is set to a ydoc instance, all changes on that ydoc will be undone. If set to a specific type, only changes on that type or its children will be undone. Also accepts an array of types.
+   * @param {Doc|AbstractType<any>|Array<AbstractType<any>>} typeScope Accepts either a single type, or an array of types
    * @param {UndoManagerOptions} options
    */
   constructor(typeScope, {
@@ -3124,8 +3117,6 @@ var UndoManager = class extends ObservableV2 {
     });
   }
   /**
-   * Extend the scope.
-   *
    * @param {Array<AbstractType<any> | Doc> | AbstractType<any> | Doc} ytypes
    */
   addToScope(ytypes) {
@@ -3565,7 +3556,7 @@ var YEvent = class {
     return isDeleted(this.transaction.deleteSet, struct.id);
   }
   /**
-   * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any }>}
+   * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any, newValue: any }>}
    */
   get keys() {
     if (this._keys === null) {
@@ -4259,8 +4250,6 @@ var typeMapSet = (transaction, parent, key, value) => {
       case Boolean:
       case Array:
       case String:
-      case Date:
-      case BigInt:
         content = new ContentAny([value]);
         break;
       case Uint8Array:
@@ -6251,13 +6240,11 @@ var YXmlElement = class _YXmlElement extends YXmlFragment {
     const el = new _YXmlElement(this.nodeName);
     const attrs = this.getAttributes();
     forEach(attrs, (value, key) => {
-      el.setAttribute(
-        key,
-        /** @type {any} */
-        value
-      );
+      if (typeof value === "string") {
+        el.setAttribute(key, value);
+      }
     });
-    el.insert(0, this.toArray().map((v) => v instanceof AbstractType ? v.clone() : v));
+    el.insert(0, this.toArray().map((item) => item instanceof AbstractType ? item.clone() : item));
     return el;
   }
   /**
@@ -8106,7 +8093,7 @@ if (glo[importIdentifier] === true) {
 }
 glo[importIdentifier] = true;
 
-// ../node_modules/uuid/dist/esm-browser/stringify.js
+// node_modules/uuid/dist/esm-browser/stringify.js
 var byteToHex = [];
 for (let i = 0; i < 256; ++i) {
   byteToHex.push((i + 256).toString(16).slice(1));
@@ -8115,7 +8102,7 @@ function unsafeStringify(arr, offset = 0) {
   return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
 
-// ../node_modules/uuid/dist/esm-browser/rng.js
+// node_modules/uuid/dist/esm-browser/rng.js
 var getRandomValues2;
 var rnds8 = new Uint8Array(16);
 function rng() {
@@ -8128,11 +8115,11 @@ function rng() {
   return getRandomValues2(rnds8);
 }
 
-// ../node_modules/uuid/dist/esm-browser/native.js
+// node_modules/uuid/dist/esm-browser/native.js
 var randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
 var native_default = { randomUUID };
 
-// ../node_modules/uuid/dist/esm-browser/v4.js
+// node_modules/uuid/dist/esm-browser/v4.js
 function v4(options, buf, offset) {
   if (native_default.randomUUID && !buf && !options) {
     return native_default.randomUUID();

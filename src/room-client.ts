@@ -13,6 +13,7 @@ import { QueuesClient } from "./queues-client";
 import { DatabaseClient } from "./database-client";
 import { AgentsClient, ToolkitDescription } from "./agent-client";
 import { SecretsClient } from "./secrets-client";
+import { ContainersClient } from "./containers-client";
 import { RoomServerException } from "./room-server-client";
 
 import { RoomEvent } from "./room-event";
@@ -41,6 +42,7 @@ export class RoomClient {
     public readonly database: DatabaseClient;
     public readonly agents: AgentsClient;
     public readonly secrets: SecretsClient;
+    public readonly containers: ContainersClient;
 
     private _pendingRequests: Map<number, Completer<any>> = new Map();
     private _ready = new Completer<boolean>();
@@ -64,6 +66,7 @@ export class RoomClient {
         this.database = new DatabaseClient({room: this});
         this.agents = new AgentsClient({room: this});
         this.secrets = new SecretsClient({room: this});
+        this.containers = new ContainersClient({room: this});
     }
 
     get localParticipant(): LocalParticipant | null {
