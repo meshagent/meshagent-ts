@@ -256,7 +256,12 @@ describe("database_client_test", function () {
 
         const indexes = await client1.database.listIndexes({ table: tableName });
 
-        expect(indexes).to.have.property("indexes");
+        expect(indexes).to.be.an("array");
+        expect(indexes.map((index) => index.name).sort()).to.deep.equal([
+            "embedding_idx",
+            "id_idx",
+            "name_idx",
+        ]);
     });
 
     it("test_add_drop_columns", async () => {

@@ -6,8 +6,6 @@ import { expect } from "chai";
 import {
     ChildProperty,
     ElementType,
-    FileHandle,
-
     FileDeletedEvent,
     FileUpdatedEvent,
 
@@ -51,6 +49,10 @@ const schema = new MeshSchema({
     ],
 });
 
+async function* singleChunk(data: Uint8Array): AsyncIterable<Uint8Array> {
+    yield data;
+}
+
 describe("test storage client", function () {
     // Increase timeout if necessary for network or WebSocket delays
     this.timeout(10000);
@@ -85,13 +87,8 @@ describe("test storage client", function () {
 
     it("test_storage_create_file", async () => {
         const path = "test_file.txt";
-
-        const handle = await client.storage.open(path, { overwrite: false });
-        expect(handle).to.be.instanceOf(FileHandle, "Expected handle to be a FileHandle");
-
         const dataToWrite = encoder.encode("Hello, world!");
-        await client.storage.write(handle, dataToWrite);
-        await client.storage.close(handle);
+        await client.storage.uploadStream(path, singleChunk(dataToWrite), { overwrite: false, size: dataToWrite.length });
 
         const exists = await client.storage.exists(path);
         expect(exists).to.equal(true, `Expected file ${path} to exist after writing`);
@@ -101,10 +98,7 @@ describe("test storage client", function () {
         const path = "download_test.txt";
         const content = encoder.encode("Check download content");
 
-        // Open/write/close
-        const handle = await client.storage.open(path, { overwrite: false });
-        await client.storage.write(handle, content);
-        await client.storage.close(handle);
+        await client.storage.uploadStream(path, singleChunk(content), { overwrite: false, size: content.length });
 
         // Now download
         const fileResponse = await client.storage.download(path);
@@ -117,9 +111,7 @@ describe("test storage client", function () {
         const path = "download_url_test.bin";
         const content = encoder.encode("Some binary content");
 
-        const handle = await client.storage.open(path, { overwrite: false });
-        await client.storage.write(handle, content);
-        await client.storage.close(handle);
+        await client.storage.uploadStream(path, singleChunk(content), { overwrite: false, size: content.length });
 
         const downloadLink = await client.storage.downloadUrl(path);
         expect(downloadLink).to.be.a("string", "Expected downloadUrl to return a string");
@@ -135,9 +127,8 @@ describe("test storage client", function () {
 
         for (const f of files) {
             const fullPath = `${path}/${f}`;
-            const handle = await client.storage.open(fullPath, { overwrite: true });
-            await client.storage.write(handle, encoder.encode("some content"));
-            await client.storage.close(handle);
+            const content = encoder.encode("some content");
+            await client.storage.uploadStream(fullPath, singleChunk(content), { overwrite: true, size: content.length });
         }
 
         const listing = await client.storage.list(path);
@@ -152,10 +143,7 @@ describe("test storage client", function () {
         const path = "delete_me.txt";
         const content = encoder.encode("Delete this content");
 
-        // create the file
-        const handle = await client.storage.open(path, { overwrite: false });
-        await client.storage.write(handle, content);
-        await client.storage.close(handle);
+        await client.storage.uploadStream(path, singleChunk(content), { overwrite: false, size: content.length });
 
         const existsNow = await client.storage.exists(path);
         expect(existsNow).to.equal(true, "File should exist after creation");
@@ -185,18 +173,18 @@ describe("test storage client", function () {
             },
         });
 
-        // 1) Open/write/close triggers 'file_updated'
         const updatedCalled = new Promise<void>((res) => (updatedCalledResolve = res));
-        const handle = await client.storage.open(path, { overwrite: false });
-        await client.storage.write(handle, encoder.encode("Testing events"));
-        await client.storage.close(handle);
+        {
+            const content = encoder.encode("Testing events");
+            await client.storage.uploadStream(path, singleChunk(content), { overwrite: false, size: content.length });
+        }
         await updatedCalled;
 
-        // 2) Re-open & write to trigger 'file_updated' event again
         const updatedCalledAgain = new Promise<void>((res) => (updatedCalledResolve = res));
-        const handle2 = await client.storage.open(path, { overwrite: true });
-        await client.storage.write(handle2, encoder.encode("Changed content"));
-        await client.storage.close(handle2);
+        {
+            const content = encoder.encode("Changed content");
+            await client.storage.uploadStream(path, singleChunk(content), { overwrite: true, size: content.length });
+        }
         await updatedCalledAgain;
 
         // 3) Now delete it, watch for 'file_deleted'
@@ -210,10 +198,7 @@ describe("test storage client", function () {
     it("test_room_client_schema", async () => {
         const path = ".schemas/sample_test_schema.json";
         const content = encoder.encode(JSON.stringify(schema.toJson()));
-        const handle = await client.storage.open(path, { overwrite: true });
-
-        await client.storage.write(handle, content);
-        await client.storage.close(handle);
+        await client.storage.uploadStream(path, singleChunk(content), { overwrite: true, size: content.length });
 
         const exists = await client.storage.exists(path);
         expect(exists).to.be.true;
@@ -222,21 +207,15 @@ describe("test storage client", function () {
     it("test_room_client_download_multiple_files", async () => {
         const path1 = "file_text_1.txt";
         const content1 = encoder.encode(JSON.stringify({ message: "Hello, world! (1)" }));
-        const handle1 = await client.storage.open(path1, { overwrite: true });
-        await client.storage.write(handle1, content1);
-        await client.storage.close(handle1);
+        await client.storage.uploadStream(path1, singleChunk(content1), { overwrite: true, size: content1.length });
 
         const path2 = "file_text_2.txt";
         const content2 = encoder.encode(JSON.stringify({ message: "Hello, world! (2)" }));
-        const handle2 = await client.storage.open(path2, { overwrite: true });
-        await client.storage.write(handle2, content2);
-        await client.storage.close(handle2);
+        await client.storage.uploadStream(path2, singleChunk(content2), { overwrite: true, size: content2.length });
 
         const path3 = "file_text_3.txt";
         const content3 = encoder.encode(JSON.stringify({ message: "Hello, world! (3)" }));
-        const handle3 = await client.storage.open(path3, { overwrite: true });
-        await client.storage.write(handle3, content3);
-        await client.storage.close(handle3);
+        await client.storage.uploadStream(path3, singleChunk(content3), { overwrite: true, size: content3.length });
 
         const downloadResponse1 = await client.storage.download(path1);
         const downloadResponse2 = await client.storage.download(path2);
