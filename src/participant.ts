@@ -37,10 +37,16 @@ export abstract class Participant {
  */
 export class RemoteParticipant extends Participant {
   public readonly role: string;
+  public online?: boolean;
 
-  constructor(client: RoomClient, id: string, role: string) {
+  constructor(client: RoomClient, id: string, role: string, online?: boolean) {
     super(client, id);
     this.role = role;
+    this.online = online;
+  }
+
+  public _setOnline(online: boolean): void {
+    this.online = online;
   }
 }
 
@@ -68,4 +74,3 @@ export class LocalParticipant extends Participant {
     }
   }
 }
-
