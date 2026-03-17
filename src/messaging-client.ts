@@ -6,6 +6,7 @@ import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { Participant, RemoteParticipant } from "./participant";
 import { RoomMessage, RoomMessageEvent } from "./room-event";
+import { RoomServerException } from "./room-server-client";
 import { splitMessageHeader, splitMessagePayload } from "./utils";
 import { StreamController } from "./stream-controller";
 import { Completer } from "./completer";
@@ -102,6 +103,47 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     return input;
   }
 
+  private _removeParticipant(participantId: string): RemoteParticipant | undefined {
+    const participant = this._participants[participantId];
+    if (participant === undefined) {
+      return undefined;
+    }
+
+    participant._setOnline(false);
+    delete this._participants[participantId];
+
+    for (const [streamId, reader] of Object.entries(this._streamReaders)) {
+      if (reader._to.id !== participant.id) {
+        continue;
+      }
+
+      reader._controller.close();
+      delete this._streamReaders[streamId];
+    }
+
+    return participant;
+  }
+
+  private _resolveMessageRecipient(to: Participant): Participant | null {
+    if (!(to instanceof RemoteParticipant)) {
+      return to;
+    }
+
+    if (to.online === false) {
+      return null;
+    }
+
+    return this._participants[to.id] ?? null;
+  }
+
+  private _participantNotFound(ignoreOffline: boolean): null {
+    if (ignoreOffline) {
+      return null;
+    }
+
+    throw new RoomServerException("the participant was not found");
+  }
+
   /**
    * Creates a new stream to a participant, returning a MessageStreamWriter when ready.
    */
@@ -126,17 +168,23 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   /**
    * Sends a message to a given participant, optionally with a binary attachment.
    */
-  public async sendMessage({to, type, message, attachment}: {
+  public async sendMessage({to, type, message, attachment, ignoreOffline = false}: {
     to: Participant;
     type: string;
     message: Record<string, any>;
     attachment?: Uint8Array;
+    ignoreOffline?: boolean;
   }): Promise<void> {
+    const resolvedTo = this._resolveMessageRecipient(to) ?? this._participantNotFound(ignoreOffline);
+    if (resolvedTo === null) {
+      return;
+    }
+
     await this.client.invoke({
       toolkit: "messaging",
       tool: "send",
       input: this._messageInput({
-        toParticipantId: to.id,
+        toParticipantId: resolvedTo.id,
         type,
         message,
         attachment,
@@ -245,7 +293,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
 
   private _onParticipantEnabled(message: RoomMessage): void {
     const data = message.message;
-    const p = new RemoteParticipant(this.client, data["id"], data["role"]);
+    const p = new RemoteParticipant(this.client, data["id"], data["role"], true);
 
     // Copy attributes
     for (const [k, v] of Object.entries(data["attributes"] || {})) {
@@ -267,11 +315,9 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   }
 
   private _onParticipantDisabled(message: RoomMessage): void {
-    const part = this._participants[message.message["id"]];
+    const part = this._removeParticipant(message.message["id"]);
 
     if (part) {
-      delete this._participants[message.message["id"]];
-
       this.emit("participant_removed", { message } as RoomMessageEvent);
     }
   }
@@ -280,7 +326,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     const participants = message.message["participants"] as Array<any>;
 
     for (const data of participants) {
-      const rp = new RemoteParticipant(this.client, data["id"], data["role"]);
+      const rp = new RemoteParticipant(this.client, data["id"], data["role"], true);
 
       for (const [k, v] of Object.entries(data["attributes"] || {})) {
         (rp as any)._attributes[k] = v;
@@ -313,17 +359,23 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       }
       this._onStreamAcceptCallback(reader);
       // Send "stream.accept"
-      this.sendMessage({
+      void this.sendMessage({
         to: from,
         type: "stream.accept",
         message: { stream_id: streamId },
+        ignoreOffline: true,
+      }).catch((error) => {
+        console.warn("unable to send stream response", error);
       });
     } catch (e) {
       // Send "stream.reject"
-      this.sendMessage({
+      void this.sendMessage({
         to: from,
         type: "stream.reject",
         message: { stream_id: streamId, error: String(e) },
+        ignoreOffline: true,
+      }).catch((error) => {
+        console.warn("unable to send stream response", error);
       });
     }
 
