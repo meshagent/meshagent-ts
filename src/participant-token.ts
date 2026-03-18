@@ -3,6 +3,14 @@ import { parseApiKey } from "./api_keys";
 
 export type StringList = string[];
 
+function getEnvValue(name: string): string | undefined {
+    if (typeof process === "undefined") {
+        return undefined;
+    }
+
+    return process.env?.[name];
+}
+
 export class AgentsGrant {
     public registerAgent: boolean;
     public registerPublicToolkit: boolean;
@@ -594,7 +602,7 @@ export class ParticipantToken {
         let resolvedKid = this.apiKeyId;
         let resolvedSub = this.projectId;
 
-        const apiKeyValue = apiKey ?? process.env.MESHAGENT_API_KEY;
+        const apiKeyValue = apiKey ?? getEnvValue("MESHAGENT_API_KEY");
 
         if (apiKeyValue) {
             const parsed = parseApiKey(apiKeyValue);
@@ -607,7 +615,7 @@ export class ParticipantToken {
         let usingDefaultSecret = false;
 
         if (!resolvedSecret) {
-            const envSecret = process.env.MESHAGENT_SECRET;
+            const envSecret = getEnvValue("MESHAGENT_SECRET");
 
             if (!envSecret) {
                 throw new Error(

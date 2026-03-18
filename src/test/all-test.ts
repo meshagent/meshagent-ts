@@ -3,6 +3,7 @@ import "./database_client_test";
 import "./document_test";
 import "./error_content_test";
 import "./messaging_client_test";
+import "./memory_services_client_test";
 import "./participant_token_test";
 import "./queues_client_test";
 import "./room_client_stream_test";
