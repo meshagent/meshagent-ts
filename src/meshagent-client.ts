@@ -94,6 +94,49 @@ export interface ServiceApiKeySpec {
     auto_provision?: boolean | null;
 }
 
+export interface PromptTemplate {
+    name: string;
+    description?: string | null;
+    prompt: string;
+    annotations?: Record<string, string> | null;
+}
+
+export interface ChannelSpec {
+    annotations?: Record<string, string> | null;
+}
+
+export interface EmailChannel extends ChannelSpec {
+    address: string;
+    private?: boolean | null;
+}
+
+export interface QueueChannel extends ChannelSpec {
+    queue: string;
+    message_schema?: Record<string, unknown> | null;
+}
+
+export interface ChatChannel extends ChannelSpec {
+    prompts?: PromptTemplate[] | null;
+}
+
+export interface ToolkitChannel extends ChannelSpec {
+    name: string;
+}
+
+export interface ChannelsSpec {
+    email?: EmailChannel[] | null;
+    chat?: ChatChannel[] | null;
+    queue?: QueueChannel[] | null;
+    toolkit?: ToolkitChannel[] | null;
+}
+
+export interface AgentSpec {
+    name: string;
+    description?: string | null;
+    annotations?: Record<string, string> | null;
+    channels?: ChannelsSpec | null;
+}
+
 export interface ServiceMetadata {
     name: string;
     description?: string | null;
@@ -164,6 +207,7 @@ export interface ServiceSpec {
     kind: "Service";
     id?: string | null;
     metadata: ServiceMetadata;
+    agents?: AgentSpec[] | null;
     ports?: PortSpec[];
     container?: ContainerSpec | null;
     external?: ExternalServiceSpec | null;
