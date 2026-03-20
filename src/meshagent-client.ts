@@ -112,6 +112,7 @@ export interface EmailChannel extends ChannelSpec {
 
 export interface QueueChannel extends ChannelSpec {
     queue: string;
+    threading_mode?: "default-new" | null;
     message_schema?: Record<string, unknown> | null;
 }
 

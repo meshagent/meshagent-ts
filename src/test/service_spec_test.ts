@@ -49,6 +49,7 @@ describe("service_spec_test", () => {
                         queue: [
                             {
                                 queue: "jobs",
+                                threading_mode: "default-new",
                                 message_schema: {
                                     type: "object",
                                     properties: {
@@ -123,6 +124,7 @@ describe("service_spec_test", () => {
                             queue: [
                                 {
                                     queue: "jobs",
+                                    threading_mode: "default-new",
                                     message_schema: {
                                         type: "object",
                                         properties: {
@@ -142,6 +144,7 @@ describe("service_spec_test", () => {
             expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.protocol).to.equal("meshagent.agent-message.v1");
             expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.prompts?.[0]?.name).to.equal("welcome");
             expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.prompts?.[0]?.description).to.equal(undefined);
+            expect(loaded.agents?.[0]?.channels?.queue?.[0]?.threading_mode).to.equal("default-new");
             expect(loaded.agents?.[0]?.channels?.queue?.[0]?.message_schema).to.deep.equal({
                 type: "object",
                 properties: {
