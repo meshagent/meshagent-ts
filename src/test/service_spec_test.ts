@@ -35,8 +35,9 @@ describe("service_spec_test", () => {
                                 annotations: { label: "inbox" },
                             },
                         ],
-                        chat: [
+                        messaging: [
                             {
+                                protocol: "meshagent.agent-message.v1",
                                 prompts: [
                                     {
                                         name: "welcome",
@@ -108,8 +109,9 @@ describe("service_spec_test", () => {
                                     annotations: { label: "inbox" },
                                 },
                             ],
-                            chat: [
+                            messaging: [
                                 {
+                                    protocol: "meshagent.agent-message.v1",
                                     prompts: [
                                         {
                                             name: "welcome",
@@ -137,8 +139,9 @@ describe("service_spec_test", () => {
                 ],
             });
             expect(loaded.agents?.[0]?.channels?.email?.[0]?.address).to.equal("support@example.com");
-            expect(loaded.agents?.[0]?.channels?.chat?.[0]?.prompts?.[0]?.name).to.equal("welcome");
-            expect(loaded.agents?.[0]?.channels?.chat?.[0]?.prompts?.[0]?.description).to.equal(undefined);
+            expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.protocol).to.equal("meshagent.agent-message.v1");
+            expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.prompts?.[0]?.name).to.equal("welcome");
+            expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.prompts?.[0]?.description).to.equal(undefined);
             expect(loaded.agents?.[0]?.channels?.queue?.[0]?.message_schema).to.deep.equal({
                 type: "object",
                 properties: {

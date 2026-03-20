@@ -115,7 +115,8 @@ export interface QueueChannel extends ChannelSpec {
     message_schema?: Record<string, unknown> | null;
 }
 
-export interface ChatChannel extends ChannelSpec {
+export interface MessagingChannel extends ChannelSpec {
+    protocol?: string | null;
     prompts?: PromptTemplate[] | null;
 }
 
@@ -125,7 +126,7 @@ export interface ToolkitChannel extends ChannelSpec {
 
 export interface ChannelsSpec {
     email?: EmailChannel[] | null;
-    chat?: ChatChannel[] | null;
+    messaging?: MessagingChannel[] | null;
     queue?: QueueChannel[] | null;
     toolkit?: ToolkitChannel[] | null;
 }
@@ -240,7 +241,23 @@ function pruneUndefinedValues(value: unknown): unknown {
 }
 
 function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
-    return pruneUndefinedValues(service) as Record<string, unknown>;
+    const agents = service.agents?.map((agent) => ({
+        ...agent,
+        channels: agent.channels == null
+            ? agent.channels
+            : {
+                ...agent.channels,
+                messaging: agent.channels.messaging?.map((channel) => ({
+                    ...channel,
+                    protocol: channel.protocol ?? "meshagent.agent-message.v1",
+                })),
+            },
+    }));
+
+    return pruneUndefinedValues({
+        ...service,
+        agents,
+    }) as Record<string, unknown>;
 }
 
 export interface Mailbox {
