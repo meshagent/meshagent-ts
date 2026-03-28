@@ -1,6 +1,7 @@
 import { meshagentBaseUrl } from "./helpers";
 import { RoomException } from "./requirement";
 import { ApiScope } from "./participant-token";
+import { decoder, encoder } from "./utils";
 
 export type ProjectRole = "member" | "admin" | "developer";
 
@@ -316,6 +317,33 @@ export interface KeysSecret extends BaseSecret {
 
 export type SecretLike = PullSecret | KeysSecret;
 
+export interface ManagedSecretInfo {
+    id: string;
+    type: string;
+    name: string;
+    delegatedTo?: string | null;
+}
+
+export interface ManagedSecret extends ManagedSecretInfo {
+    dataBase64: string;
+    data: Uint8Array;
+}
+
+export interface ConnectorRef {
+    openaiConnectorId?: string | null;
+    serverUrl?: string | null;
+    clientSecretId?: string | null;
+}
+
+export interface ExternalOAuthClientRegistration {
+    id: string;
+    delegatedTo: string;
+    connector?: ConnectorRef | null;
+    oauth?: OAuthClientConfig | null;
+    clientId: string;
+    clientSecret?: string | null;
+}
+
 type RequestBody = string | Uint8Array | ArrayBuffer | null | undefined;
 
 interface RequestOptions {
@@ -326,6 +354,54 @@ interface RequestOptions {
     headers?: Record<string, string>;
     action: string;
     responseType?: "json" | "text" | "arrayBuffer" | "void";
+}
+
+const globalScope = globalThis as typeof globalThis & {
+    Buffer?: {
+        from(data: Uint8Array | string, encoding?: string): { toString(encoding: string): string };
+    };
+    btoa?: (data: string) => string;
+    atob?: (data: string) => string;
+};
+
+function bytesToBase64(bytes: Uint8Array): string {
+    if (globalScope.Buffer) {
+        return globalScope.Buffer.from(bytes).toString("base64");
+    }
+
+    if (!globalScope.btoa) {
+        throw new Error("base64 encoding is not available in this runtime");
+    }
+
+    let binary = "";
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return globalScope.btoa(binary);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+    if (globalScope.Buffer) {
+        return Uint8Array.from(globalScope.Buffer.from(base64, "base64") as unknown as ArrayLike<number>);
+    }
+
+    if (!globalScope.atob) {
+        throw new Error("base64 decoding is not available in this runtime");
+    }
+
+    const binary = globalScope.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+}
+
+function normalizeBinary(data: Uint8Array | ArrayBuffer | Buffer): Uint8Array {
+    if (data instanceof Uint8Array) {
+        return data;
+    }
+    return new Uint8Array(data);
 }
 
 export class Meshagent {
@@ -630,6 +706,85 @@ export class Meshagent {
         throw new RoomException(`Unknown secret type: ${type}`);
     }
 
+    private parseManagedSecretInfo(data: any): ManagedSecretInfo {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid managed secret payload");
+        }
+
+        const { id, type, name, delegated_to: delegatedToRaw, delegatedTo } = data as any;
+        if (typeof id !== "string" || typeof type !== "string" || typeof name !== "string") {
+            throw new RoomException("Invalid managed secret payload: missing id, type, or name");
+        }
+
+        const delegatedToValue = typeof delegatedTo === "string"
+            ? delegatedTo
+            : typeof delegatedToRaw === "string"
+                ? delegatedToRaw
+                : null;
+
+        return {
+            id,
+            type,
+            name,
+            delegatedTo: delegatedToValue,
+        };
+    }
+
+    private parseManagedSecret(data: any): ManagedSecret {
+        const secret = this.parseManagedSecretInfo(data);
+        const dataBase64 = (data as any).data_base64 ?? (data as any).dataBase64;
+        if (typeof dataBase64 !== "string") {
+            throw new RoomException("Invalid managed secret payload: missing data_base64");
+        }
+
+        return {
+            ...secret,
+            dataBase64,
+            data: base64ToBytes(dataBase64),
+        };
+    }
+
+    private parseSecretPayload(secret: ManagedSecretInfo, rawData: Uint8Array): SecretLike {
+        let payload: unknown;
+        try {
+            payload = JSON.parse(decoder.decode(rawData));
+        } catch {
+            throw new RoomException(`Invalid secret payload for ${secret.id}`);
+        }
+
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+            throw new RoomException(`Invalid secret payload for ${secret.id}`);
+        }
+
+        if (secret.type === "docker") {
+            const { server, username, password, email } = payload as Record<string, unknown>;
+            if (typeof server !== "string" || typeof username !== "string" || typeof password !== "string") {
+                throw new RoomException(`Invalid secret payload for ${secret.id}`);
+            }
+            return {
+                id: secret.id,
+                name: secret.name,
+                type: "docker",
+                server,
+                username,
+                password,
+                email: typeof email === "string" ? email : "none@example.com",
+            };
+        }
+
+        const entries = Object.entries(payload as Record<string, unknown>);
+        if (entries.some(([, value]) => typeof value !== "string")) {
+            throw new RoomException(`Invalid secret payload for ${secret.id}`);
+        }
+
+        return {
+            id: secret.id,
+            name: secret.name,
+            type: "keys",
+            data: Object.fromEntries(entries as Array<[string, string]>),
+        };
+    }
+
     private toSecretPayload(secret: SecretLike): { name: string; type: string; data: Record<string, string> } {
         if (secret.type === "docker") {
             return {
@@ -647,6 +802,96 @@ export class Meshagent {
             name: secret.name,
             type: secret.type,
             data: { ...secret.data },
+        };
+    }
+
+    private parseConnectorRef(data: any): ConnectorRef | null {
+        if (data == null) {
+            return null;
+        }
+
+        if (typeof data !== "object") {
+            throw new RoomException("Invalid connector payload");
+        }
+
+        const {
+            openai_connector_id: openaiConnectorIdRaw,
+            openaiConnectorId,
+            server_url: serverUrlRaw,
+            serverUrl,
+            client_secret_id: clientSecretIdRaw,
+            clientSecretId,
+        } = data as any;
+
+        return {
+            openaiConnectorId: typeof openaiConnectorId === "string"
+                ? openaiConnectorId
+                : typeof openaiConnectorIdRaw === "string"
+                    ? openaiConnectorIdRaw
+                    : null,
+            serverUrl: typeof serverUrl === "string"
+                ? serverUrl
+                : typeof serverUrlRaw === "string"
+                    ? serverUrlRaw
+                    : null,
+            clientSecretId: typeof clientSecretId === "string"
+                ? clientSecretId
+                : typeof clientSecretIdRaw === "string"
+                    ? clientSecretIdRaw
+                    : null,
+        };
+    }
+
+    private serializeConnectorRef(connector?: ConnectorRef | null): Record<string, string> | null {
+        if (connector == null) {
+            return null;
+        }
+
+        const payload: Record<string, string> = {};
+        if (connector.openaiConnectorId) {
+            payload.openai_connector_id = connector.openaiConnectorId;
+        }
+        if (connector.serverUrl) {
+            payload.server_url = connector.serverUrl;
+        }
+        if (connector.clientSecretId) {
+            payload.client_secret_id = connector.clientSecretId;
+        }
+        return payload;
+    }
+
+    private parseExternalOAuthClientRegistration(data: any): ExternalOAuthClientRegistration {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid external oauth registration payload");
+        }
+
+        const {
+            id,
+            delegated_to: delegatedToRaw,
+            delegatedTo,
+            connector,
+            oauth,
+            client_id: clientIdRaw,
+            clientId,
+            client_secret: clientSecretRaw,
+            clientSecret,
+        } = data as any;
+
+        const delegatedToValue = typeof delegatedTo === "string" ? delegatedTo : delegatedToRaw;
+        const clientIdValue = typeof clientId === "string" ? clientId : clientIdRaw;
+        const clientSecretValue = typeof clientSecret === "string" ? clientSecret : clientSecretRaw;
+
+        if (typeof id !== "string" || typeof delegatedToValue !== "string" || typeof clientIdValue !== "string") {
+            throw new RoomException("Invalid external oauth registration payload: missing fields");
+        }
+
+        return {
+            id,
+            delegatedTo: delegatedToValue,
+            connector: this.parseConnectorRef(connector),
+            oauth: oauth && typeof oauth === "object" ? oauth as OAuthClientConfig : null,
+            clientId: clientIdValue,
+            clientSecret: typeof clientSecretValue === "string" ? clientSecretValue : null,
         };
     }
 
@@ -1213,12 +1458,190 @@ export class Meshagent {
 
     // Secrets -----------------------------------------------------------------
 
-    async createSecret(projectId: string, secret: SecretLike): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/secrets`, {
+    async createProjectSecret(params: {
+        projectId: string;
+        name: string;
+        type: string;
+        data: Uint8Array | ArrayBuffer | Buffer;
+    }): Promise<string> {
+        const { projectId, name, type, data } = params;
+        const payload = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/secrets`, {
             method: "POST",
-            json: this.toSecretPayload(secret),
-            action: "create secret",
+            json: {
+                name,
+                type,
+                data_base64: bytesToBase64(normalizeBinary(data)),
+            },
+            action: "create project secret",
+        });
+        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
+            throw new RoomException("Invalid create project secret response payload");
+        }
+        return payload.id;
+    }
+
+    async updateProjectSecret(params: {
+        projectId: string;
+        secretId: string;
+        name: string;
+        type: string;
+        data: Uint8Array | ArrayBuffer | Buffer;
+    }): Promise<void> {
+        const { projectId, secretId, name, type, data } = params;
+        await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
+            method: "PUT",
+            json: {
+                name,
+                type,
+                data_base64: bytesToBase64(normalizeBinary(data)),
+            },
+            action: "update project secret",
             responseType: "void",
+        });
+    }
+
+    async getProjectSecret(projectId: string, secretId: string): Promise<ManagedSecret> {
+        const data = await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
+            action: "fetch project secret",
+        });
+        return this.parseManagedSecret(data);
+    }
+
+    async listProjectSecrets(projectId: string): Promise<ManagedSecretInfo[]> {
+        const data = await this.request<{ secrets?: unknown[] }>(`/accounts/projects/${projectId}/secrets`, {
+            action: "list project secrets",
+        });
+        const secrets = Array.isArray(data?.secrets) ? data.secrets : [];
+        return secrets.map((item) => this.parseManagedSecretInfo(item));
+    }
+
+    async deleteProjectSecret(projectId: string, secretId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
+            method: "DELETE",
+            action: "delete project secret",
+            responseType: "void",
+        });
+    }
+
+    async createRoomSecret(params: {
+        projectId: string;
+        roomName: string;
+        data: Uint8Array | ArrayBuffer | Buffer;
+        secretId?: string;
+        name?: string;
+        type?: string;
+        delegatedTo?: string;
+        forIdentity?: string;
+    }): Promise<string> {
+        const { projectId, roomName, data, secretId, name, type, delegatedTo, forIdentity } = params;
+        const payload = await this.request<{ id?: unknown }>(
+            `/accounts/projects/${projectId}/rooms/${roomName}/secrets`,
+            {
+                method: "POST",
+                json: {
+                    data_base64: bytesToBase64(normalizeBinary(data)),
+                    secret_id: secretId,
+                    name,
+                    type,
+                    delegated_to: delegatedTo,
+                    for_identity: forIdentity,
+                },
+                action: "create room secret",
+            },
+        );
+        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
+            throw new RoomException("Invalid create room secret response payload");
+        }
+        return payload.id;
+    }
+
+    async updateRoomSecret(params: {
+        projectId: string;
+        roomName: string;
+        secretId: string;
+        data: Uint8Array | ArrayBuffer | Buffer;
+        name?: string;
+        type?: string;
+        delegatedTo?: string;
+        forIdentity?: string;
+    }): Promise<void> {
+        const { projectId, roomName, secretId, data, name, type, delegatedTo, forIdentity } = params;
+        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/secrets/${secretId}`, {
+            method: "PUT",
+            json: {
+                data_base64: bytesToBase64(normalizeBinary(data)),
+                name,
+                type,
+                delegated_to: delegatedTo,
+                for_identity: forIdentity,
+            },
+            action: "update room secret",
+            responseType: "void",
+        });
+    }
+
+    async getRoomSecret(params: {
+        projectId: string;
+        roomName: string;
+        secretId: string;
+        delegatedTo?: string;
+        forIdentity?: string;
+    }): Promise<ManagedSecret> {
+        const { projectId, roomName, secretId, delegatedTo, forIdentity } = params;
+        const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/secrets/${secretId}`, {
+            query: {
+                delegated_to: delegatedTo,
+                for_identity: forIdentity,
+            },
+            action: "fetch room secret",
+        });
+        return this.parseManagedSecret(data);
+    }
+
+    async listRoomSecrets(params: {
+        projectId: string;
+        roomName: string;
+        forIdentity?: string;
+    }): Promise<ManagedSecretInfo[]> {
+        const { projectId, roomName, forIdentity } = params;
+        const data = await this.request<{ secrets?: unknown[] }>(
+            `/accounts/projects/${projectId}/rooms/${roomName}/secrets`,
+            {
+                query: {
+                    for_identity: forIdentity,
+                },
+                action: "list room secrets",
+            },
+        );
+        const secrets = Array.isArray(data?.secrets) ? data.secrets : [];
+        return secrets.map((item) => this.parseManagedSecretInfo(item));
+    }
+
+    async deleteRoomSecret(params: {
+        projectId: string;
+        roomName: string;
+        secretId: string;
+        delegatedTo?: string;
+        forIdentity?: string;
+    }): Promise<void> {
+        const { projectId, roomName, secretId, delegatedTo, forIdentity } = params;
+        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/secrets/${secretId}`, {
+            method: "DELETE",
+            query: {
+                delegated_to: delegatedTo,
+                for_identity: forIdentity,
+            },
+            action: "delete room secret",
+            responseType: "void",
+        });
+    }
+
+    async createSecret(projectId: string, secret: SecretLike): Promise<void> {
+        await this.createProjectSecret({
+            projectId,
+            name: secret.name,
+            type: secret.type,
+            data: encoder.encode(JSON.stringify(this.toSecretPayload(secret).data)),
         });
     }
 
@@ -1226,28 +1649,197 @@ export class Meshagent {
         if (!secret.id) {
             throw new RoomException("Secret id is required to update a secret");
         }
-        await this.request(`/accounts/projects/${projectId}/secrets/${secret.id}`, {
-            method: "PUT",
-            json: this.toSecretPayload(secret),
-            action: "update secret",
-            responseType: "void",
+        await this.updateProjectSecret({
+            projectId,
+            secretId: secret.id,
+            name: secret.name,
+            type: secret.type,
+            data: encoder.encode(JSON.stringify(this.toSecretPayload(secret).data)),
         });
     }
 
     async deleteSecret(projectId: string, secretId: string): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
-            method: "DELETE",
-            action: "delete secret",
+        await this.deleteProjectSecret(projectId, secretId);
+    }
+
+    async listSecrets(projectId: string): Promise<SecretLike[]> {
+        const secretInfos = await this.listProjectSecrets(projectId);
+        const secrets = await Promise.all(
+            secretInfos.map(async (secretInfo) => {
+                const secret = await this.getProjectSecret(projectId, secretInfo.id);
+                return this.parseSecretPayload(secret, secret.data);
+            }),
+        );
+        return secrets;
+    }
+
+    async createProjectExternalOAuthRegistration(params: {
+        projectId: string;
+        oauth: OAuthClientConfig;
+        clientId: string;
+        clientSecret?: string | null;
+        delegatedTo?: string | null;
+        connector?: ConnectorRef | null;
+    }): Promise<string> {
+        const { projectId, oauth, clientId, clientSecret, delegatedTo, connector } = params;
+        const payload = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/external-oauth`, {
+            method: "POST",
+            json: {
+                oauth,
+                client_id: clientId,
+                client_secret: clientSecret,
+                delegated_to: delegatedTo,
+                connector: this.serializeConnectorRef(connector),
+            },
+            action: "create project external oauth registration",
+        });
+        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
+            throw new RoomException("Invalid create project external oauth registration response payload");
+        }
+        return payload.id;
+    }
+
+    async updateProjectExternalOAuthRegistration(params: {
+        projectId: string;
+        registrationId: string;
+        oauth: OAuthClientConfig;
+        clientId: string;
+        clientSecret?: string | null;
+        delegatedTo?: string | null;
+        connector?: ConnectorRef | null;
+    }): Promise<void> {
+        const { projectId, registrationId, oauth, clientId, clientSecret, delegatedTo, connector } = params;
+        await this.request(`/accounts/projects/${projectId}/external-oauth/${registrationId}`, {
+            method: "PUT",
+            json: {
+                oauth,
+                client_id: clientId,
+                client_secret: clientSecret,
+                delegated_to: delegatedTo,
+                connector: this.serializeConnectorRef(connector),
+            },
+            action: "update project external oauth registration",
             responseType: "void",
         });
     }
 
-    async listSecrets(projectId: string): Promise<SecretLike[]> {
-        const data = await this.request<{ secrets?: any[] }>(`/accounts/projects/${projectId}/secrets`, {
-            action: "list secrets",
+    async listProjectExternalOAuthRegistrations(params: {
+        projectId: string;
+        delegatedTo?: string | null;
+    }): Promise<ExternalOAuthClientRegistration[]> {
+        const { projectId, delegatedTo } = params;
+        const data = await this.request<{ registrations?: unknown[] }>(`/accounts/projects/${projectId}/external-oauth`, {
+            query: {
+                delegated_to: delegatedTo,
+            },
+            action: "list project external oauth registrations",
         });
-        const secrets = Array.isArray(data?.secrets) ? data.secrets : [];
-        return secrets.map((item) => this.parseSecret(item));
+        const registrations = Array.isArray(data?.registrations) ? data.registrations : [];
+        return registrations.map((item) => this.parseExternalOAuthClientRegistration(item));
+    }
+
+    async deleteProjectExternalOAuthRegistration(params: {
+        projectId: string;
+        registrationId: string;
+        delegatedTo?: string | null;
+    }): Promise<void> {
+        const { projectId, registrationId, delegatedTo } = params;
+        await this.request(`/accounts/projects/${projectId}/external-oauth/${registrationId}`, {
+            method: "DELETE",
+            query: {
+                delegated_to: delegatedTo,
+            },
+            action: "delete project external oauth registration",
+            responseType: "void",
+        });
+    }
+
+    async createRoomExternalOAuthRegistration(params: {
+        projectId: string;
+        roomName: string;
+        oauth: OAuthClientConfig;
+        clientId: string;
+        clientSecret?: string | null;
+        delegatedTo?: string | null;
+        connector?: ConnectorRef | null;
+    }): Promise<string> {
+        const { projectId, roomName, oauth, clientId, clientSecret, delegatedTo, connector } = params;
+        const payload = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/rooms/${roomName}/external-oauth`, {
+            method: "POST",
+            json: {
+                oauth,
+                client_id: clientId,
+                client_secret: clientSecret,
+                delegated_to: delegatedTo,
+                connector: this.serializeConnectorRef(connector),
+            },
+            action: "create room external oauth registration",
+        });
+        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
+            throw new RoomException("Invalid create room external oauth registration response payload");
+        }
+        return payload.id;
+    }
+
+    async updateRoomExternalOAuthRegistration(params: {
+        projectId: string;
+        roomName: string;
+        registrationId: string;
+        oauth: OAuthClientConfig;
+        clientId: string;
+        clientSecret?: string | null;
+        delegatedTo?: string | null;
+        connector?: ConnectorRef | null;
+    }): Promise<void> {
+        const { projectId, roomName, registrationId, oauth, clientId, clientSecret, delegatedTo, connector } = params;
+        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/external-oauth/${registrationId}`, {
+            method: "PUT",
+            json: {
+                oauth,
+                client_id: clientId,
+                client_secret: clientSecret,
+                delegated_to: delegatedTo,
+                connector: this.serializeConnectorRef(connector),
+            },
+            action: "update room external oauth registration",
+            responseType: "void",
+        });
+    }
+
+    async listRoomExternalOAuthRegistrations(params: {
+        projectId: string;
+        roomName: string;
+        delegatedTo?: string | null;
+    }): Promise<ExternalOAuthClientRegistration[]> {
+        const { projectId, roomName, delegatedTo } = params;
+        const data = await this.request<{ registrations?: unknown[] }>(
+            `/accounts/projects/${projectId}/rooms/${roomName}/external-oauth`,
+            {
+                query: {
+                    delegated_to: delegatedTo,
+                },
+                action: "list room external oauth registrations",
+            },
+        );
+        const registrations = Array.isArray(data?.registrations) ? data.registrations : [];
+        return registrations.map((item) => this.parseExternalOAuthClientRegistration(item));
+    }
+
+    async deleteRoomExternalOAuthRegistration(params: {
+        projectId: string;
+        roomName: string;
+        registrationId: string;
+        delegatedTo?: string | null;
+    }): Promise<void> {
+        const { projectId, roomName, registrationId, delegatedTo } = params;
+        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/external-oauth/${registrationId}`, {
+            method: "DELETE",
+            query: {
+                delegated_to: delegatedTo,
+            },
+            action: "delete room external oauth registration",
+            responseType: "void",
+        });
     }
 
     // Rooms -------------------------------------------------------------------
