@@ -6,7 +6,7 @@ import { RoomClient, websocketProtocol } from "../index";
 
 import { getConfig, room } from "./utils";
 
-describe("test_queues_client", function () {
+describe("test_queues_client", function (this: Mocha.Suite) {
     // Increase timeout if necessary to accommodate WebSocket round trips.
     this.timeout(10000);
 

@@ -53,7 +53,7 @@ async function* singleChunk(data: Uint8Array): AsyncIterable<Uint8Array> {
     yield data;
 }
 
-describe("test storage client", function () {
+describe("test storage client", function (this: Mocha.Suite) {
     // Increase timeout if necessary for network or WebSocket delays
     this.timeout(10000);
 

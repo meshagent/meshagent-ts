@@ -16,7 +16,7 @@ import {
 
 import { room, getConfig } from "./utils";
 
-describe("database_client_test", function () {
+describe("database_client_test", function (this: Mocha.Suite) {
     // Increase timeout if needed for async operations (DB indexing, WebSocket connections, etc.)
     this.timeout(30000);
 

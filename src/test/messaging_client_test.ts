@@ -9,7 +9,7 @@ import { getConfig, room } from "./utils";
 
 import { encoder } from "../utils";
 
-describe("messaging", function () {
+describe("messaging", function (this: Mocha.Suite) {
     // Increase the test timeout if necessary (WebSocket + network delays).
     this.timeout(10000);
 
@@ -51,4 +51,3 @@ describe("messaging", function () {
         });
     });
 });
-

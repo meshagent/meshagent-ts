@@ -112,7 +112,7 @@ class RemoteTestToolkit extends RemoteToolkit {
     }
 }
 
-describe("agent_client_test", function () {
+describe("agent_client_test", function (this: Mocha.Suite) {
     // Increase timeout if necessary for WebSocket connections
     this.timeout(30000);
 
