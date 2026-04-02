@@ -220,7 +220,12 @@ export class StorageClient extends EventEmitter<RoomEvent> {
         if (chunk.headers["kind"] !== "pull") {
           throw this._unexpectedResponseError("upload");
         }
-        input.requestNext();
+        const rawChunkSize = chunk.headers["chunk_size"];
+        input.requestNext(
+          typeof rawChunkSize === "number" && rawChunkSize > 0
+            ? rawChunkSize
+            : null,
+        );
       }
     } finally {
       input.close();
@@ -453,7 +458,7 @@ class _StorageUploadInputStream {
   private readonly mimeType: string | null;
   private readonly source: AsyncIterator<Uint8Array>;
   private closed = false;
-  private pendingPulls = 0;
+  private pendingPulls: Array<number | null> = [];
   private waitingResolver: (() => void) | null = null;
   private pendingChunk: Uint8Array = new Uint8Array(0);
   private pendingOffset = 0;
@@ -485,11 +490,11 @@ class _StorageUploadInputStream {
     this.mimeType = mimeType;
   }
 
-  requestNext(): void {
+  requestNext(chunkSize: number | null = null): void {
     if (this.closed) {
       return;
     }
-    this.pendingPulls += 1;
+    this.pendingPulls.push(chunkSize);
     if (this.waitingResolver) {
       const resolver = this.waitingResolver;
       this.waitingResolver = null;
@@ -509,23 +514,32 @@ class _StorageUploadInputStream {
     }
   }
 
-  private async nextChunk(): Promise<Uint8Array | null> {
-    while (true) {
+  private async nextChunk(requestedChunkSize: number): Promise<Uint8Array | null> {
+    const parts: Uint8Array[] = [];
+    let totalLength = 0;
+
+    while (totalLength < requestedChunkSize) {
       if (this.pendingOffset < this.pendingChunk.length) {
         const start = this.pendingOffset;
-        const end = Math.min(start + this.chunkSize, this.pendingChunk.length);
+        const end = Math.min(
+          start + (requestedChunkSize - totalLength),
+          this.pendingChunk.length,
+        );
+        const part = this.pendingChunk.slice(start, end);
         this.pendingOffset = end;
-        return this.pendingChunk.slice(start, end);
+        parts.push(part);
+        totalLength += part.length;
+        continue;
       }
 
       if (this.sourceExhausted) {
-        return null;
+        break;
       }
 
       const next = await this.source.next();
       if (next.done) {
         this.sourceExhausted = true;
-        return null;
+        break;
       }
 
       if (next.value.length === 0) {
@@ -535,6 +549,21 @@ class _StorageUploadInputStream {
       this.pendingChunk = next.value;
       this.pendingOffset = 0;
     }
+
+    if (totalLength === 0) {
+      return null;
+    }
+    if (parts.length === 1) {
+      return parts[0];
+    }
+
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      combined.set(part, offset);
+      offset += part.length;
+    }
+    return combined;
   }
 
   async *stream(): AsyncIterable<Content> {
@@ -551,7 +580,7 @@ class _StorageUploadInputStream {
     });
 
     while (!this.closed) {
-      if (this.pendingPulls === 0) {
+      if (this.pendingPulls.length === 0) {
         await new Promise<void>((resolve) => {
           this.waitingResolver = resolve;
         });
@@ -559,11 +588,15 @@ class _StorageUploadInputStream {
       if (this.closed) {
         return;
       }
-      if (this.pendingPulls === 0) {
+      if (this.pendingPulls.length === 0) {
         continue;
       }
-      this.pendingPulls -= 1;
-      const chunk = await this.nextChunk();
+      const requestedChunkSize = this.pendingPulls.shift();
+      const chunk = await this.nextChunk(
+        typeof requestedChunkSize === "number" && requestedChunkSize > 0
+          ? requestedChunkSize
+          : this.chunkSize,
+      );
       if (chunk == null) {
         return;
       }
