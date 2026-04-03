@@ -9,7 +9,7 @@ export abstract class Participant {
   public readonly id: string;
 
   protected readonly client: RoomClient;
-  protected _attributes: Record<string, any> = {};
+  protected _attributes: Record<string, unknown> = {};
   protected _connections: string[] = [];
 
   constructor(client: RoomClient, id: string) {
@@ -27,8 +27,18 @@ export abstract class Participant {
   /**
    * Retrieves an attribute value by name.
    */
-  getAttribute(name: string): any {
+  getAttribute(name: string): unknown {
     return this._attributes[name];
+  }
+
+  public _setAttribute(name: string, value: unknown): void {
+    this._attributes[name] = value;
+  }
+
+  public _setAttributes(attributes: Record<string, unknown>): void {
+    for (const [name, value] of Object.entries(attributes)) {
+      this._setAttribute(name, value);
+    }
   }
 }
 
@@ -61,8 +71,8 @@ export class LocalParticipant extends Participant {
   /**
    * Sets an attribute locally, then sends an update over the protocol.
    */
-  async setAttribute(name: string, value: any): Promise<void> {
-    this._attributes[name] = value;
+  async setAttribute(name: string, value: unknown): Promise<void> {
+    this._setAttribute(name, value);
 
     try {
       const payload = packMessage({ [name]: value });

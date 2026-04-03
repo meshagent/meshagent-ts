@@ -10,7 +10,7 @@ import { StreamController } from "./stream-controller";
 export interface DockerSecret {
   username: string;
   password: string;
-  registry: string;
+  registry?: string | null;
   email?: string;
 }
 
@@ -18,7 +18,21 @@ export interface ContainerImage {
   id: string;
   tags: string[];
   size?: number;
-  labels: Record<string, unknown>;
+  labels: Record<string, string>;
+}
+
+export interface ImportedImage {
+  resolvedRef: string;
+  refs: string[];
+}
+
+export type BuildJobStatus = "queued" | "running" | "failed" | "cancelled" | "succeeded";
+
+export interface BuildJob {
+  id: string;
+  tag: string;
+  status: BuildJobStatus;
+  exitCode?: number;
 }
 
 export interface ContainerParticipantInfo {
@@ -42,6 +56,12 @@ export interface ContainerLogsSession {
   cancel(): Promise<void>;
 }
 
+export interface BuildLogsSession {
+  stream: AsyncIterable<string>;
+  result: Promise<number | null>;
+  cancel(): Promise<void>;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -57,12 +77,16 @@ function toPortPairs(values: Record<number, number> | Record<string, number>): A
   }));
 }
 
-function toCredentials(values: DockerSecret[]): Array<{ registry: string; username: string; password: string }> {
+function toCredentials(values: DockerSecret[]): Array<{ registry: string | null; username: string; password: string }> {
   return values.map((entry) => ({
-    registry: entry.registry,
+    registry: entry.registry ?? null,
     username: entry.username,
     password: entry.password,
   }));
+}
+
+function toMountList(values: ContainerMountSpec[]): ContainerMountSpec[] {
+  return values.map((entry) => entry);
 }
 
 function readStringField(data: Record<string, unknown>, field: string, operation: string): string {
@@ -73,35 +97,150 @@ function readStringField(data: Record<string, unknown>, field: string, operation
   return value;
 }
 
-function decodeJsonStatus(data: Uint8Array): number {
-  const text = new TextDecoder().decode(data);
+function readIntegerField(data: Record<string, unknown>, field: string, operation: string): number {
+  const value = data[field];
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return value;
+}
+
+function readOptionalIntegerField(data: Record<string, unknown>, field: string, operation: string): number | undefined {
+  const value = data[field];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return value;
+}
+
+function decodeUtf8(data: Uint8Array, operation: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(data);
+  } catch {
+    throw new RoomServerException(`containers.${operation} returned invalid UTF-8 data`);
+  }
+}
+
+function decodeJsonStatus(data: Uint8Array, operation: string): number {
+  const text = decodeUtf8(data, operation);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new RoomServerException("containers.exec returned an invalid status payload");
+    throw new RoomServerException(`containers.${operation} returned an invalid status payload`);
   }
   if (!isRecord(parsed)) {
-    throw new RoomServerException("containers.exec returned an invalid status payload");
+    throw new RoomServerException(`containers.${operation} returned an invalid status payload`);
   }
   const status = parsed["status"];
   if (typeof status !== "number" || !Number.isInteger(status)) {
-    throw new RoomServerException("containers.exec returned an invalid status payload");
+    throw new RoomServerException(`containers.${operation} returned an invalid status payload`);
   }
   return status;
+}
+
+function normalizeImageLabels(labelsRaw: unknown, operation: string): Record<string, string> {
+  if (Array.isArray(labelsRaw)) {
+    const labels: Record<string, string> = {};
+    for (const entry of labelsRaw) {
+      if (!isRecord(entry)) {
+        throw new RoomServerException(`unexpected return type from containers.${operation}`);
+      }
+      const key = entry["key"];
+      const value = entry["value"];
+      if (typeof key !== "string" || typeof value !== "string") {
+        throw new RoomServerException(`unexpected return type from containers.${operation}`);
+      }
+      labels[key] = value;
+    }
+    return labels;
+  }
+  if (isRecord(labelsRaw)) {
+    const labels: Record<string, string> = {};
+    for (const [key, value] of Object.entries(labelsRaw)) {
+      if (typeof value !== "string") {
+        throw new RoomServerException(`unexpected return type from containers.${operation}`);
+      }
+      labels[key] = value;
+    }
+    return labels;
+  }
+  if (labelsRaw === undefined || labelsRaw === null) {
+    return {};
+  }
+  throw new RoomServerException(`unexpected return type from containers.${operation}`);
+}
+
+function parseImportedImage(data: Record<string, unknown>, operation: string): ImportedImage {
+  const resolvedRef = data["resolved_ref"];
+  const refsRaw = data["refs"];
+  if (typeof resolvedRef !== "string" || !Array.isArray(refsRaw) || refsRaw.some((entry) => typeof entry !== "string")) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return {
+    resolvedRef,
+    refs: refsRaw as string[],
+  };
+}
+
+function parseBuildJob(data: Record<string, unknown>, operation: string): BuildJob {
+  const id = readStringField(data, "id", operation);
+  const tag = readStringField(data, "tag", operation);
+  const status = readStringField(data, "status", operation);
+  if (!["queued", "running", "failed", "cancelled", "succeeded"].includes(status)) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return {
+    id,
+    tag,
+    status: status as BuildJobStatus,
+    exitCode: readOptionalIntegerField(data, "exit_code", operation),
+  };
+}
+
+function buildRequestPayload(params: {
+  tag: string;
+  mounts: ContainerMountSpec[];
+  contextPath: string;
+  dockerfilePath?: string;
+  private?: boolean;
+  credentials?: DockerSecret[];
+  contextArchivePath?: string;
+  contextArchiveRef?: string;
+  contextArchiveMountPath?: string;
+  contextArchiveArch?: string;
+}): Record<string, unknown> {
+  return {
+    tag: params.tag,
+    mounts: toMountList(params.mounts),
+    context_path: params.contextPath,
+    dockerfile_path: params.dockerfilePath ?? null,
+    private: params.private ?? false,
+    credentials: toCredentials(params.credentials ?? []),
+    context_archive_path: params.contextArchivePath ?? null,
+    context_archive_ref: params.contextArchiveRef ?? null,
+    context_archive_mount_path: params.contextArchiveMountPath ?? null,
+    context_archive_arch: params.contextArchiveArch ?? null,
+  };
 }
 
 export class ExecSession {
   public readonly command: string;
   public readonly result: Promise<number>;
   public readonly previousOutput: Uint8Array[] = [];
+  public readonly previousError: Uint8Array[] = [];
   public readonly output: AsyncIterable<Uint8Array>;
+  public readonly stderr: AsyncIterable<Uint8Array>;
 
   private readonly requestId: string;
   private readonly containerId: string;
   private readonly tty?: boolean;
   private readonly resultCompleter = new Completer<number>();
   private readonly outputController = new StreamController<Uint8Array>();
+  private readonly errorController = new StreamController<Uint8Array>();
   private readonly queuedInput: Content[] = [];
   private inputClosed = false;
   private closed = false;
@@ -121,6 +260,7 @@ export class ExecSession {
     this.tty = params.tty;
     this.result = this.resultCompleter.fut;
     this.output = this.outputController.stream;
+    this.stderr = this.errorController.stream;
   }
 
   public async *inputStream(): AsyncIterable<Content> {
@@ -181,6 +321,7 @@ export class ExecSession {
     this.closed = true;
     this.closeInputStream();
     this.outputController.close();
+    this.errorController.close();
   }
 
   public closeError(error: unknown): void {
@@ -190,11 +331,17 @@ export class ExecSession {
     this.closed = true;
     this.closeInputStream();
     this.outputController.close();
+    this.errorController.close();
   }
 
   public addOutput(data: Uint8Array): void {
     this.previousOutput.push(data);
     this.outputController.add(data);
+  }
+
+  public addError(data: Uint8Array): void {
+    this.previousError.push(data);
+    this.errorController.add(data);
   }
 
   public get isClosed(): boolean {
@@ -252,7 +399,7 @@ export class ContainersClient {
 
   public async listImages(): Promise<ContainerImage[]> {
     const output = await this.invoke("list_images", {});
-    if (!(output instanceof JsonContent)) {
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
       throw this.unexpectedResponseError("list_images");
     }
     const imagesRaw = output.json["images"];
@@ -276,10 +423,16 @@ export class ContainersClient {
         id,
         tags: normalizedTags,
         size: typeof size === "number" ? size : undefined,
-        labels: isRecord(labelsRaw) ? labelsRaw : {},
+        labels: normalizeImageLabels(labelsRaw, "list_images"),
       });
     }
     return images;
+  }
+
+  public async deleteImage(params: { image: string }): Promise<void> {
+    await this.invoke("delete_image", {
+      image: params.image,
+    });
   }
 
   public async pullImage(params: { tag: string; credentials?: DockerSecret[] }): Promise<void> {
@@ -287,6 +440,66 @@ export class ContainersClient {
       tag: params.tag,
       credentials: toCredentials(params.credentials ?? []),
     });
+  }
+
+  public async pushImage(params: {
+    tag: string;
+    credentials?: DockerSecret[];
+    private?: boolean;
+  }): Promise<string> {
+    const output = await this.invoke("push_image", {
+      tag: params.tag,
+      credentials: toCredentials(params.credentials ?? []),
+      private: params.private ?? false,
+    });
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("push_image");
+    }
+    return readStringField(output.json, "container_id", "push_image");
+  }
+
+  public async load(params: { archivePath: string }): Promise<ImportedImage> {
+    const output = await this.invoke("load", {
+      archive_path: params.archivePath,
+    });
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("load");
+    }
+    return parseImportedImage(output.json, "load");
+  }
+
+  public async loadImage(params: {
+    mounts: ContainerMountSpec[];
+    archivePath: string;
+    private?: boolean;
+  }): Promise<string> {
+    const output = await this.invoke("load_image", {
+      mounts: toMountList(params.mounts),
+      archive_path: params.archivePath,
+      private: params.private ?? false,
+    });
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("load_image");
+    }
+    return readStringField(output.json, "container_id", "load_image");
+  }
+
+  public async saveImage(params: {
+    tag: string;
+    mounts: ContainerMountSpec[];
+    archivePath: string;
+    private?: boolean;
+  }): Promise<string> {
+    const output = await this.invoke("save_image", {
+      tag: params.tag,
+      mounts: toMountList(params.mounts),
+      archive_path: params.archivePath,
+      private: params.private ?? false,
+    });
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("save_image");
+    }
+    return readStringField(output.json, "container_id", "save_image");
   }
 
   public async run(params: {
@@ -327,6 +540,73 @@ export class ContainersClient {
     return readStringField(output.json, "container_id", "run");
   }
 
+  public async startBuild(params: {
+    tag: string;
+    mounts: ContainerMountSpec[];
+    contextPath: string;
+    dockerfilePath?: string;
+    private?: boolean;
+    credentials?: DockerSecret[];
+    contextArchivePath?: string;
+    contextArchiveRef?: string;
+    contextArchiveMountPath?: string;
+    contextArchiveArch?: string;
+  }): Promise<string> {
+    const output = await this.invoke("start_build", buildRequestPayload(params));
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("start_build");
+    }
+    return readStringField(output.json, "build_id", "start_build");
+  }
+
+  public async build(params: {
+    tag: string;
+    mounts: ContainerMountSpec[];
+    contextPath: string;
+    dockerfilePath?: string;
+    private?: boolean;
+    credentials?: DockerSecret[];
+    contextArchivePath?: string;
+    contextArchiveRef?: string;
+    contextArchiveMountPath?: string;
+    contextArchiveArch?: string;
+  }): Promise<string> {
+    const output = await this.invoke("build", buildRequestPayload(params));
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("build");
+    }
+    return readStringField(output.json, "build_id", "build");
+  }
+
+  public async listBuilds(): Promise<BuildJob[]> {
+    const output = await this.invoke("list_builds", {});
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("list_builds");
+    }
+    const buildsRaw = output.json["builds"];
+    if (!Array.isArray(buildsRaw)) {
+      throw this.unexpectedResponseError("list_builds");
+    }
+    return buildsRaw.map((entry) => {
+      if (!isRecord(entry)) {
+        throw this.unexpectedResponseError("list_builds");
+      }
+      return parseBuildJob(entry, "list_builds");
+    });
+  }
+
+  public async cancelBuild(params: { buildId: string }): Promise<void> {
+    await this.invoke("cancel_build", {
+      build_id: params.buildId,
+    });
+  }
+
+  public async deleteBuild(params: { buildId: string }): Promise<void> {
+    await this.invoke("delete_build", {
+      build_id: params.buildId,
+    });
+  }
+
   public async runService(params: { serviceId: string; env?: Record<string, string> }): Promise<string> {
     const output = await this.invoke("run_service", {
       service_id: params.serviceId,
@@ -358,6 +638,12 @@ export class ContainersClient {
           if (chunk instanceof ErrorContent) {
             throw new RoomServerException(chunk.text, chunk.code);
           }
+          if (chunk instanceof ControlContent) {
+            if (chunk.method === "close") {
+              break;
+            }
+            throw this.unexpectedResponseError("exec");
+          }
           if (!(chunk instanceof BinaryContent)) {
             throw this.unexpectedResponseError("exec");
           }
@@ -369,8 +655,12 @@ export class ContainersClient {
             session.addOutput(chunk.data);
             continue;
           }
+          if (channel === 2) {
+            session.addError(chunk.data);
+            continue;
+          }
           if (channel === 3) {
-            session.close(decodeJsonStatus(chunk.data));
+            session.close(decodeJsonStatus(chunk.data, "exec"));
             return;
           }
         }
@@ -386,7 +676,7 @@ export class ContainersClient {
   public async stop(params: { containerId: string; force?: boolean }): Promise<void> {
     await this.invoke("stop_container", {
       container_id: params.containerId,
-      force: params.force ?? true,
+      force: params.force ?? false,
     });
   }
 
@@ -397,11 +687,7 @@ export class ContainersClient {
     if (!(output instanceof JsonContent) || !isRecord(output.json)) {
       throw this.unexpectedResponseError("wait_for_exit");
     }
-    const exitCode = output.json["exit_code"];
-    if (typeof exitCode !== "number" || !Number.isInteger(exitCode)) {
-      throw this.unexpectedResponseError("wait_for_exit");
-    }
-    return exitCode;
+    return readIntegerField(output.json, "exit_code", "wait_for_exit");
   }
 
   public async deleteContainer(params: { containerId: string }): Promise<void> {
@@ -447,13 +733,20 @@ export class ContainersClient {
         input: inputStream(),
       })
       .then(async (stream) => {
-        const decoder = new TextDecoder();
         for await (const chunk of stream) {
           if (chunk instanceof ErrorContent) {
             throw new RoomServerException(chunk.text, chunk.code);
           }
           if (chunk instanceof ControlContent) {
-            continue;
+            if (chunk.method === "close") {
+              closeInputStream();
+              streamController.close();
+              if (!result.completed) {
+                result.complete();
+              }
+              return;
+            }
+            throw this.unexpectedResponseError("logs");
           }
           if (!(chunk instanceof BinaryContent)) {
             throw this.unexpectedResponseError("logs");
@@ -465,11 +758,131 @@ export class ContainersClient {
           if (channel !== 1) {
             continue;
           }
-          streamController.add(decoder.decode(chunk.data));
+          streamController.add(decodeUtf8(chunk.data, "logs"));
         }
         closeInputStream();
         streamController.close();
-        result.complete();
+        if (!result.completed) {
+          result.complete();
+        }
+      })
+      .catch((error: unknown) => {
+        closeInputStream();
+        streamController.close();
+        if (!result.completed) {
+          result.completeError(error);
+        }
+      });
+
+    const outputStream: AsyncIterable<string> = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        const it = streamController.stream[Symbol.asyncIterator]();
+        return {
+          async next(): Promise<IteratorResult<string>> {
+            return await it.next();
+          },
+          async return(value?: string): Promise<IteratorResult<string>> {
+            closeInputStream();
+            return await it.return?.(value) ?? { done: true, value };
+          },
+          async throw(e?: unknown): Promise<IteratorResult<string>> {
+            closeInputStream();
+            if (it.throw) {
+              return await it.throw(e);
+            }
+            throw e;
+          },
+        };
+      },
+    };
+
+    return {
+      stream: outputStream,
+      result: result.fut,
+      cancel: async (): Promise<void> => {
+        closeInputStream();
+        await result.fut.catch(() => undefined);
+      },
+    };
+  }
+
+  public getBuildLogs(params: { buildId: string; follow?: boolean }): BuildLogsSession {
+    const requestId = uuidv4();
+    const closeInput = new Completer<void>();
+    const streamController = new StreamController<string>();
+    const result = new Completer<number | null>();
+    let inputClosed = false;
+
+    const closeInputStream = (): void => {
+      if (inputClosed) {
+        return;
+      }
+      inputClosed = true;
+      if (!closeInput.completed) {
+        closeInput.complete();
+      }
+    };
+
+    const inputStream = async function* (): AsyncIterable<Content> {
+      yield new BinaryContent({
+        data: new Uint8Array(0),
+        headers: {
+          kind: "start",
+          request_id: requestId,
+          build_id: params.buildId,
+          follow: params.follow ?? true,
+        },
+      });
+      await closeInput.fut;
+    };
+
+    this.room
+      .invokeStream({
+        toolkit: "containers",
+        tool: "get_build_logs",
+        input: inputStream(),
+      })
+      .then(async (stream) => {
+        for await (const chunk of stream) {
+          if (chunk instanceof ErrorContent) {
+            throw new RoomServerException(chunk.text, chunk.code);
+          }
+          if (chunk instanceof ControlContent) {
+            if (chunk.method === "close") {
+              closeInputStream();
+              streamController.close();
+              if (!result.completed) {
+                result.complete(null);
+              }
+              return;
+            }
+            throw this.unexpectedResponseError("get_build_logs");
+          }
+          if (!(chunk instanceof BinaryContent)) {
+            throw this.unexpectedResponseError("get_build_logs");
+          }
+          const channel = chunk.headers["channel"];
+          if (typeof channel !== "number") {
+            throw new RoomServerException("containers.get_build_logs returned a chunk without a valid channel");
+          }
+          if (channel === 1) {
+            streamController.add(decodeUtf8(chunk.data, "get_build_logs"));
+            continue;
+          }
+          if (channel === 3) {
+            closeInputStream();
+            streamController.close();
+            if (!result.completed) {
+              result.complete(decodeJsonStatus(chunk.data, "get_build_logs"));
+            }
+            return;
+          }
+        }
+        closeInputStream();
+        streamController.close();
+        if (!result.completed) {
+          result.complete(null);
+        }
       })
       .catch((error: unknown) => {
         closeInputStream();

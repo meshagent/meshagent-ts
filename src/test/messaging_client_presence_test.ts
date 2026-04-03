@@ -56,6 +56,7 @@ describe("messaging participant presence", () => {
   it("resolves ad-hoc remote participants by id before sending", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
+    await client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
 
@@ -75,11 +76,14 @@ describe("messaging participant presence", () => {
         message_json: JSON.stringify({ value: 1 }),
       },
     });
+
+    await client.stop();
   });
 
   it("ignores offline remotes when ignoreOffline is enabled", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
+    await client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
     const remote = [...client.remoteParticipants][0];
@@ -96,11 +100,13 @@ describe("messaging participant presence", () => {
     });
 
     expect(room.invocations).to.deep.equal([]);
+    await client.stop();
   });
 
   it("throws when sending to an offline remote without ignoreOffline", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
+    await client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
     const remote = [...client.remoteParticipants][0];
@@ -119,5 +125,48 @@ describe("messaging participant presence", () => {
 
     expect(error).to.be.instanceOf(RoomServerException);
     expect((error as Error).message).to.equal("the participant was not found");
+    await client.stop();
+  });
+
+  it("exposes participant lookup helpers and enable state", async () => {
+    const room = new FakeRoom();
+    const client = new MessagingClient({ room: room as never });
+
+    expect(client.isEnabled).to.equal(false);
+    await client.enable();
+    expect(client.isEnabled).to.equal(true);
+
+    (client as any)._onParticipantEnabled(participantEnabledMessage());
+
+    const participants = client.getParticipants();
+    expect(participants).to.have.length(1);
+    expect(client.getParticipant("remote-1")).to.equal(participants[0]);
+    expect(client.getParticipantByName("Remote User")).to.equal(participants[0]);
+
+    await client.disable();
+    expect(client.isEnabled).to.equal(false);
+  });
+
+  it("drops nowait messages for removed participants", async () => {
+    const room = new FakeRoom();
+    const client = new MessagingClient({ room: room as never });
+    await client.start();
+
+    (client as any)._onParticipantEnabled(participantEnabledMessage());
+    const remote = client.getParticipant("remote-1");
+    expect(remote).to.not.equal(null);
+
+    client.sendMessageNowait({
+      to: remote!,
+      type: "direct",
+      message: { value: 1 },
+    });
+    (client as any)._onParticipantDisabled(participantDisabledMessage());
+
+    await client.stop();
+
+    expect(room.invocations).to.deep.equal([]);
+    expect(remote!.online).to.equal(false);
+    expect(client.getParticipant("remote-1")).to.equal(null);
   });
 });

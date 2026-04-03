@@ -8,6 +8,63 @@ import { unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 import { RoomServerException } from "./room-server-client";
 
+const _DEFAULT_UPLOAD_MIME_TYPE = "application/octet-stream";
+const _UPLOAD_MIME_TYPES_BY_SUFFIX = new Map<string, string>([
+  [".tar.gz", "application/x-tar"],
+  [".tgz", "application/x-tar"],
+]);
+const _UPLOAD_MIME_TYPES_BY_EXTENSION = new Map<string, string>([
+  [".bin", "application/octet-stream"],
+  [".css", "text/css"],
+  [".csv", "text/csv"],
+  [".gif", "image/gif"],
+  [".gz", "application/gzip"],
+  [".htm", "text/html"],
+  [".html", "text/html"],
+  [".jpeg", "image/jpeg"],
+  [".jpg", "image/jpeg"],
+  [".js", "text/javascript"],
+  [".json", "application/json"],
+  [".md", "text/markdown"],
+  [".mp3", "audio/mpeg"],
+  [".mp4", "video/mp4"],
+  [".pdf", "application/pdf"],
+  [".png", "image/png"],
+  [".svg", "image/svg+xml"],
+  [".tar", "application/x-tar"],
+  [".txt", "text/plain"],
+  [".ts", "text/typescript"],
+  [".tsx", "text/tsx"],
+  [".wasm", "application/wasm"],
+  [".webp", "image/webp"],
+  [".xml", "application/xml"],
+  [".yaml", "application/yaml"],
+  [".yml", "application/yaml"],
+  [".zip", "application/zip"],
+]);
+
+type StorageClientRoom = Pick<RoomClient, "invoke" | "invokeStream" | "emit"> & {
+  protocol: Pick<Protocol, "addHandler">;
+};
+
+function _unexpectedStorageResponseError(operation: string): RoomServerException {
+  return new RoomServerException(`unexpected return type from storage.${operation}`);
+}
+
+function _parseStorageTimestamp(value: unknown, operation: string): Date | null {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw _unexpectedStorageResponseError(operation);
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    throw _unexpectedStorageResponseError(operation);
+  }
+  return timestamp;
+}
+
 export class FileHandle {
   public id: number;
 
@@ -16,19 +73,25 @@ export class FileHandle {
   }
 }
 
-class StorageEntry {
+export class StorageEntry {
     public name: string;
     public isFolder: boolean;
     public size: number | null;
+    public createdAt: Date | null;
+    public updatedAt: Date | null;
 
-    constructor({name, isFolder, size = null}: {
+    constructor({name, isFolder, size = null, createdAt = null, updatedAt = null}: {
         name: string;
         isFolder: boolean;
         size?: number | null;
+        createdAt?: Date | null;
+        updatedAt?: Date | null;
     }) {
         this.name = name;
         this.isFolder = isFolder;
         this.size = size;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     /**
@@ -50,9 +113,9 @@ class StorageEntry {
 }
 
 export class StorageClient extends EventEmitter<RoomEvent> {
-  private client: RoomClient;
+  private client: StorageClientRoom;
 
-  constructor({room}: {room: RoomClient}) {
+  constructor({room}: {room: StorageClientRoom}) {
     super();
 
     this.client = room;
@@ -64,7 +127,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
 
   private async _handleFileUpdated(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
     const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
-    const event = new FileUpdatedEvent({ path: data["path"] });
+    const event = new FileUpdatedEvent({ path: data["path"], participantId: data["participant_id"] });
     this.client.emit(event);
     this.emit('file.updated', event);
   }
@@ -72,13 +135,30 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   private async _handleFileDeleted(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
     const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
    
-    const event = new FileDeletedEvent({ path: data["path"] });
+    const event = new FileDeletedEvent({ path: data["path"], participantId: data["participant_id"] });
     this.client.emit(event);
     this.emit('file.deleted', event);
   }
 
   private _unexpectedResponseError(operation: string): RoomServerException {
-    return new RoomServerException(`unexpected return type from storage.${operation}`);
+    return _unexpectedStorageResponseError(operation);
+  }
+
+  private _storageEntry(operation: string, value: Record<string, any>): StorageEntry {
+    if (
+      typeof value["name"] !== "string" ||
+      typeof value["is_folder"] !== "boolean" ||
+      (value["size"] != null && typeof value["size"] !== "number")
+    ) {
+      throw this._unexpectedResponseError(operation);
+    }
+    return new StorageEntry({
+      name: value["name"],
+      isFolder: value["is_folder"],
+      size: typeof value["size"] === "number" ? value["size"] : null,
+      createdAt: _parseStorageTimestamp(value["created_at"], operation),
+      updatedAt: _parseStorageTimestamp(value["updated_at"], operation),
+    });
   }
 
   private async _invoke(
@@ -99,26 +179,38 @@ export class StorageClient extends EventEmitter<RoomEvent> {
    */
   public async list(path: string): Promise<StorageEntry[]> {
     const response = await this._invoke("list", { path });
-    if (!(response instanceof JsonContent)) {
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json["files"])) {
       throw this._unexpectedResponseError("list");
     }
     const files = response.json["files"] as Array<Record<string, any>>;
-    const entries = files.map((f) => {
-      return new StorageEntry({
-        name: f["name"],
-        isFolder: f["is_folder"],
-        size: typeof f["size"] === "number" ? f["size"] : null,
-      });
-    });
+    const entries = files.map((f) => this._storageEntry("list", f));
     entries.sort((a, b) => a.name.localeCompare(b.name));
     return entries;
+  }
+
+  public async stat(path: string): Promise<StorageEntry | null> {
+    const response = await this._invoke("stat", { path });
+    if (!(response instanceof JsonContent) || typeof response.json["exists"] !== "boolean") {
+      throw this._unexpectedResponseError("stat");
+    }
+    if (!response.json["exists"]) {
+      return null;
+    }
+    return this._storageEntry("stat", response.json);
   }
 
   /**
    * Deletes a file or folder at the given path.
    */
-  public async delete(path: string): Promise<void> {
-    await this._invoke("delete", { path, recursive: null });
+  public async delete(
+    path: string,
+    {
+      recursive = null,
+    }: {
+      recursive?: boolean | null;
+    } = {},
+  ): Promise<void> {
+    await this._invoke("delete", { path, recursive });
   }
 
   /**
@@ -140,6 +232,23 @@ export class StorageClient extends EventEmitter<RoomEvent> {
     const segments = path.split("/").filter((segment) => segment.length > 0);
     const lastSegment = segments.length > 0 ? segments[segments.length - 1] : undefined;
     return lastSegment ?? path;
+  }
+
+  private _defaultUploadMimeType(name: string, mimeType?: string | null): string {
+    if (typeof mimeType === "string" && mimeType.length > 0) {
+      return mimeType;
+    }
+    const lowerName = name.toLowerCase();
+    for (const [suffix, contentType] of _UPLOAD_MIME_TYPES_BY_SUFFIX.entries()) {
+      if (lowerName.endsWith(suffix)) {
+        return contentType;
+      }
+    }
+    const lastDot = lowerName.lastIndexOf(".");
+    if (lastDot >= 0) {
+      return _UPLOAD_MIME_TYPES_BY_EXTENSION.get(lowerName.slice(lastDot)) ?? _DEFAULT_UPLOAD_MIME_TYPE;
+    }
+    return _DEFAULT_UPLOAD_MIME_TYPE;
   }
 
   public async upload(
@@ -188,6 +297,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
     } = {},
   ): Promise<void> {
     const resolvedName = this._defaultUploadName(path, name);
+    const resolvedMimeType = this._defaultUploadMimeType(resolvedName, mimeType);
     const input = new _StorageUploadInputStream({
       path,
       overwrite,
@@ -195,7 +305,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
       chunkSize,
       size,
       name: resolvedName,
-      mimeType,
+      mimeType: resolvedMimeType,
     });
     const response = await this.client.invokeStream({
       toolkit: "storage",

@@ -1,17 +1,11 @@
-// messaging_client.ts
-import { v4 as uuidV4 } from "uuid";
-
 import { EventEmitter } from "./event-emitter";
+import { Completer } from "./completer";
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { Participant, RemoteParticipant } from "./participant";
 import { RoomMessage, RoomMessageEvent } from "./room-event";
 import { RoomServerException } from "./room-server-client";
 import { splitMessageHeader, splitMessagePayload } from "./utils";
-import { StreamController } from "./stream-controller";
-import { Completer } from "./completer";
-
-type StreamWriterCompleter = Completer<MessageStreamWriter>; // Stub or actual
 
 const globalScope = globalThis as typeof globalThis & {
   Buffer?: {
@@ -36,58 +30,47 @@ function bytesToBase64(bytes: Uint8Array): string {
   return globalScope.btoa(binary);
 }
 
+type MessagePayload = Record<string, unknown>;
 
-/**
- * Represents a chunk of data in a stream, with a header and optional data.
- */
-export class MessageStreamChunk {
-  public header: Record<string, any>;
-  public data?: Uint8Array;
-
-  constructor({header, data}: {
-    header: Record<string, any>;
-    data?: Uint8Array;
-  }) {
-    this.header = header;
-    this.data = data;
-  }
+interface QueuedRoomMessage {
+  to: Participant;
+  type: string;
+  message: MessagePayload;
+  attachment?: Uint8Array;
+  dropIfOffline: boolean;
+  completer?: Completer<void>;
 }
+
 
 /**
  * The main MessagingClient class, which handles sending messages,
- * managing participant information, and stream-based messages.
+ * managing participant information.
  */
 export class MessagingClient extends EventEmitter<RoomMessageEvent> {
-  private client: RoomClient;
-
-  // Maps a streamId to a completer that resolves a MessageStreamWriter
-  private _streamWriters: Record<string, StreamWriterCompleter> = {};
-
-  // Maps a streamId to a MessageStreamReader
-  private _streamReaders: Record<string, MessageStreamReader> = {};
-
-  // A callback that fires when a stream is accepted
-  private _onStreamAcceptCallback?: (reader: MessageStreamReader) => void;
-
-  // Tracks remote participants
-  private _participants: Record<string, RemoteParticipant> = {};
+  private readonly client: RoomClient;
+  private readonly _messageHandler = this._handleMessageSend.bind(this);
+  private readonly _participants: Record<string, RemoteParticipant> = {};
+  private readonly _messageQueue: QueuedRoomMessage[] = [];
+  private _messageQueued: Completer<void> | null = null;
+  private _sendTask: Promise<void> | null = null;
+  private _messageQueueClosed = false;
+  private _enabled = false;
 
   constructor({room}: {room: RoomClient}) {
     super();
 
     this.client = room;
 
-    // Register handler
-    this.client.protocol.addHandler("messaging.send", this._handleMessageSend.bind(this));
+    this.client.protocol.addHandler("messaging.send", this._messageHandler);
   }
 
   private _messageInput(params: {
     type: string;
-    message: Record<string, any>;
+    message: MessagePayload;
     attachment?: Uint8Array;
     toParticipantId?: string;
-  }): Record<string, any> {
-    const input: Record<string, any> = {
+  }): Record<string, unknown> {
+    const input: Record<string, unknown> = {
       type: params.type,
       message_json: JSON.stringify(params.message),
     };
@@ -103,6 +86,21 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     return input;
   }
 
+  private _syntheticMessageEvent(params: {
+    fromParticipantId: string;
+    type: string;
+    message: MessagePayload;
+  }): RoomMessageEvent {
+    return new RoomMessageEvent({
+      message: new RoomMessage({
+        fromParticipantId: params.fromParticipantId,
+        type: params.type,
+        message: params.message,
+        local: true,
+      }),
+    });
+  }
+
   private _removeParticipant(participantId: string): RemoteParticipant | undefined {
     const participant = this._participants[participantId];
     if (participant === undefined) {
@@ -112,16 +110,29 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     participant._setOnline(false);
     delete this._participants[participantId];
 
-    for (const [streamId, reader] of Object.entries(this._streamReaders)) {
-      if (reader._to.id !== participant.id) {
-        continue;
-      }
+    return participant;
+  }
 
-      reader._controller.close();
-      delete this._streamReaders[streamId];
+  private _markParticipantOffline(participant: Participant | null): void {
+    if (!(participant instanceof RemoteParticipant)) {
+      return;
     }
 
-    return participant;
+    participant._setOnline(false);
+    const current = this._participants[participant.id];
+    if (current === undefined) {
+      return;
+    }
+
+    this._removeParticipant(participant.id);
+    this.emit(
+      "participant_removed",
+      this._syntheticMessageEvent({
+        fromParticipantId: participant.id,
+        type: "participant.disabled",
+        message: { id: participant.id },
+      }),
+    );
   }
 
   private _resolveMessageRecipient(to: Participant): Participant | null {
@@ -136,33 +147,114 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     return this._participants[to.id] ?? null;
   }
 
-  private _participantNotFound(ignoreOffline: boolean): null {
-    if (ignoreOffline) {
-      return null;
+  private _queueMessage(message: QueuedRoomMessage): void {
+    if (this._sendTask === null) {
+      throw new RoomServerException("Cannot send messages because messaging has not been started");
     }
 
-    throw new RoomServerException("the participant was not found");
+    this._messageQueue.push(message);
+    const waiter = this._messageQueued;
+    if (waiter !== null) {
+      this._messageQueued = null;
+      waiter.complete();
+    }
   }
 
-  /**
-   * Creates a new stream to a participant, returning a MessageStreamWriter when ready.
-   */
-  public async createStream({to, header}: {
-    to: Participant;
-    header: Record<string, any>;
-  }): Promise<MessageStreamWriter> {
-    const streamId = uuidV4();
-    const completer = new Completer<MessageStreamWriter>(); // or your concurrency helper
+  private _rejectQueuedMessages(error: RoomServerException): void {
+    while (this._messageQueue.length > 0) {
+      const message = this._messageQueue.shift();
+      message?.completer?.completeError(error);
+    }
+  }
 
-    this._streamWriters[streamId] = completer;
+  private _isParticipantNotFound(error: unknown): error is RoomServerException {
+    return error instanceof RoomServerException && error.message === "the participant was not found";
+  }
 
-    await this.sendMessage({
-      to,
-      type: "stream.open",
-      message: { stream_id: streamId, header },
-    });
+  private async _nextQueuedMessage(): Promise<QueuedRoomMessage | null> {
+    while (this._messageQueue.length === 0) {
+      if (this._messageQueueClosed) {
+        return null;
+      }
+      if (this._messageQueued === null) {
+        this._messageQueued = new Completer<void>();
+      }
+      await this._messageQueued.fut;
+    }
 
-    return completer.fut;
+    return this._messageQueue.shift() ?? null;
+  }
+
+  private async _sendMessages(): Promise<void> {
+    while (true) {
+      const queued = await this._nextQueuedMessage();
+      if (queued === null) {
+        return;
+      }
+
+      const resolvedTo = this._resolveMessageRecipient(queued.to);
+      if (resolvedTo === null) {
+        const error = new RoomServerException("the participant was not found");
+        if (queued.dropIfOffline) {
+          queued.completer?.complete();
+        } else {
+          queued.completer?.completeError(error);
+        }
+        continue;
+      }
+
+      try {
+        await this.client.invoke({
+          toolkit: "messaging",
+          tool: "send",
+          input: this._messageInput({
+            toParticipantId: resolvedTo.id,
+            type: queued.type,
+            message: queued.message,
+            attachment: queued.attachment,
+          }),
+        });
+        queued.completer?.complete();
+      } catch (error) {
+        if (this._isParticipantNotFound(error)) {
+          this._markParticipantOffline(queued.to);
+          if (queued.dropIfOffline) {
+            queued.completer?.complete();
+            continue;
+          }
+        }
+
+        queued.completer?.completeError(error);
+      }
+    }
+  }
+
+  public async start(): Promise<void> {
+    if (this._sendTask !== null) {
+      return;
+    }
+
+    this._messageQueueClosed = false;
+    this._sendTask = this._sendMessages();
+  }
+
+  public async stop(): Promise<void> {
+    if (this._sendTask === null) {
+      this._enabled = false;
+      return;
+    }
+
+    this._messageQueueClosed = true;
+    const waiter = this._messageQueued;
+    if (waiter !== null) {
+      this._messageQueued = null;
+      waiter.complete();
+    }
+
+    const sendTask = this._sendTask;
+    this._sendTask = null;
+    await sendTask;
+    this._enabled = false;
   }
 
   /**
@@ -171,38 +263,47 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   public async sendMessage({to, type, message, attachment, ignoreOffline = false}: {
     to: Participant;
     type: string;
-    message: Record<string, any>;
+    message: MessagePayload;
     attachment?: Uint8Array;
     ignoreOffline?: boolean;
   }): Promise<void> {
-    const resolvedTo = this._resolveMessageRecipient(to) ?? this._participantNotFound(ignoreOffline);
-    if (resolvedTo === null) {
-      return;
-    }
+    const completer = new Completer<void>();
+    this._queueMessage({
+      to,
+      type,
+      message,
+      attachment,
+      dropIfOffline: ignoreOffline,
+      completer,
+    });
+    await completer.fut;
+  }
 
-    await this.client.invoke({
-      toolkit: "messaging",
-      tool: "send",
-      input: this._messageInput({
-        toParticipantId: resolvedTo.id,
-        type,
-        message,
-        attachment,
-      }),
+  public sendMessageNowait({to, type, message, attachment}: {
+    to: Participant;
+    type: string;
+    message: MessagePayload;
+    attachment?: Uint8Array;
+  }): void {
+    this._queueMessage({
+      to,
+      type,
+      message,
+      attachment,
+      dropIfOffline: true,
     });
   }
 
   /**
-   * Enables the messaging subsystem, optionally passing a stream accept callback.
+   * Enables the messaging subsystem.
    */
-  public async enable(onStreamAccept?: (reader: MessageStreamReader) => void): Promise<void> {
+  public async enable(): Promise<void> {
     await this.client.invoke({
       toolkit: "messaging",
       tool: "enable",
       input: {},
     });
-
-    this._onStreamAcceptCallback = onStreamAccept;
+    this._enabled = true;
   }
 
   /**
@@ -214,6 +315,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       tool: "disable",
       input: {},
     });
+    this._enabled = false;
   }
 
   /**
@@ -221,7 +323,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
    */
   public async broadcastMessage({type, message, attachment}: {
     type: string;
-    message: Record<string, any>;
+    message: MessagePayload;
     attachment?: Uint8Array;
   }): Promise<void> {
     await this.client.invoke({
@@ -234,8 +336,30 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   /**
    * Returns an iterable of remote participants.
    */
-  public get remoteParticipants(): Iterable<RemoteParticipant> {
+  public get remoteParticipants(): RemoteParticipant[] {
     return Object.values(this._participants);
+  }
+
+  public get isEnabled(): boolean {
+    return this._enabled;
+  }
+
+  public getParticipants(): RemoteParticipant[] {
+    return this.remoteParticipants;
+  }
+
+  public getParticipant(id: string): RemoteParticipant | null {
+    return this._participants[id] ?? null;
+  }
+
+  public getParticipantByName(name: string): RemoteParticipant | null {
+    for (const participant of this.remoteParticipants) {
+      if (participant.getAttribute("name") === name) {
+        return participant;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -245,7 +369,11 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     const headerStr = splitMessageHeader(bytes || new Uint8Array());
     const payload = splitMessagePayload(bytes || new Uint8Array());
 
-    const header = JSON.parse(headerStr);
+    const header = JSON.parse(headerStr) as {
+      from_participant_id: string;
+      type: string;
+      message: MessagePayload;
+    };
     const message = new RoomMessage({
       fromParticipantId: header["from_participant_id"],
       type: header["type"],
@@ -266,21 +394,6 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       case "participant.disabled":
         this._onParticipantDisabled(message);
         break;
-      case "stream.open":
-        this._onStreamOpen(message);
-        break;
-      case "stream.accept":
-        this._onStreamAccept(message);
-        break;
-      case "stream.reject":
-        this._onStreamReject(message);
-        break;
-      case "stream.chunk":
-        this._onStreamChunk(message);
-        break;
-      case "stream.close":
-        this._onStreamClose(message);
-        break;
     }
 
     const messageEvent = new RoomMessageEvent({ message });
@@ -292,24 +405,24 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   }
 
   private _onParticipantEnabled(message: RoomMessage): void {
-    const data = message.message;
+    const data = message.message as {
+      id: string;
+      role: string;
+      attributes?: Record<string, unknown>;
+    };
     const p = new RemoteParticipant(this.client, data["id"], data["role"], true);
-
-    // Copy attributes
-    for (const [k, v] of Object.entries(data["attributes"] || {})) {
-      (p as any)._attributes[k] = v;
-    }
+    p._setAttributes(data["attributes"] ?? {});
     this._participants[data["id"]] = p;
     this.emit("participant_added", { message } as RoomMessageEvent);
   }
 
   private _onParticipantAttributes(message: RoomMessage): void {
     const part = this._participants[message.fromParticipantId];
-    if (!part) return;
-    const attrObj = message.message["attributes"] as Record<string, any>;
-    for (const [k, v] of Object.entries(attrObj)) {
-      (part as any)._attributes[k] = v;
+    if (!part) {
+      return;
     }
+    const attrObj = message.message["attributes"] as Record<string, unknown>;
+    part._setAttributes(attrObj);
 
     this.emit("participant_attributes_updated", { message } as RoomMessageEvent);
   }
@@ -323,172 +436,35 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   }
 
   private _onMessagingEnabled(message: RoomMessage): void {
-    const participants = message.message["participants"] as Array<any>;
+    const participants = message.message["participants"] as Array<{
+      id: string;
+      role: string;
+      attributes?: Record<string, unknown>;
+    }>;
 
     for (const data of participants) {
       const rp = new RemoteParticipant(this.client, data["id"], data["role"], true);
-
-      for (const [k, v] of Object.entries(data["attributes"] || {})) {
-        (rp as any)._attributes[k] = v;
-      }
-
+      rp._setAttributes(data["attributes"] ?? {});
       this._participants[data["id"]] = rp;
     }
 
+    this._enabled = true;
     this.emit("messaging_enabled", { message } as RoomMessageEvent);
   }
 
-  private _onStreamOpen(message: RoomMessage): void {
-    const from = [...this.remoteParticipants]
-      .find((x) => x.id === message.fromParticipantId);
-
-    if (!from) return; // or throw an error
-
-    const streamId = message.message["stream_id"];
-    const controller = new StreamController<MessageStreamChunk>(); // your streaming logic
-    const reader = new MessageStreamReader({
-      streamId,
-      to: from,
-      client: this,
-      controller,
-    });
-
-    try {
-      if (!this._onStreamAcceptCallback) {
-        throw new Error("streams are not allowed by this client");
-      }
-      this._onStreamAcceptCallback(reader);
-      // Send "stream.accept"
-      void this.sendMessage({
-        to: from,
-        type: "stream.accept",
-        message: { stream_id: streamId },
-        ignoreOffline: true,
-      }).catch((error) => {
-        console.warn("unable to send stream response", error);
-      });
-    } catch (e) {
-      // Send "stream.reject"
-      void this.sendMessage({
-        to: from,
-        type: "stream.reject",
-        message: { stream_id: streamId, error: String(e) },
-        ignoreOffline: true,
-      }).catch((error) => {
-        console.warn("unable to send stream response", error);
-      });
+  public override dispose(): void {
+    const error = new RoomServerException("messaging client disposed");
+    this._messageQueueClosed = true;
+    this._enabled = false;
+    this._rejectQueuedMessages(error);
+    const waiter = this._messageQueued;
+    if (waiter !== null) {
+      this._messageQueued = null;
+      waiter.complete();
     }
 
-    this._streamReaders[streamId] = reader;
-    this.emit("stream_opened", { message } as RoomMessageEvent);
-  }
-
-  private _onStreamAccept(message: RoomMessage): void {
-    const streamId = message.message["stream_id"];
-    const writerCompleter = this._streamWriters[streamId];
-    if (!writerCompleter) return;
-    const from = [...this.remoteParticipants].find((x) => x.id === message.fromParticipantId);
-    if (!from) return; // or throw an error
-
-    writerCompleter.complete(
-      new MessageStreamWriter({
-        streamId,
-        to: from,
-        client: this,
-      })
-    );
-  }
-
-  private _onStreamReject(message: RoomMessage): void {
-    const streamId = message.message["stream_id"];
-    const writerCompleter = this._streamWriters[streamId];
-    if (!writerCompleter) return;
-    writerCompleter.completeError(new Error("The stream was rejected by the remote client"));
-  }
-
-  private _onStreamChunk(message: RoomMessage): void {
-    const streamId = message.message["stream_id"];
-    const reader = this._streamReaders[streamId];
-    if (!reader) return;
-    reader._controller.add(
-      new MessageStreamChunk({
-        header: message.message,
-        data: message.attachment,
-      })
-    );
-  }
-
-  private _onStreamClose(message: RoomMessage): void {
-    const streamId = message.message["stream_id"];
-    const reader = this._streamReaders[streamId];
-    if (!reader) return;
-    reader._controller.close();
-    delete this._streamReaders[streamId];
-  }
-
-  public override dispose(): void {
     super.dispose();
 
     this.client.protocol.removeHandler("messaging.send");
-  }
-}
-
-/**
- * A MessageStreamWriter that can write chunked data or close the stream.
- */
-export class MessageStreamWriter {
-  private _streamId: string;
-  private _to: Participant;
-  private _client: MessagingClient;
-
-  // Private constructor
-  constructor({streamId, to, client}: {
-    streamId: string;
-    to: Participant;
-    client: MessagingClient;
-  }) {
-    this._streamId = streamId;
-    this._to = to;
-    this._client = client;
-  }
-
-  public async write(chunk: MessageStreamChunk): Promise<void> {
-    await this._client.sendMessage({
-      to: this._to,
-      type: "stream.chunk",
-      message: { stream_id: this._streamId, header: chunk.header },
-      attachment: chunk.data,
-    });
-  }
-
-  public async close(): Promise<void> {
-    await this._client.sendMessage({
-      to: this._to,
-      type: "stream.close",
-      message: { stream_id: this._streamId },
-    });
-  }
-}
-
-/**
- * A MessageStreamReader that receives chunked data from the remote side.
- */
-export class MessageStreamReader {
-  public _streamId: string;
-  public _to: Participant;
-  public _client: MessagingClient;
-  public _controller: StreamController<MessageStreamChunk>;
-
-  // Private-like constructor
-  constructor({streamId, to, client, controller}: {
-    streamId: string;
-    to: Participant;
-    client: MessagingClient;
-    controller: StreamController<MessageStreamChunk>;
-  }) {
-    this._streamId = streamId;
-    this._to = to;
-    this._client = client;
-    this._controller = controller;
   }
 }

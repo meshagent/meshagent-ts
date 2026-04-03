@@ -79,10 +79,12 @@ export class FileCreatedEvent extends RoomEvent {
  */
 export class FileDeletedEvent extends RoomEvent {
     public path: string;
+    public participantId: string;
 
-    constructor({ path }: { path: string }) {
+    constructor({ path, participantId }: { path: string; participantId: string }) {
         super();
         this.path = path;
+        this.participantId = participantId;
     }
 
     get name(): string {
@@ -99,10 +101,12 @@ export class FileDeletedEvent extends RoomEvent {
  */
 export class FileUpdatedEvent extends RoomEvent {
     public path: string;
+    public participantId: string;
 
-    constructor({ path }: { path: string }) {
+    constructor({ path, participantId }: { path: string; participantId: string }) {
         super();
         this.path = path;
+        this.participantId = participantId;
     }
 
     get name(): string {

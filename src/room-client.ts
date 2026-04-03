@@ -91,6 +91,7 @@ export class RoomClient {
         onError?: (error: Error) => void;
     } = {}): Promise<void> {
 
+        await this.messaging.start();
         this.sync.start({onDone, onError});
 
         await this.ready;
@@ -106,6 +107,7 @@ export class RoomClient {
             this._pendingRequests.delete(prKey);
         }
 
+        this.messaging.dispose();
         this.sync.dispose();
         for (const stream of this._toolCallStreams.values()) {
             stream.close();
