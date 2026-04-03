@@ -11,6 +11,20 @@ export interface TableRef {
   alias?: string;
 }
 
+export interface TableVersion {
+  version: number;
+  timestamp: Date;
+  metadata: Record<string, unknown>;
+}
+
+export interface TableIndex {
+  name: string;
+  columns: string[];
+  type: string;
+}
+
+type DatabaseRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
+
 type TypedValue =
   | { type: "null" }
   | { type: "bool"; value: boolean }
@@ -363,6 +377,52 @@ function buildWhereClause(where?: string | Record<string, any>): string | null {
   return null;
 }
 
+function normalizeTableRefs(tables: Array<TableRef | string>): TableRef[] {
+  return tables.map((table) => typeof table === "string" ? { name: table } : table);
+}
+
+function tableIndexFromJson(value: unknown): TableIndex {
+  if (!isRecord(value) || typeof value.name !== "string" || typeof value.type !== "string" || !Array.isArray(value.columns)) {
+    throw new RoomServerException("unexpected return type from database.list_indexes");
+  }
+  return {
+    name: value.name,
+    type: value.type,
+    columns: value.columns.map((column) => {
+      if (typeof column !== "string") {
+        throw new RoomServerException("unexpected return type from database.list_indexes");
+      }
+      return column;
+    }),
+  };
+}
+
+function tableVersionFromJson(value: unknown): TableVersion {
+  if (!isRecord(value) || typeof value.metadata_json !== "string" || typeof value.timestamp !== "string" || typeof value.version !== "number") {
+    throw new RoomServerException("unexpected return type from database.list_versions");
+  }
+  const timestamp = new Date(value.timestamp);
+  if (Number.isNaN(timestamp.getTime())) {
+    throw new RoomServerException("unexpected return type from database.list_versions");
+  }
+
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(value.metadata_json);
+  } catch (_) {
+    throw new RoomServerException("unexpected return type from database.list_versions");
+  }
+  if (!isRecord(metadata)) {
+    throw new RoomServerException("unexpected return type from database.list_versions");
+  }
+
+  return {
+    version: value.version,
+    timestamp,
+    metadata,
+  };
+}
+
 class DatabaseWriteInputStream {
   private readonly source: AsyncIterator<Array<Record<string, any>>>;
   private readonly pulls: Array<() => void> = [];
@@ -488,9 +548,9 @@ class DatabaseReadInputStream {
 }
 
 export class DatabaseClient {
-  private room: RoomClient;
+  private room: DatabaseRoomInvoker;
 
-  constructor({room}: {room: RoomClient}) {
+  constructor({room}: {room: DatabaseRoomInvoker}) {
     this.room = room;
   }
 
@@ -562,8 +622,10 @@ export class DatabaseClient {
     }
   }
 
-  public async listTables(): Promise<string[]> {
-    const response = await this.invoke("list_tables", { namespace: null });
+  public async listTables({ namespace }: {
+    namespace?: string[];
+  } = {}): Promise<string[]> {
+    const response = await this.invoke("list_tables", { namespace: namespace ?? null });
     if (!(response instanceof JsonContent)) {
       throw this._unexpectedResponseError("list_tables");
     }
@@ -575,11 +637,15 @@ export class DatabaseClient {
     data,
     schema,
     mode = "create",
+    namespace,
+    metadata,
   }: {
     name: string;
     data?: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
+    namespace?: string[];
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream(
       {
@@ -587,110 +653,142 @@ export class DatabaseClient {
         name,
         fields: schemaEntries(schema),
         mode,
-        namespace: null,
-        metadata: null,
+        namespace: namespace ?? null,
+        metadata: metadataEntries(metadata),
       },
       data ?? [],
     );
     await this.drainWriteStream("create_table", input);
   }
 
-  public async createTableWithSchema({ name, schema, data, mode = "create" }: {
+  public async createTableWithSchema({ name, schema, data, mode = "create", namespace, metadata }: {
     name: string;
     schema?: Record<string, DataType>;
     data?: Array<Record<string, any>>;
     mode?: CreateMode;
+    namespace?: string[];
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({
       name,
       schema,
       data: data == null ? undefined : rowChunkList(data),
       mode,
+      namespace,
+      metadata,
     });
   }
 
-  public async createTableFromData({ name, data, mode = "create" }: {
+  public async createTableFromData({ name, data, mode = "create", namespace, metadata }: {
     name: string;
     data?: Array<Record<string, any>>;
     mode?: CreateMode;
+    namespace?: string[];
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({
       name,
       data: data == null ? undefined : rowChunkList(data),
       mode,
+      namespace,
+      metadata,
     });
   }
 
-  public async createTableFromDataStream({ name, chunks, schema, mode = "create" }: {
+  public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, metadata }: {
     name: string;
     chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
+    namespace?: string[];
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
-    return this.createTable({ name, data: chunks, schema, mode });
+    return this.createTable({ name, data: chunks, schema, mode, namespace, metadata });
   }
 
-  public async dropTable({ name, ignoreMissing = false }: {
+  public async dropTable({ name, ignoreMissing = false, namespace }: {
     name: string;
     ignoreMissing?: boolean;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_table",
-      input: { name, ignore_missing: ignoreMissing, namespace: null },
+      input: { name, ignore_missing: ignoreMissing, namespace: namespace ?? null },
     });
   }
 
-  public async addColumns({ table, newColumns }: {
+  public async dropIndex({ table, name, namespace }: {
     table: string;
-    newColumns: Record<string, string>;
+    name: string;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "drop_index",
+      input: { table, name, namespace: namespace ?? null },
+    });
+  }
+
+  public async addColumns({ table, newColumns, namespace }: {
+    table: string;
+    newColumns: Record<string, string | DataType>;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "add_columns",
       input: {
         table,
-        columns: Object.entries(newColumns).map(([name, valueSql]) => ({ name, value_sql: valueSql, data_type: null })),
-        namespace: null,
+        columns: Object.entries(newColumns).map(([name, value]) => (
+          value instanceof DataType
+            ? { name, value_sql: null, data_type: toolkitDataTypeJson(value) }
+            : { name, value_sql: value, data_type: null }
+        )),
+        namespace: namespace ?? null,
       },
     });
   }
 
-  public async dropColumns({ table, columns }: {
+  public async dropColumns({ table, columns, namespace }: {
     table: string;
     columns: string[];
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_columns",
-      input: { table, columns, namespace: null },
+      input: { table, columns, namespace: namespace ?? null },
     });
   }
 
-  public async insert({ table, records }: {
+  public async insert({ table, records, namespace }: {
     table: string;
     records: Array<Record<string, any>>;
+    namespace?: string[];
   }): Promise<void> {
-    await this.insertStream({ table, chunks: rowChunkList(records) });
+    await this.insertStream({ table, chunks: rowChunkList(records), namespace });
   }
 
-  public async insertStream({ table, chunks }: {
+  public async insertStream({ table, chunks, namespace }: {
     table: string;
     chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    namespace?: string[];
   }): Promise<void> {
     const input = new DatabaseWriteInputStream({
       kind: "start",
       table,
-      namespace: null,
+      namespace: namespace ?? null,
     }, chunks);
     await this.drainWriteStream("insert", input);
   }
 
-  public async update({ table, where, values, valuesSql }: {
+  public async update({ table, where, values, valuesSql, namespace }: {
     table: string;
     where: string;
     values?: Record<string, any>;
     valuesSql?: Record<string, string>;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
@@ -700,47 +798,50 @@ export class DatabaseClient {
         where,
         values: values == null ? null : Object.entries(values).map(([column, value]) => ({ column, value_json: JSON.stringify(encodeLegacyValue(value)) })),
         values_sql: valuesSql == null ? null : Object.entries(valuesSql).map(([column, expression]) => ({ column, expression })),
-        namespace: null,
+        namespace: namespace ?? null,
       },
     });
   }
 
-  public async delete({ table, where }: {
+  public async delete({ table, where, namespace }: {
     table: string;
     where: string;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "delete",
-      input: { table, where, namespace: null },
+      input: { table, where, namespace: namespace ?? null },
     });
   }
 
-  public async merge({ table, on, records }: {
+  public async merge({ table, on, records, namespace }: {
     table: string;
     on: string;
     records: Array<Record<string, any>>;
+    namespace?: string[];
   }): Promise<void> {
-    await this.mergeStream({ table, on, chunks: rowChunkList(records) });
+    await this.mergeStream({ table, on, chunks: rowChunkList(records), namespace });
   }
 
-  public async mergeStream({ table, on, chunks }: {
+  public async mergeStream({ table, on, chunks, namespace }: {
     table: string;
     on: string;
     chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    namespace?: string[];
   }): Promise<void> {
     const input = new DatabaseWriteInputStream({
       kind: "start",
       table,
       on,
-      namespace: null,
+      namespace: namespace ?? null,
     }, chunks);
     await this.drainWriteStream("merge", input);
   }
 
   public async sql({ query, tables, params }: {
     query: string;
-    tables: TableRef[];
+    tables: Array<TableRef | string>;
     params?: Record<string, any>;
   }): Promise<Array<Record<string, any>>> {
     const rows: Array<Record<string, any>> = [];
@@ -752,39 +853,43 @@ export class DatabaseClient {
 
   public async *sqlStream({ query, tables, params }: {
     query: string;
-    tables: TableRef[];
+    tables: Array<TableRef | string>;
     params?: Record<string, any>;
   }): AsyncIterable<Array<Record<string, any>>> {
     yield* this.streamRows("sql", {
       kind: "start",
       query,
-      tables,
+      tables: normalizeTableRefs(tables),
       params_json: params == null ? null : JSON.stringify(encodeLegacyValue(params)),
     });
   }
 
-  public async search({ table, text, vector, where, limit, select }: {
+  public async search({ table, text, vector, where, offset, limit, select, namespace }: {
     table: string;
     text?: string;
     vector?: number[];
     where?: string | Record<string, any>;
+    offset?: number;
     limit?: number;
     select?: string[];
+    namespace?: string[];
   }): Promise<Array<Record<string, any>>> {
     const rows: Array<Record<string, any>> = [];
-    for await (const chunk of this.searchStream({ table, text, vector, where, limit, select })) {
+    for await (const chunk of this.searchStream({ table, text, vector, where, offset, limit, select, namespace })) {
       rows.push(...chunk);
     }
     return rows;
   }
 
-  public async *searchStream({ table, text, vector, where, limit, select }: {
+  public async *searchStream({ table, text, vector, where, offset, limit, select, namespace }: {
     table: string;
     text?: string;
     vector?: number[];
     where?: string | Record<string, any>;
+    offset?: number;
     limit?: number;
     select?: string[];
+    namespace?: string[];
   }): AsyncIterable<Array<Record<string, any>>> {
     yield* this.streamRows("search", {
       kind: "start",
@@ -793,61 +898,137 @@ export class DatabaseClient {
       vector: vector ?? null,
       text_columns: null,
       where: buildWhereClause(where),
-      offset: null,
+      offset: offset ?? null,
       limit: limit ?? null,
       select: select ?? null,
-      namespace: null,
+      namespace: namespace ?? null,
     });
   }
 
-  public async optimize(table: string): Promise<void> {
-    await this.room.invoke({ toolkit: "database", tool: "optimize", input: { table, namespace: null } });
+  public async count({ table, text, vector, where, namespace }: {
+    table: string;
+    text?: string;
+    vector?: number[];
+    where?: string | Record<string, any>;
+    namespace?: string[];
+  }): Promise<number> {
+    const response = await this.invoke("count", {
+      table,
+      text: text ?? null,
+      vector: vector ?? null,
+      text_columns: null,
+      where: buildWhereClause(where),
+      namespace: namespace ?? null,
+    });
+    if (!(response instanceof JsonContent) || typeof response.json.count !== "number" || !Number.isInteger(response.json.count)) {
+      throw this._unexpectedResponseError("count");
+    }
+    return response.json.count;
   }
 
-  public async createVectorIndex({ table, column, replace = false }: {
+  public async inspect({ table, namespace }: {
+    table: string;
+    namespace?: string[];
+  }): Promise<Record<string, DataType>> {
+    const response = await this.invoke("inspect", { table, namespace: namespace ?? null });
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json.fields)) {
+      throw this._unexpectedResponseError("inspect");
+    }
+    return Object.fromEntries(response.json.fields.map((field) => {
+      if (!isRecord(field) || typeof field.name !== "string") {
+        throw this._unexpectedResponseError("inspect");
+      }
+      return [field.name, DataType.fromJson(publicDataTypeJson(field.data_type))];
+    }));
+  }
+
+  public async optimize(table: string): Promise<void>;
+  public async optimize(params: { table: string; namespace?: string[] }): Promise<void>;
+  public async optimize(tableOrParams: string | { table: string; namespace?: string[] }): Promise<void> {
+    const table = typeof tableOrParams === "string" ? tableOrParams : tableOrParams.table;
+    const namespace = typeof tableOrParams === "string" ? undefined : tableOrParams.namespace;
+    await this.room.invoke({ toolkit: "database", tool: "optimize", input: { table, namespace: namespace ?? null } });
+  }
+
+  public async restore({ table, version, namespace }: {
+    table: string;
+    version: number;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "restore",
+      input: { table, version, namespace: namespace ?? null },
+    });
+  }
+
+  public async checkout({ table, version, namespace }: {
+    table: string;
+    version: number;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "checkout",
+      input: { table, version, namespace: namespace ?? null },
+    });
+  }
+
+  public async listVersions({ table, namespace }: {
+    table: string;
+    namespace?: string[];
+  }): Promise<TableVersion[]> {
+    const response = await this.invoke("list_versions", { table, namespace: namespace ?? null });
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json.versions)) {
+      throw this._unexpectedResponseError("list_versions");
+    }
+    return response.json.versions.map((version) => tableVersionFromJson(version));
+  }
+
+  public async createVectorIndex({ table, column, replace = false, namespace }: {
     table: string;
     column: string;
     replace?: boolean;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_vector_index",
-      input: { table, column, replace, namespace: null },
+      input: { table, column, replace, namespace: namespace ?? null },
     });
   }
 
-  public async createScalarIndex({ table, column, replace = false }: {
+  public async createScalarIndex({ table, column, replace = false, namespace }: {
     table: string;
     column: string;
     replace?: boolean;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_scalar_index",
-      input: { table, column, replace, namespace: null },
+      input: { table, column, replace, namespace: namespace ?? null },
     });
   }
 
-  public async createFullTextSearchIndex({ table, column, replace = false }: {
+  public async createFullTextSearchIndex({ table, column, replace = false, namespace }: {
     table: string;
     column: string;
     replace?: boolean;
+    namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_full_text_search_index",
-      input: { table, column, replace, namespace: null },
+      input: { table, column, replace, namespace: namespace ?? null },
     });
   }
 
-  public async listIndexes({ table }: { table: string }): Promise<Array<Record<string, any>>> {
-    const response = await this.invoke("list_indexes", { table, namespace: null });
-    if (!(response instanceof JsonContent)) {
+  public async listIndexes({ table, namespace }: { table: string; namespace?: string[] }): Promise<TableIndex[]> {
+    const response = await this.invoke("list_indexes", { table, namespace: namespace ?? null });
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json.indexes)) {
       throw this._unexpectedResponseError("list_indexes");
     }
-    if (!Array.isArray(response.json.indexes)) {
-      throw this._unexpectedResponseError("list_indexes");
-    }
-    return response.json.indexes as Array<Record<string, any>>;
+    return response.json.indexes.map((index) => tableIndexFromJson(index));
   }
 }
