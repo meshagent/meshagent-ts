@@ -474,7 +474,7 @@ describe("container_client_test", () => {
 
   it("containers client supports build and image archive operations", async () => {
     const harness = await startContainersHarness();
-    const mounts = [{ room: [{ path: "/workspace", read_only: false }] }];
+    const mounts = [{ room: [{ path: "/workspace", read_only: false }], configs: [{ path: "/var/run/meshagent" }] }];
     try {
       await harness.room.containers.deleteImage({ image: "demo:latest" });
       expect(await harness.room.containers.pushImage({ tag: "demo:latest", private: true })).to.equal("push_image-ctr");

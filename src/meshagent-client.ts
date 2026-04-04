@@ -83,10 +83,15 @@ export interface EmptyDirMountSpec {
     read_only?: boolean;
 }
 
+export interface ConfigMountSpec {
+    path?: string | null;
+}
+
 export interface ContainerMountSpec {
     room?: RoomStorageMountSpec[];
     project?: ProjectStorageMountSpec[];
     empty_dirs?: EmptyDirMountSpec[];
+    configs?: ConfigMountSpec[];
 }
 
 export interface ServiceApiKeySpec {
@@ -182,7 +187,6 @@ export interface ContainerSpec {
     secrets?: string[];
     pull_secret?: string | null;
     storage?: ContainerMountSpec;
-    api_key?: ServiceApiKeySpec;
 }
 
 export interface ExternalServiceSpec {
