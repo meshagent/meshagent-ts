@@ -27,6 +27,25 @@ describe("service_spec_test", () => {
                     name: "agent-1",
                     description: "Handles requests",
                     annotations: { role: "support" },
+                    email: {
+                        address: "assistant@example.com",
+                        public: true,
+                    },
+                    heartbeat: {
+                        queue: "assistant-scheduled-tasks",
+                        thread_id: "/agents/assistant/threads/heartbeats/{YYYY}/{MM}/{DD}/{HH}/{mm}/heartbeat.thread",
+                        prompt: [
+                            {
+                                type: "file",
+                                url: "room:///agents/assistant/heartbeat.md",
+                            },
+                            {
+                                type: "text",
+                                text: "Review the latest support queue.",
+                            },
+                        ],
+                        minutes: 60,
+                    },
                     channels: {
                         email: [
                             {
@@ -102,6 +121,25 @@ describe("service_spec_test", () => {
                         name: "agent-1",
                         description: "Handles requests",
                         annotations: { role: "support" },
+                        email: {
+                            address: "assistant@example.com",
+                            public: true,
+                        },
+                        heartbeat: {
+                            queue: "assistant-scheduled-tasks",
+                            thread_id: "/agents/assistant/threads/heartbeats/{YYYY}/{MM}/{DD}/{HH}/{mm}/heartbeat.thread",
+                            prompt: [
+                                {
+                                    type: "file",
+                                    url: "room:///agents/assistant/heartbeat.md",
+                                },
+                                {
+                                    type: "text",
+                                    text: "Review the latest support queue.",
+                                },
+                            ],
+                            minutes: 60,
+                        },
                         channels: {
                             email: [
                                 {
@@ -139,6 +177,21 @@ describe("service_spec_test", () => {
                         },
                     },
                 ],
+            });
+            expect(loaded.agents?.[0]?.email?.address).to.equal("assistant@example.com");
+            expect(loaded.agents?.[0]?.email?.public).to.equal(true);
+            expect(loaded.agents?.[0]?.heartbeat?.queue).to.equal("assistant-scheduled-tasks");
+            expect(loaded.agents?.[0]?.heartbeat?.thread_id).to.equal(
+                "/agents/assistant/threads/heartbeats/{YYYY}/{MM}/{DD}/{HH}/{mm}/heartbeat.thread",
+            );
+            expect(loaded.agents?.[0]?.heartbeat?.minutes).to.equal(60);
+            expect(loaded.agents?.[0]?.heartbeat?.prompt?.[0]).to.deep.equal({
+                type: "file",
+                url: "room:///agents/assistant/heartbeat.md",
+            });
+            expect(loaded.agents?.[0]?.heartbeat?.prompt?.[1]).to.deep.equal({
+                type: "text",
+                text: "Review the latest support queue.",
             });
             expect(loaded.agents?.[0]?.channels?.email?.[0]?.address).to.equal("support@example.com");
             expect(loaded.agents?.[0]?.channels?.messaging?.[0]?.protocol).to.equal("meshagent.agent-message.v1");

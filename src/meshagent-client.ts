@@ -133,11 +133,37 @@ export interface ChannelsSpec {
     toolkit?: ToolkitChannel[] | null;
 }
 
+export interface EmailSpec {
+    address: string;
+    public?: boolean | null;
+}
+
+export interface AgentTextContent {
+    type: "text";
+    text: string;
+}
+
+export interface AgentFileContent {
+    type: "file";
+    url: string;
+}
+
+export type AgentInputContent = AgentTextContent | AgentFileContent;
+
+export interface HeartbeatSpec {
+    queue: string;
+    thread_id?: string | null;
+    prompt?: AgentInputContent[] | null;
+    minutes: number;
+}
+
 export interface AgentSpec {
     name: string;
     description?: string | null;
     annotations?: Record<string, string> | null;
     channels?: ChannelsSpec | null;
+    email?: EmailSpec | null;
+    heartbeat?: HeartbeatSpec | null;
 }
 
 export interface ServiceMetadata {
