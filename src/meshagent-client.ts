@@ -11,14 +11,6 @@ export interface RoomShare {
     settings: Record<string, unknown>;
 }
 
-export interface RoomShareConnectionInfo {
-    jwt: string;
-    roomName: string;
-    projectId: string;
-    settings: Record<string, unknown>;
-    roomUrl: string;
-}
-
 export interface RoomConnectionInfo {
     jwt: string;
     roomName: string;
@@ -536,29 +528,6 @@ export class Meshagent {
         };
     }
 
-    private parseRoomShareConnectionInfo(data: any): RoomShareConnectionInfo {
-        if (!data || typeof data !== "object") {
-            throw new RoomException("Invalid room share connection payload");
-        }
-        const { jwt, room_name: roomNameRaw, roomName, project_id: projectIdRaw, projectId, settings, room_url: roomUrlRaw, roomUrl } = data as any;
-        if (typeof jwt !== "string") {
-            throw new RoomException("Invalid room share connection payload: missing jwt");
-        }
-        const roomNameValue = typeof roomName === "string" ? roomName : roomNameRaw;
-        const projectIdValue = typeof projectId === "string" ? projectId : projectIdRaw;
-        const roomUrlValue = typeof roomUrl === "string" ? roomUrl : roomUrlRaw;
-        if (typeof roomNameValue !== "string" || typeof projectIdValue !== "string" || typeof roomUrlValue !== "string") {
-            throw new RoomException("Invalid room share connection payload: missing fields");
-        }
-        return {
-            jwt,
-            roomName: roomNameValue,
-            projectId: projectIdValue,
-            settings: (settings && typeof settings === "object") ? settings as Record<string, unknown> : {},
-            roomUrl: roomUrlValue,
-        };
-    }
-
     private parseRoomSession(data: any): RoomSession {
         if (!data || typeof data !== "object") {
             throw new RoomException("Invalid room session payload");
@@ -1047,15 +1016,6 @@ export class Meshagent {
         });
         const shares = Array.isArray(data?.shares) ? data.shares : [];
         return shares.map((item) => this.parseRoomShare(item));
-    }
-
-    async connectShare(shareId: string): Promise<RoomShareConnectionInfo> {
-        const data = await this.request(`/shares/${shareId}/connect`, {
-            method: "POST",
-            json: {},
-            action: "connect share",
-        });
-        return this.parseRoomShareConnectionInfo(data);
     }
 
     // Projects & users --------------------------------------------------------
