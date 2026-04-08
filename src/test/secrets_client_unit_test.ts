@@ -64,6 +64,14 @@ class FakeSecretsRoom {
             ],
           },
         });
+      case "exists": {
+        const input = params.input as Record<string, unknown>;
+        return new JsonContent({
+          json: {
+            exists: input["secret_id"] === "secret-1",
+          },
+        });
+      }
       case "request_secret":
         return new FileContent({
           data: new TextEncoder().encode("delegated"),
@@ -284,6 +292,35 @@ describe("secrets_client_unit_test", () => {
       type: "text/plain",
       name: "secret.txt",
       delegated_to: null,
+    });
+  });
+
+  it("exists uses room.invoke and parses boolean responses", async () => {
+    const room = new FakeSecretsRoom();
+    const client = new SecretsClient({ room: room as never });
+
+    expect(
+      await client.exists({
+        secretId: "secret-1",
+        delegatedTo: "agent",
+        forIdentity: "agent",
+      }),
+    ).to.equal(true);
+    expect(await client.exists({ secretId: "missing" })).to.equal(false);
+
+    expect(room.requests.map((entry) => entry.tool)).to.deep.equal([
+      "exists",
+      "exists",
+    ]);
+    expect(room.requests[0].input).to.deep.equal({
+      secret_id: "secret-1",
+      delegated_to: "agent",
+      for_identity: "agent",
+    });
+    expect(room.requests[1].input).to.deep.equal({
+      secret_id: "missing",
+      delegated_to: null,
+      for_identity: null,
     });
   });
 });
