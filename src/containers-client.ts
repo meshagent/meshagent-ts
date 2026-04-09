@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 
 import { Completer } from "./completer";
-import { ContainerMountSpec } from "./meshagent-client";
-import { Content, BinaryContent, ControlContent, ErrorContent, JsonContent } from "./response";
+import type { ContainerMountSpec } from "./meshagent-client";
+import { BinaryContent, ControlContent, ErrorContent, JsonContent, type Content } from "./response";
 import { RoomClient } from "./room-client";
 import { RoomServerException } from "./room-server-client";
 import { StreamController } from "./stream-controller";

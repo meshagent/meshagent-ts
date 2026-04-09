@@ -1,4 +1,4 @@
-import { decodeJwt, jwtVerify, JWTPayload, SignJWT } from "jose";
+import { decodeJwt, jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { parseApiKey } from "./api_keys";
 
 export type StringList = string[];

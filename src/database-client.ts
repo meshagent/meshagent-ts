@@ -1,7 +1,7 @@
 import { DataType } from "./data-types";
 import { RoomClient } from "./room-client";
 import { RoomServerException } from "./room-server-client";
-import { Content, ControlContent, ErrorContent, JsonContent } from "./response";
+import { ControlContent, ErrorContent, JsonContent, type Content } from "./response";
 
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
 

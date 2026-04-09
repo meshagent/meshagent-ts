@@ -1,4 +1,4 @@
-import { ServiceSpec } from "./meshagent-client";
+import type { ServiceSpec } from "./meshagent-client";
 import { JsonContent, EmptyContent } from "./response";
 import { RoomClient } from "./room-client";
 import { RoomServerException } from "./room-server-client";

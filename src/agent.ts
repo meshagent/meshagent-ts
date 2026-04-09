@@ -3,7 +3,7 @@
 import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
-import { Content, ErrorContent, JsonContent } from "./response";
+import { ErrorContent, JsonContent, type Content } from "./response";
 import { ToolContentSpec } from "./tool-content-type";
 import { unpackMessage } from "./utils";
 

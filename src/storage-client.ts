@@ -3,7 +3,7 @@
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { FileDeletedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
-import { BinaryContent, Content, ControlContent, ErrorContent, JsonContent, FileContent } from "./response";
+import { BinaryContent, ControlContent, ErrorContent, JsonContent, FileContent, type Content } from "./response";
 import { unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 import { RoomServerException } from "./room-server-client";

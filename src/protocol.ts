@@ -1,4 +1,4 @@
-import WebSocket, { MessageEvent } from "isomorphic-ws";
+import WebSocket, { type MessageEvent } from "isomorphic-ws";
 
 import { mergeUint8Arrays, decoder, encoder, unpackMessage } from "./utils";
 import { Completer } from "./completer";
