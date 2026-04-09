@@ -115,6 +115,20 @@ class FakeDatabaseRoom {
             ],
           },
         });
+      case "list_branches":
+        return new JsonContent({
+          json: {
+            branches: [
+              {
+                name: "main",
+                parent_branch: null,
+                parent_version: null,
+                created_at: "2025-01-01T00:00:00Z",
+                manifest_size: 1,
+              },
+            ],
+          },
+        });
       default:
         return new JsonContent({ json: {} });
     }
@@ -207,12 +221,14 @@ describe("database_client_unit_test", () => {
       schema: { id: new IntDataType() },
       data: [{ id: 1 }],
       namespace: ["team"],
+      branch: "exp",
       metadata: { kind: "demo" },
     });
 
     await client.addColumns({
       table: "records",
       namespace: ["team"],
+      branch: "exp",
       newColumns: {
         email: "'hello'",
         visits: new IntDataType(),
@@ -231,6 +247,7 @@ describe("database_client_unit_test", () => {
         ],
         mode: "create",
         namespace: ["team"],
+        branch: "exp",
         metadata: [{ key: "kind", value: "demo" }],
       },
     ]);
@@ -247,14 +264,15 @@ describe("database_client_unit_test", () => {
         { name: "visits", value_sql: null, data_type: { type: "int", nullable: null, metadata: null } },
       ],
       namespace: ["team"],
+      branch: "exp",
     });
   });
 
-  it("supports inspect, search offset, count, version metadata, and lifecycle operations", async () => {
+  it("supports branch-aware inspect, search, counts, versions, and lifecycle operations", async () => {
     const room = new FakeDatabaseRoom();
     const client = new DatabaseClient({ room });
 
-    const schema = await client.inspect({ table: "records", namespace: ["team"] });
+    const schema = await client.inspect({ table: "records", namespace: ["team"], branch: "exp", version: 7 });
     expect(schema["id"]).to.be.instanceOf(IntDataType);
 
     const rows = await client.search({
@@ -263,6 +281,8 @@ describe("database_client_unit_test", () => {
       offset: 5,
       limit: 10,
       namespace: ["team"],
+      branch: "exp",
+      version: 7,
     });
     expect(rows).to.deep.equal([{ id: 1 }]);
     expect(room.readStarts["search"]).to.deep.equal([
@@ -277,28 +297,57 @@ describe("database_client_unit_test", () => {
         limit: 10,
         select: null,
         namespace: ["team"],
+        branch: "exp",
+        version: 7,
       },
     ]);
 
-    const count = await client.count({ table: "records", where: { id: 1 }, namespace: ["team"] });
+    const count = await client.count({
+      table: "records",
+      where: { id: 1 },
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
     expect(count).to.equal(3);
 
-    const versions = await client.listVersions({ table: "records", namespace: ["team"] });
+    const versions = await client.listVersions({ table: "records", namespace: ["team"], branch: "exp" });
     expect(versions).to.have.length(1);
     expect(versions[0].metadata).to.deep.equal({ kind: "demo" });
 
-    await client.dropIndex({ table: "records", name: "idx_records_id", namespace: ["team"] });
-    await client.restore({ table: "records", version: 2, namespace: ["team"] });
-    await client.checkout({ table: "records", version: 2, namespace: ["team"] });
-    await client.optimize({ table: "records", namespace: ["team"] });
+    const branches = await client.listBranches({ namespace: ["team"] });
+    expect(branches).to.have.length(1);
+    expect(branches[0]).to.deep.equal({
+      name: "main",
+      parentBranch: null,
+      parentVersion: null,
+      createdAt: new Date("2025-01-01T00:00:00Z"),
+      manifestSize: 1,
+    });
 
-    const indexes = await client.listIndexes({ table: "records", namespace: ["team"] });
+    await client.createBranch({ branch: "exp", fromBranch: "main", namespace: ["team"] });
+    await client.dropIndex({ table: "records", name: "idx_records_id", namespace: ["team"], branch: "exp" });
+    await client.restore({ table: "records", version: 2, namespace: ["team"], branch: "exp" });
+    await client.optimize({ table: "records", namespace: ["team"], branch: "exp" });
+    await client.deleteBranch({ branch: "exp", namespace: ["team"] });
+
+    const indexes = await client.listIndexes({
+      table: "records",
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
     expect(indexes).to.deep.equal([
       { name: "idx_records_id", columns: ["id"], type: "btree" },
     ]);
 
     const inspectCall = room.invokeCalls.find((call) => call.tool === "inspect");
-    expect(inspectCall?.input).to.deep.equal({ table: "records", namespace: ["team"] });
+    expect(inspectCall?.input).to.deep.equal({
+      table: "records",
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
 
     const countCall = room.invokeCalls.find((call) => call.tool === "count");
     expect(countCall?.input).to.deep.equal({
@@ -307,6 +356,36 @@ describe("database_client_unit_test", () => {
       vector: null,
       text_columns: null,
       where: "id = 1",
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
+
+    const listVersionsCall = room.invokeCalls.find((call) => call.tool === "list_versions");
+    expect(listVersionsCall?.input).to.deep.equal({
+      table: "records",
+      namespace: ["team"],
+      branch: "exp",
+    });
+
+    const listIndexesCall = room.invokeCalls.find((call) => call.tool === "list_indexes");
+    expect(listIndexesCall?.input).to.deep.equal({
+      table: "records",
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
+
+    const createBranchCall = room.invokeCalls.find((call) => call.tool === "create_branch");
+    expect(createBranchCall?.input).to.deep.equal({
+      branch: "exp",
+      from_branch: "main",
+      namespace: ["team"],
+    });
+
+    const deleteBranchCall = room.invokeCalls.find((call) => call.tool === "delete_branch");
+    expect(deleteBranchCall?.input).to.deep.equal({
+      branch: "exp",
       namespace: ["team"],
     });
   });

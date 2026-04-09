@@ -9,6 +9,8 @@ export interface TableRef {
   name: string;
   namespace?: string[];
   alias?: string;
+  branch?: string;
+  version?: number;
 }
 
 export interface TableVersion {
@@ -21,6 +23,14 @@ export interface TableIndex {
   name: string;
   columns: string[];
   type: string;
+}
+
+export interface TableBranch {
+  name: string;
+  parentBranch: string | null;
+  parentVersion: number | null;
+  createdAt: Date | null;
+  manifestSize: number | null;
 }
 
 type DatabaseRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
@@ -423,6 +433,47 @@ function tableVersionFromJson(value: unknown): TableVersion {
   };
 }
 
+function tableBranchFromJson(value: unknown): TableBranch {
+  if (!isRecord(value) || typeof value.name !== "string") {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+
+  if (value.parent_branch != null && typeof value.parent_branch !== "string") {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+  if (
+    value.parent_version != null
+    && (typeof value.parent_version !== "number" || !Number.isInteger(value.parent_version))
+  ) {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+  if (
+    value.manifest_size != null
+    && (typeof value.manifest_size !== "number" || !Number.isInteger(value.manifest_size))
+  ) {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+
+  let createdAt: Date | null = null;
+  if (value.created_at != null) {
+    if (typeof value.created_at !== "string") {
+      throw new RoomServerException("unexpected return type from database.list_branches");
+    }
+    createdAt = new Date(value.created_at);
+    if (Number.isNaN(createdAt.getTime())) {
+      throw new RoomServerException("unexpected return type from database.list_branches");
+    }
+  }
+
+  return {
+    name: value.name,
+    parentBranch: value.parent_branch ?? null,
+    parentVersion: value.parent_version ?? null,
+    createdAt,
+    manifestSize: value.manifest_size ?? null,
+  };
+}
+
 class DatabaseWriteInputStream {
   private readonly source: AsyncIterator<Array<Record<string, any>>>;
   private readonly pulls: Array<() => void> = [];
@@ -622,10 +673,14 @@ export class DatabaseClient {
     }
   }
 
-  public async listTables({ namespace }: {
+  public async listTables({ namespace, branch }: {
     namespace?: string[];
+    branch?: string;
   } = {}): Promise<string[]> {
-    const response = await this.invoke("list_tables", { namespace: namespace ?? null });
+    const response = await this.invoke("list_tables", {
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+    });
     if (!(response instanceof JsonContent)) {
       throw this._unexpectedResponseError("list_tables");
     }
@@ -638,6 +693,7 @@ export class DatabaseClient {
     schema,
     mode = "create",
     namespace,
+    branch,
     metadata,
   }: {
     name: string;
@@ -645,6 +701,7 @@ export class DatabaseClient {
     schema?: Record<string, DataType>;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream(
@@ -654,6 +711,7 @@ export class DatabaseClient {
         fields: schemaEntries(schema),
         mode,
         namespace: namespace ?? null,
+        branch: branch ?? null,
         metadata: metadataEntries(metadata),
       },
       data ?? [],
@@ -661,12 +719,13 @@ export class DatabaseClient {
     await this.drainWriteStream("create_table", input);
   }
 
-  public async createTableWithSchema({ name, schema, data, mode = "create", namespace, metadata }: {
+  public async createTableWithSchema({ name, schema, data, mode = "create", namespace, branch, metadata }: {
     name: string;
     schema?: Record<string, DataType>;
     data?: Array<Record<string, any>>;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({
@@ -675,15 +734,17 @@ export class DatabaseClient {
       data: data == null ? undefined : rowChunkList(data),
       mode,
       namespace,
+      branch,
       metadata,
     });
   }
 
-  public async createTableFromData({ name, data, mode = "create", namespace, metadata }: {
+  public async createTableFromData({ name, data, mode = "create", namespace, branch, metadata }: {
     name: string;
     data?: Array<Record<string, any>>;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({
@@ -691,49 +752,59 @@ export class DatabaseClient {
       data: data == null ? undefined : rowChunkList(data),
       mode,
       namespace,
+      branch,
       metadata,
     });
   }
 
-  public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, metadata }: {
+  public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, branch, metadata }: {
     name: string;
     chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    return this.createTable({ name, data: chunks, schema, mode, namespace, metadata });
+    return this.createTable({ name, data: chunks, schema, mode, namespace, branch, metadata });
   }
 
-  public async dropTable({ name, ignoreMissing = false, namespace }: {
+  public async dropTable({ name, ignoreMissing = false, namespace, branch }: {
     name: string;
     ignoreMissing?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_table",
-      input: { name, ignore_missing: ignoreMissing, namespace: namespace ?? null },
+      input: {
+        name,
+        ignore_missing: ignoreMissing,
+        namespace: namespace ?? null,
+        branch: branch ?? null,
+      },
     });
   }
 
-  public async dropIndex({ table, name, namespace }: {
+  public async dropIndex({ table, name, namespace, branch }: {
     table: string;
     name: string;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_index",
-      input: { table, name, namespace: namespace ?? null },
+      input: { table, name, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async addColumns({ table, newColumns, namespace }: {
+  public async addColumns({ table, newColumns, namespace, branch }: {
     table: string;
     newColumns: Record<string, string | DataType>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
@@ -746,49 +817,55 @@ export class DatabaseClient {
             : { name, value_sql: value, data_type: null }
         )),
         namespace: namespace ?? null,
+        branch: branch ?? null,
       },
     });
   }
 
-  public async dropColumns({ table, columns, namespace }: {
+  public async dropColumns({ table, columns, namespace, branch }: {
     table: string;
     columns: string[];
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_columns",
-      input: { table, columns, namespace: namespace ?? null },
+      input: { table, columns, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async insert({ table, records, namespace }: {
+  public async insert({ table, records, namespace, branch }: {
     table: string;
     records: Array<Record<string, any>>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
-    await this.insertStream({ table, chunks: rowChunkList(records), namespace });
+    await this.insertStream({ table, chunks: rowChunkList(records), namespace, branch });
   }
 
-  public async insertStream({ table, chunks, namespace }: {
+  public async insertStream({ table, chunks, namespace, branch }: {
     table: string;
     chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream({
       kind: "start",
       table,
       namespace: namespace ?? null,
+      branch: branch ?? null,
     }, chunks);
     await this.drainWriteStream("insert", input);
   }
 
-  public async update({ table, where, values, valuesSql, namespace }: {
+  public async update({ table, where, values, valuesSql, namespace, branch }: {
     table: string;
     where: string;
     values?: Record<string, any>;
     valuesSql?: Record<string, string>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
@@ -799,42 +876,47 @@ export class DatabaseClient {
         values: values == null ? null : Object.entries(values).map(([column, value]) => ({ column, value_json: JSON.stringify(encodeLegacyValue(value)) })),
         values_sql: valuesSql == null ? null : Object.entries(valuesSql).map(([column, expression]) => ({ column, expression })),
         namespace: namespace ?? null,
+        branch: branch ?? null,
       },
     });
   }
 
-  public async delete({ table, where, namespace }: {
+  public async delete({ table, where, namespace, branch }: {
     table: string;
     where: string;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "delete",
-      input: { table, where, namespace: namespace ?? null },
+      input: { table, where, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async merge({ table, on, records, namespace }: {
+  public async merge({ table, on, records, namespace, branch }: {
     table: string;
     on: string;
     records: Array<Record<string, any>>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
-    await this.mergeStream({ table, on, chunks: rowChunkList(records), namespace });
+    await this.mergeStream({ table, on, chunks: rowChunkList(records), namespace, branch });
   }
 
-  public async mergeStream({ table, on, chunks, namespace }: {
+  public async mergeStream({ table, on, chunks, namespace, branch }: {
     table: string;
     on: string;
     chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream({
       kind: "start",
       table,
       on,
       namespace: namespace ?? null,
+      branch: branch ?? null,
     }, chunks);
     await this.drainWriteStream("merge", input);
   }
@@ -864,7 +946,7 @@ export class DatabaseClient {
     });
   }
 
-  public async search({ table, text, vector, where, offset, limit, select, namespace }: {
+  public async search({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {
     table: string;
     text?: string;
     vector?: number[];
@@ -873,15 +955,28 @@ export class DatabaseClient {
     limit?: number;
     select?: string[];
     namespace?: string[];
+    branch?: string;
+    version?: number;
   }): Promise<Array<Record<string, any>>> {
     const rows: Array<Record<string, any>> = [];
-    for await (const chunk of this.searchStream({ table, text, vector, where, offset, limit, select, namespace })) {
+    for await (const chunk of this.searchStream({
+      table,
+      text,
+      vector,
+      where,
+      offset,
+      limit,
+      select,
+      namespace,
+      branch,
+      version,
+    })) {
       rows.push(...chunk);
     }
     return rows;
   }
 
-  public async *searchStream({ table, text, vector, where, offset, limit, select, namespace }: {
+  public async *searchStream({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {
     table: string;
     text?: string;
     vector?: number[];
@@ -890,6 +985,8 @@ export class DatabaseClient {
     limit?: number;
     select?: string[];
     namespace?: string[];
+    branch?: string;
+    version?: number;
   }): AsyncIterable<Array<Record<string, any>>> {
     yield* this.streamRows("search", {
       kind: "start",
@@ -902,15 +999,19 @@ export class DatabaseClient {
       limit: limit ?? null,
       select: select ?? null,
       namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
     });
   }
 
-  public async count({ table, text, vector, where, namespace }: {
+  public async count({ table, text, vector, where, namespace, branch, version }: {
     table: string;
     text?: string;
     vector?: number[];
     where?: string | Record<string, any>;
     namespace?: string[];
+    branch?: string;
+    version?: number;
   }): Promise<number> {
     const response = await this.invoke("count", {
       table,
@@ -919,6 +1020,8 @@ export class DatabaseClient {
       text_columns: null,
       where: buildWhereClause(where),
       namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
     });
     if (!(response instanceof JsonContent) || typeof response.json.count !== "number" || !Number.isInteger(response.json.count)) {
       throw this._unexpectedResponseError("count");
@@ -926,11 +1029,18 @@ export class DatabaseClient {
     return response.json.count;
   }
 
-  public async inspect({ table, namespace }: {
+  public async inspect({ table, namespace, branch, version }: {
     table: string;
     namespace?: string[];
+    branch?: string;
+    version?: number;
   }): Promise<Record<string, DataType>> {
-    const response = await this.invoke("inspect", { table, namespace: namespace ?? null });
+    const response = await this.invoke("inspect", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
+    });
     if (!(response instanceof JsonContent) || !Array.isArray(response.json.fields)) {
       throw this._unexpectedResponseError("inspect");
     }
@@ -943,92 +1053,143 @@ export class DatabaseClient {
   }
 
   public async optimize(table: string): Promise<void>;
-  public async optimize(params: { table: string; namespace?: string[] }): Promise<void>;
-  public async optimize(tableOrParams: string | { table: string; namespace?: string[] }): Promise<void> {
+  public async optimize(params: { table: string; namespace?: string[]; branch?: string }): Promise<void>;
+  public async optimize(tableOrParams: string | { table: string; namespace?: string[]; branch?: string }): Promise<void> {
     const table = typeof tableOrParams === "string" ? tableOrParams : tableOrParams.table;
     const namespace = typeof tableOrParams === "string" ? undefined : tableOrParams.namespace;
-    await this.room.invoke({ toolkit: "database", tool: "optimize", input: { table, namespace: namespace ?? null } });
+    const branch = typeof tableOrParams === "string" ? undefined : tableOrParams.branch;
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "optimize",
+      input: { table, namespace: namespace ?? null, branch: branch ?? null },
+    });
   }
 
-  public async restore({ table, version, namespace }: {
+  public async restore({ table, version, namespace, branch }: {
     table: string;
     version: number;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "restore",
-      input: { table, version, namespace: namespace ?? null },
+      input: { table, version, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async checkout({ table, version, namespace }: {
-    table: string;
-    version: number;
-    namespace?: string[];
-  }): Promise<void> {
-    await this.room.invoke({
-      toolkit: "database",
-      tool: "checkout",
-      input: { table, version, namespace: namespace ?? null },
-    });
-  }
-
-  public async listVersions({ table, namespace }: {
+  public async listVersions({ table, namespace, branch }: {
     table: string;
     namespace?: string[];
+    branch?: string;
   }): Promise<TableVersion[]> {
-    const response = await this.invoke("list_versions", { table, namespace: namespace ?? null });
+    const response = await this.invoke("list_versions", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+    });
     if (!(response instanceof JsonContent) || !Array.isArray(response.json.versions)) {
       throw this._unexpectedResponseError("list_versions");
     }
     return response.json.versions.map((version) => tableVersionFromJson(version));
   }
 
-  public async createVectorIndex({ table, column, replace = false, namespace }: {
+  public async createVectorIndex({ table, column, replace = false, namespace, branch }: {
     table: string;
     column: string;
     replace?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_vector_index",
-      input: { table, column, replace, namespace: namespace ?? null },
+      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async createScalarIndex({ table, column, replace = false, namespace }: {
+  public async createScalarIndex({ table, column, replace = false, namespace, branch }: {
     table: string;
     column: string;
     replace?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_scalar_index",
-      input: { table, column, replace, namespace: namespace ?? null },
+      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async createFullTextSearchIndex({ table, column, replace = false, namespace }: {
+  public async createFullTextSearchIndex({ table, column, replace = false, namespace, branch }: {
     table: string;
     column: string;
     replace?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_full_text_search_index",
-      input: { table, column, replace, namespace: namespace ?? null },
+      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async listIndexes({ table, namespace }: { table: string; namespace?: string[] }): Promise<TableIndex[]> {
-    const response = await this.invoke("list_indexes", { table, namespace: namespace ?? null });
+  public async listIndexes({ table, namespace, branch, version }: {
+    table: string;
+    namespace?: string[];
+    branch?: string;
+    version?: number;
+  }): Promise<TableIndex[]> {
+    const response = await this.invoke("list_indexes", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
+    });
     if (!(response instanceof JsonContent) || !Array.isArray(response.json.indexes)) {
       throw this._unexpectedResponseError("list_indexes");
     }
     return response.json.indexes.map((index) => tableIndexFromJson(index));
+  }
+
+  public async listBranches({ namespace }: {
+    namespace?: string[];
+  } = {}): Promise<TableBranch[]> {
+    const response = await this.invoke("list_branches", {
+      namespace: namespace ?? null,
+    });
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json.branches)) {
+      throw this._unexpectedResponseError("list_branches");
+    }
+    return response.json.branches.map((branch) => tableBranchFromJson(branch));
+  }
+
+  public async createBranch({ branch, fromBranch, namespace }: {
+    branch: string;
+    fromBranch?: string;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "create_branch",
+      input: {
+        branch,
+        from_branch: fromBranch ?? null,
+        namespace: namespace ?? null,
+      },
+    });
+  }
+
+  public async deleteBranch({ branch, namespace }: {
+    branch: string;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "delete_branch",
+      input: { branch, namespace: namespace ?? null },
+    });
   }
 }
