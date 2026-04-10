@@ -45,6 +45,14 @@ export abstract class DataType {
     return new TextDataType();
   }
 
+  public static json(): JsonDataType {
+    return new JsonDataType();
+  }
+
+  public static uuid(): UuidDataType {
+    return new UuidDataType();
+  }
+
   public static binary(): BinaryDataType {
     return new BinaryDataType();
   }
@@ -192,6 +200,48 @@ export class TextDataType extends DataType {
 _dataTypes["text"] = TextDataType;
 
 /**
+ * JsonDataType
+ */
+export class JsonDataType extends DataType {
+  constructor() {
+    super();
+  }
+
+  public static override fromJson(data: any): JsonDataType {
+    if (data.type !== "json") {
+      throw new Error(`Expected type 'json', got '${data.type}'`);
+    }
+    return new JsonDataType();
+  }
+
+  public toJson(): Record<string, unknown> {
+    return { type: "json" };
+  }
+}
+_dataTypes["json"] = JsonDataType;
+
+/**
+ * UuidDataType
+ */
+export class UuidDataType extends DataType {
+  constructor() {
+    super();
+  }
+
+  public static override fromJson(data: any): UuidDataType {
+    if (data.type !== "uuid") {
+      throw new Error(`Expected type 'uuid', got '${data.type}'`);
+    }
+    return new UuidDataType();
+  }
+
+  public toJson(): Record<string, unknown> {
+    return { type: "uuid" };
+  }
+}
+_dataTypes["uuid"] = UuidDataType;
+
+/**
  * BinaryDataType
  */
 export class BinaryDataType extends DataType {
@@ -211,4 +261,3 @@ export class BinaryDataType extends DataType {
   }
 }
 _dataTypes["binary"] = BinaryDataType;
-
