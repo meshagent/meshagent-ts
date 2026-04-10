@@ -293,14 +293,30 @@ describe("ParticipantToken", () => {
     });
 
     it("token jwt preserves kid when using an explicit raw secret", async () => {
-        const token = new ParticipantToken({ name: "heidi", apiKeyId: "should-preserve", projectId: "project-1" });
-        const jwtStr = await token.toJwt({ token: "explicit-secret" });
-        const { payload } = await jwtVerify(jwtStr, new TextEncoder().encode("explicit-secret"), {
-            algorithms: ["HS256"],
+        const envVars = process.env as Record<string, string | undefined>;
+        const previousApiKey = envVars.MESHAGENT_API_KEY;
+        envVars.MESHAGENT_API_KEY = encodeApiKey({
+            id: "72c17196-3f2d-4444-a55b-39825e35cbb7",
+            projectId: "44bb91aa-2555-4487-8173-580027a87558",
+            secret: "env-api-key-secret",
         });
 
-        expect(payload.kid).to.equal("should-preserve");
-        expect(payload.sub).to.equal("project-1");
+        const token = new ParticipantToken({ name: "heidi", apiKeyId: "should-preserve", projectId: "project-1" });
+        try {
+            const jwtStr = await token.toJwt({ token: "explicit-secret" });
+            const { payload } = await jwtVerify(jwtStr, new TextEncoder().encode("explicit-secret"), {
+                algorithms: ["HS256"],
+            });
+
+            expect(payload.kid).to.equal("should-preserve");
+            expect(payload.sub).to.equal("project-1");
+        } finally {
+            if (previousApiKey === undefined) {
+                delete envVars.MESHAGENT_API_KEY;
+            } else {
+                envVars.MESHAGENT_API_KEY = previousApiKey;
+            }
+        }
     });
 });
 
