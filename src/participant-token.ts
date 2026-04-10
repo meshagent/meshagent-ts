@@ -3,6 +3,18 @@ import { parseApiKey } from "./api_keys";
 
 export type StringList = string[];
 
+function matchesGrantPattern(patterns: StringList | undefined, value: string, allowIfUnset: boolean): boolean {
+    if (!patterns) {
+        return allowIfUnset;
+    }
+
+    return patterns.some((pattern) =>
+        value === pattern || (
+            pattern.endsWith("*") && value.startsWith(pattern.slice(0, -1))
+        )
+    );
+}
+
 function getEnvValue(name: string): string | undefined {
     if (typeof process === "undefined") {
         return undefined;
@@ -284,6 +296,37 @@ export class SecretsGrant {
     }
 }
 
+export class LLMGrant {
+    public models?: StringList;
+
+    constructor({ models }: { models?: StringList } = {}) {
+        this.models = models;
+    }
+
+    canUseProvider(provider: string): boolean {
+        const normalizedProvider = provider.trim();
+        if (normalizedProvider === "") {
+            return false;
+        }
+        if (!this.models) {
+            return true;
+        }
+
+        const prefix = `${normalizedProvider}/`;
+        return this.models.some((pattern) => pattern.trim().startsWith(prefix));
+    }
+
+    canUseModel(provider: string, model: string): boolean {
+        const normalizedProvider = provider.trim();
+        const normalizedModel = model.trim();
+        if (normalizedProvider === "" || normalizedModel === "") {
+            return false;
+        }
+
+        return matchesGrantPattern(this.models, `${normalizedProvider}/${normalizedModel}`, true);
+    }
+}
+
 export class ApiScope {
     public livekit?: LivekitGrant;
     public queues?: QueuesGrant;
@@ -294,6 +337,7 @@ export class ApiScope {
     public containers?: ContainersGrant;
     public developer?: DeveloperGrant;
     public agents?: AgentsGrant;
+    public llm?: LLMGrant;
     public admin?: AdminGrant;
     public secrets?: SecretsGrant;
 
@@ -307,6 +351,7 @@ export class ApiScope {
         containers,
         developer,
         agents,
+        llm,
         admin,
         secrets,
     }: {
@@ -319,6 +364,7 @@ export class ApiScope {
         containers?: ContainersGrant;
         developer?: DeveloperGrant;
         agents?: AgentsGrant;
+        llm?: LLMGrant;
         admin?: AdminGrant;
         secrets?: SecretsGrant;
     } = {}) {
@@ -331,6 +377,7 @@ export class ApiScope {
         this.containers = containers;
         this.developer = developer;
         this.agents = agents;
+        this.llm = llm;
         this.admin = admin;
         this.secrets = secrets;
     }
@@ -347,6 +394,7 @@ export class ApiScope {
         s.containers = new ContainersGrant();
         s.developer = new DeveloperGrant();
         s.agents = new AgentsGrant();
+        s.llm = new LLMGrant();
 
         return s;
     }
@@ -364,6 +412,7 @@ export class ApiScope {
         s.containers = new ContainersGrant();
         s.developer = new DeveloperGrant();
         s.agents = new AgentsGrant();
+        s.llm = new LLMGrant();
         s.secrets = new SecretsGrant();
 
         return s;
@@ -373,6 +422,7 @@ export class ApiScope {
         const s = ApiScope.agentDefault();
 
         s.admin = new AdminGrant();
+        s.secrets = new SecretsGrant();
 
         return s;
     }
@@ -382,7 +432,20 @@ export class ApiScope {
     }
 
     static fromJSON(obj: any): ApiScope {
-        return Object.assign(new ApiScope(), obj);
+        return new ApiScope({
+            livekit: obj.livekit ? Object.assign(new LivekitGrant(), obj.livekit) : undefined,
+            queues: obj.queues ? Object.assign(new QueuesGrant(), obj.queues) : undefined,
+            messaging: obj.messaging ? Object.assign(new MessagingGrant(), obj.messaging) : undefined,
+            database: obj.database ? Object.assign(new DatabaseGrant(), obj.database) : undefined,
+            sync: obj.sync ? Object.assign(new SyncGrant(), obj.sync) : undefined,
+            storage: obj.storage ? Object.assign(new StorageGrant(), obj.storage) : undefined,
+            containers: obj.containers ? Object.assign(new ContainersGrant(), obj.containers) : undefined,
+            developer: obj.developer ? Object.assign(new DeveloperGrant(), obj.developer) : undefined,
+            agents: obj.agents ? Object.assign(new AgentsGrant(), obj.agents) : undefined,
+            llm: obj.llm ? new LLMGrant({ models: obj.llm.models }) : undefined,
+            admin: obj.admin ? Object.assign(new AdminGrant(), obj.admin) : undefined,
+            secrets: obj.secrets ? Object.assign(new SecretsGrant(), obj.secrets) : undefined,
+        });
     }
 }
 

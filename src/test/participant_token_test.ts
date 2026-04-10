@@ -15,6 +15,7 @@ import {
     StorageGrant,
     StoragePathGrant,
     ContainersGrant,
+    LLMGrant,
     ApiScope,
     ParticipantToken,
     encodeApiKey,
@@ -154,6 +155,16 @@ describe("Grants", () => {
         expect(g.canRun("runtime/app")).to.equal(true);
         expect(g.canRun("other/app")).to.equal(false);
     });
+
+    it("llm grant enforces provider and model restrictions", () => {
+        const g = new LLMGrant({ models: ["openai/gpt-4o*", "anthropic/claude-sonnet-4-5"] });
+
+        expect(g.canUseProvider("openai")).to.equal(true);
+        expect(g.canUseProvider("anthropic")).to.equal(true);
+        expect(g.canUseProvider("google")).to.equal(false);
+        expect(g.canUseModel("openai", "gpt-4o-mini")).to.equal(true);
+        expect(g.canUseModel("openai", "gpt-4.1")).to.equal(false);
+    });
 });
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -181,6 +192,13 @@ describe("ParticipantToken", () => {
         const a = api as ApiScope;
         expect(a.queues).to.exist;
         expect(a.sync).to.exist;
+        expect(a.llm).to.equal(undefined);
+    });
+
+    it("user default includes llm", () => {
+        const scope = ApiScope.userDefault();
+
+        expect(scope.llm).to.be.instanceOf(LLMGrant);
     });
 
     it("token json round trip", () => {
@@ -305,4 +323,3 @@ it("legacy token", () => {
     expect(token.name).to.equal("72c17196-3f2d-4444-a55b-39825e35cbb7");
     expect(a.storage?.canRead("/test")).to.equal(true);
 });
-
