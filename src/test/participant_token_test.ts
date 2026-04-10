@@ -202,7 +202,7 @@ describe("ParticipantToken", () => {
     });
 
     it("token json round trip", () => {
-        const pt = new ParticipantToken({ name: "charlie" });
+        const pt = new ParticipantToken({ name: "charlie", extra: { meshagent_bootstrap: true } });
         pt.addRoleGrant("moderator");
         pt.addRoomGrant("main");
 
@@ -210,6 +210,7 @@ describe("ParticipantToken", () => {
         expect(clone.name).to.equal(pt.name);
         expect(clone.role).to.equal("moderator");
         expect(clone.grantScope("room")).to.equal("main");
+        expect(clone.extra?.["meshagent_bootstrap"]).to.equal(true);
     });
 
     it("token jwt round trip", async () => {
@@ -289,6 +290,17 @@ describe("ParticipantToken", () => {
                 envVars.MESHAGENT_API_KEY = previousApiKey;
             }
         }
+    });
+
+    it("token jwt preserves kid when using an explicit raw secret", async () => {
+        const token = new ParticipantToken({ name: "heidi", apiKeyId: "should-preserve", projectId: "project-1" });
+        const jwtStr = await token.toJwt({ token: "explicit-secret" });
+        const { payload } = await jwtVerify(jwtStr, new TextEncoder().encode("explicit-secret"), {
+            algorithms: ["HS256"],
+        });
+
+        expect(payload.kid).to.equal("should-preserve");
+        expect(payload.sub).to.equal("project-1");
     });
 });
 

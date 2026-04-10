@@ -622,6 +622,7 @@ export class ParticipantToken {
 
     toJson(): Record<string, any> {
         const base: Record<string, any> = {
+            ...(this.extra ?? {}),
             name: this.name,
             grants: this.grants.map(g => g.toJson()),
         };
@@ -666,6 +667,7 @@ export class ParticipantToken {
         let resolvedSub = this.projectId;
 
         const apiKeyValue = apiKey ?? getEnvValue("MESHAGENT_API_KEY");
+        const usingDefaultSecret = token == null && !apiKeyValue;
 
         if (apiKeyValue) {
             const parsed = parseApiKey(apiKeyValue);
@@ -674,8 +676,6 @@ export class ParticipantToken {
             resolvedKid = parsed.id;
             resolvedSub = parsed.projectId;
         }
-
-        let usingDefaultSecret = false;
 
         if (!resolvedSecret) {
             const envSecret = getEnvValue("MESHAGENT_SECRET");
@@ -687,7 +687,6 @@ export class ParticipantToken {
             }
 
             resolvedSecret = envSecret;
-            usingDefaultSecret = true;
         }
 
         // jose requires a Uint8Array key for HMAC
@@ -702,11 +701,9 @@ export class ParticipantToken {
             delete payload["sub"];
         }
 
-        if (usingDefaultSecret) {
-            delete payload["kid"];
-        } else if (resolvedKid) {
+        if (apiKeyValue) {
             payload["kid"] = resolvedKid;
-        } else {
+        } else if (usingDefaultSecret) {
             delete payload["kid"];
         }
 
