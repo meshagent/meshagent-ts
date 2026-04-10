@@ -295,11 +295,7 @@ describe("ParticipantToken", () => {
     it("token jwt preserves kid when using an explicit raw secret", async () => {
         const envVars = process.env as Record<string, string | undefined>;
         const previousApiKey = envVars.MESHAGENT_API_KEY;
-        envVars.MESHAGENT_API_KEY = encodeApiKey({
-            id: "72c17196-3f2d-4444-a55b-39825e35cbb7",
-            projectId: "44bb91aa-2555-4487-8173-580027a87558",
-            secret: "env-api-key-secret",
-        });
+        delete envVars.MESHAGENT_API_KEY;
 
         const token = new ParticipantToken({ name: "heidi", apiKeyId: "should-preserve", projectId: "project-1" });
         try {

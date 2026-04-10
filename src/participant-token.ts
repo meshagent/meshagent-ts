@@ -666,7 +666,7 @@ export class ParticipantToken {
         let resolvedKid = this.apiKeyId;
         let resolvedSub = this.projectId;
 
-        const apiKeyValue = apiKey ?? (token == null ? getEnvValue("MESHAGENT_API_KEY") : undefined);
+        const apiKeyValue = apiKey ?? getEnvValue("MESHAGENT_API_KEY");
         const usingDefaultSecret = token == null && !apiKeyValue;
 
         if (apiKeyValue) {
