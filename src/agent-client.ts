@@ -16,9 +16,8 @@ export class ToolDescription {
     public defs?: Record<string, any>;
     public thumbnailUrl?: string;
     public pricing?: string;
-    public supportsContext?: boolean;
 
-    constructor({ title, name, description, inputSchema, inputSpec, outputSpec, outputSchema, thumbnailUrl, defs, pricing, supportsContext }: {
+    constructor({ title, name, description, inputSchema, inputSpec, outputSpec, outputSchema, thumbnailUrl, defs, pricing }: {
         title: string;
         name: string;
         description: string;
@@ -29,7 +28,6 @@ export class ToolDescription {
         thumbnailUrl?: string;
         defs?: Record<string, any>;
         pricing?: string;
-        supportsContext?: boolean;
     }) {
         this.title = title;
         this.name = name;
@@ -68,7 +66,6 @@ export class ToolDescription {
         this.thumbnailUrl = thumbnailUrl;
         this.defs = defs;
         this.pricing = pricing;
-        this.supportsContext = supportsContext ?? false;
     }
 
     public get inputSchema(): Record<string, any> | undefined {
@@ -138,7 +135,6 @@ export class ToolkitDescription {
                 thumbnail_url: tool.thumbnailUrl,
                 defs: tool.defs,
                 pricing: tool.pricing,
-                supports_context: tool.supportsContext,
             })),
         };
     }
@@ -174,7 +170,6 @@ export class ToolkitDescription {
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
                         pricing: tool["pricing"],
-                        supportsContext: tool["supports_context"] ?? tool["supportsContext"],
                     })
                 );
             }
@@ -197,7 +192,6 @@ export class ToolkitDescription {
                         thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
                         pricing: tool["pricing"],
-                        supportsContext: tool["supports_context"] ?? tool["supportsContext"],
                     })
                 );
             }
