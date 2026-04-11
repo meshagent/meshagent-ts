@@ -31,3 +31,4 @@ export * from './api_keys';
 export * from './helpers';
 export * from './tool-content-type';
 export * from './utils';
+export * from './version';
