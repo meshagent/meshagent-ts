@@ -209,34 +209,6 @@ export class ToolkitDescription {
 }
 
 /**
- * A config for specifying which tools to use
- */
-export class ToolkitConfiguration {
-    constructor(
-        public name: string,
-        public use?: string[] // null => use all
-    ) { }
-
-    toJson(): Record<string, any> {
-        if (!this.use) {
-            return {
-                [this.name]: {},
-            };
-        } else {
-            return {
-                [this.name]: {
-                    use: this.use.reduce((acc, tool) => {
-                        acc[tool] = {};
-                        return acc;
-                    }, {} as Record<string, any>),
-                },
-            };
-        }
-    }
-}
-
-
-/**
  * The AgentsClient class.
  */
 export class AgentsClient {
