@@ -64,11 +64,13 @@ class FakeContainersServer {
   public readonly execChunks: BinaryContent[] = [];
   public readonly logChunks: BinaryContent[] = [];
   public readonly buildLogChunks: BinaryContent[] = [];
+  public readonly buildChunks: BinaryContent[] = [];
   public readonly streamTools = new Map<string, string>();
 
   private readonly encoder = new TextEncoder();
   private readonly logCloseWaiters = new Map<string, Array<() => void>>();
   private readonly execCloseWaiters = new Map<string, Array<() => void>>();
+  private readonly pendingBuildRequests = new Map<string, { protocol: Protocol; messageId: number }>();
   private readonly closedLogs = new Set<string>();
   private readonly closedExec = new Set<string>();
   private readonly logFollowByToolCall = new Map<string, boolean>();
@@ -117,12 +119,16 @@ class FakeContainersServer {
         throw new Error("containers tool must be a string");
       }
 
-      if (tool === "exec" || tool === "logs" || tool === "get_build_logs") {
+      if (tool === "exec" || tool === "logs" || tool === "get_build_logs" || tool === "build") {
         const toolCallId = header["tool_call_id"];
         if (typeof toolCallId !== "string") {
           throw new Error("expected string tool_call_id");
         }
         this.streamTools.set(toolCallId, tool);
+        if (tool === "build") {
+          this.pendingBuildRequests.set(toolCallId, { protocol, messageId });
+          return;
+        }
         await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
         return;
       }
@@ -152,10 +158,6 @@ class FakeContainersServer {
         case "load_image":
         case "save_image":
           await protocol.send("__response__", new JsonContent({ json: { container_id: `${tool}-ctr` } }).pack(), messageId);
-          return;
-        case "build":
-        case "start_build":
-          await protocol.send("__response__", new JsonContent({ json: { build_id: `${tool}-job` } }).pack(), messageId);
           return;
         case "load":
           await protocol.send("__response__", new JsonContent({
@@ -231,6 +233,19 @@ class FakeContainersServer {
       this.resolveWaiters(this.execCloseWaiters, toolCallId);
       this.resolveWaiters(this.logCloseWaiters, toolCallId);
 
+      if (this.streamTools.get(toolCallId) === "build") {
+        const pending = this.pendingBuildRequests.get(toolCallId);
+        if (!pending) {
+          throw new Error(`no build request recorded for ${toolCallId}`);
+        }
+        await pending.protocol.send(
+          "__response__",
+          new JsonContent({ json: { build_id: "build-job" } }).pack(),
+          pending.messageId,
+        );
+        this.pendingBuildRequests.delete(toolCallId);
+      }
+
       if (this.streamTools.get(toolCallId) === "logs" && this.logFollowByToolCall.get(toolCallId) === true) {
         await this.sendToolCallChunk(protocol, toolCallId, new ControlContent({ method: "close" }));
       }
@@ -271,6 +286,11 @@ class FakeContainersServer {
           },
         }));
         await this.sendToolCallChunk(protocol, toolCallId, new ControlContent({ method: "close" }));
+      }
+    } else if (tool === "build") {
+      this.buildChunks.push(chunk);
+      if (chunk.headers["kind"] === "start") {
+        this.requests.push({ tool: "build", input: { ...chunk.headers } });
       }
     } else if (tool === "get_build_logs") {
       this.buildLogChunks.push(chunk);
@@ -498,22 +518,23 @@ describe("container_client_test", () => {
         private: true,
       })).to.equal("save_image-ctr");
 
+      async function* buildChunks(): AsyncIterable<Uint8Array> {
+        yield new TextEncoder().encode("hello ");
+        yield new TextEncoder().encode("world");
+      }
+
       expect(await harness.room.containers.build({
         tag: "example:latest",
-        mounts,
+        mountPath: "/context",
         contextPath: "/workspace",
+        chunks: buildChunks(),
         dockerfilePath: "/workspace/Dockerfile",
+        optimizeImage: false,
+        private: true,
+        credentials: [{ username: "u", password: "p" }],
+        builderName: "builder-1",
+        size: 11,
       })).to.equal("build-job");
-
-      expect(await harness.room.containers.startBuild({
-        tag: "example:latest",
-        mounts,
-        contextPath: "/workspace",
-        contextArchivePath: "/website",
-        contextArchiveRef: "room.meshagent.com/website:latest",
-        contextArchiveMountPath: "/context",
-        contextArchiveArch: "amd64",
-      })).to.equal("start_build-job");
 
       expect(await harness.room.containers.listBuilds()).to.deep.equal([{
         id: "build-1",
@@ -542,7 +563,6 @@ describe("container_client_test", () => {
         "load_image",
         "save_image",
         "build",
-        "start_build",
         "list_builds",
         "cancel_build",
         "delete_build",
@@ -555,22 +575,36 @@ describe("container_client_test", () => {
       expect(loadImageInput["archive_path"]).to.equal("/workspace/example.tar");
       expect(loadImageInput["private"]).to.equal(true);
 
-      const buildInput = harness.server.requests[5].input;
-      expect(buildInput["context_archive_path"]).to.equal(null);
+      const buildInput = harness.server.requests.find((entry) => entry.tool === "build")?.input as Record<string, unknown> | undefined;
+      expect(buildInput).to.not.equal(undefined);
+      if (!buildInput) {
+        throw new Error("missing build request");
+      }
+      expect(buildInput["mount_path"]).to.equal("/context");
+      expect(buildInput["context_path"]).to.equal("/workspace");
       expect(buildInput["dockerfile_path"]).to.equal("/workspace/Dockerfile");
+      expect(buildInput["optimize_image"]).to.equal(false);
+      expect(buildInput["private"]).to.equal(true);
+      expect(buildInput["credentials"]).to.deep.equal([
+        { registry: null, username: "u", password: "p" },
+      ]);
+      expect(buildInput["builder_name"]).to.equal("builder-1");
+      expect(buildInput["size"]).to.equal(11);
 
-      const startBuildInput = harness.server.requests[6].input;
-      expect(startBuildInput["context_archive_path"]).to.equal("/website");
-      expect(startBuildInput["context_archive_ref"]).to.equal("room.meshagent.com/website:latest");
-      expect(startBuildInput["context_archive_mount_path"]).to.equal("/context");
-      expect(startBuildInput["context_archive_arch"]).to.equal("amd64");
-
-      const buildLogsInput = harness.server.requests[10].input;
+      const buildLogsInput = harness.server.requests.find((entry) => entry.tool === "get_build_logs")?.input as Record<string, unknown> | undefined;
+      expect(buildLogsInput).to.not.equal(undefined);
+      if (!buildLogsInput) {
+        throw new Error("missing get_build_logs request");
+      }
       expect(buildLogsInput["kind"]).to.equal("start");
       expect(buildLogsInput["build_id"]).to.equal("build-1");
       expect(buildLogsInput["follow"]).to.equal(true);
 
-      const stopInput = harness.server.requests[11].input;
+      const stopInput = harness.server.requests.find((entry) => entry.tool === "stop_container")?.input as Record<string, unknown> | undefined;
+      expect(stopInput).to.not.equal(undefined);
+      if (!stopInput) {
+        throw new Error("missing stop_container request");
+      }
       expect(stopInput["force"]).to.equal(false);
     } finally {
       harness.room.dispose();
