@@ -2,7 +2,7 @@ import { expect } from "chai";
 
 import { Protocol } from "../protocol";
 import { BinaryContent, Content, ControlContent, JsonContent } from "../response";
-import { FileDeletedEvent, FileUpdatedEvent, RoomEvent } from "../room-event";
+import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "../room-event";
 import { StorageClient, StorageEntry } from "../storage-client";
 import { packMessage } from "../utils";
 
@@ -52,6 +52,13 @@ class FakeStorageRoom {
   public readonly files = new Map<string, Uint8Array>();
   public lastUploadStartHeaders: Record<string, unknown> | null = null;
   public lastDeleteRecursive: boolean | null | undefined = undefined;
+  public lastMoveRequest:
+    | {
+        sourcePath: string;
+        destinationPath: string;
+        overwrite: boolean;
+      }
+    | null = null;
 
   public emit(event: RoomEvent): void {
     this.emittedEvents.push(event);
@@ -92,6 +99,22 @@ class FakeStorageRoom {
         const input = params.input as Record<string, any>;
         this.lastDeleteRecursive = (input["recursive"] as boolean | null | undefined) ?? null;
         this.files.delete(input["path"]);
+        return new JsonContent({ json: {} });
+      }
+      case "move": {
+        const input = params.input as Record<string, any>;
+        const sourcePath = input["source_path"];
+        const destinationPath = input["destination_path"];
+        const overwrite = input["overwrite"] === true;
+        if (typeof sourcePath !== "string" || typeof destinationPath !== "string") {
+          throw new Error("invalid move request");
+        }
+        this.lastMoveRequest = { sourcePath, destinationPath, overwrite };
+        const bytes = this.files.get(sourcePath);
+        if (bytes != null) {
+          this.files.delete(sourcePath);
+          this.files.set(destinationPath, bytes);
+        }
         return new JsonContent({ json: {} });
       }
       case "download_url": {
@@ -269,6 +292,22 @@ describe("storage_client_unit_test", () => {
     expect(room.lastDeleteRecursive).to.equal(null);
   });
 
+  it("moves files and forwards overwrite", async () => {
+    const room = new FakeStorageRoom();
+    const client = new StorageClient({ room });
+    room.files.set("folder/source.txt", new Uint8Array([1, 2, 3]));
+
+    await client.move("folder/source.txt", "folder/destination.txt", { overwrite: true });
+
+    expect(room.lastMoveRequest).to.deep.equal({
+      sourcePath: "folder/source.txt",
+      destinationPath: "folder/destination.txt",
+      overwrite: true,
+    });
+    expect(room.files.has("folder/source.txt")).to.equal(false);
+    expect(room.files.has("folder/destination.txt")).to.equal(true);
+  });
+
   it("defaults upload name and mime type", async () => {
     const room = new FakeStorageRoom();
     const client = new StorageClient({ room });
@@ -292,12 +331,16 @@ describe("storage_client_unit_test", () => {
     const client = new StorageClient({ room });
     let updatedEvent: FileUpdatedEvent | undefined;
     let deletedEvent: FileDeletedEvent | undefined;
+    let movedEvent: FileMovedEvent | undefined;
 
     client.on("file.updated", (event) => {
       updatedEvent = event as FileUpdatedEvent;
     });
     client.on("file.deleted", (event) => {
       deletedEvent = event as FileDeletedEvent;
+    });
+    client.on("file.moved", (event) => {
+      movedEvent = event as FileMovedEvent;
     });
 
     await room.protocol.dispatch("storage.file.updated", {
@@ -308,16 +351,25 @@ describe("storage_client_unit_test", () => {
       path: "events/file.txt",
       participant_id: "participant-1",
     });
+    await room.protocol.dispatch("storage.file.moved", {
+      source_path: "events/file.txt",
+      destination_path: "events/renamed.txt",
+      participant_id: "participant-1",
+    });
 
     expect(updatedEvent).to.not.equal(undefined);
     expect(deletedEvent).to.not.equal(undefined);
-    if (updatedEvent == null || deletedEvent == null) {
+    expect(movedEvent).to.not.equal(undefined);
+    if (updatedEvent == null || deletedEvent == null || movedEvent == null) {
       throw new Error("expected storage events to be emitted");
     }
     expect(updatedEvent.path).to.equal("events/file.txt");
     expect(updatedEvent.participantId).to.equal("participant-1");
     expect(deletedEvent.path).to.equal("events/file.txt");
     expect(deletedEvent.participantId).to.equal("participant-1");
-    expect(room.emittedEvents).to.have.length(2);
+    expect(movedEvent.sourcePath).to.equal("events/file.txt");
+    expect(movedEvent.destinationPath).to.equal("events/renamed.txt");
+    expect(movedEvent.participantId).to.equal("participant-1");
+    expect(room.emittedEvents).to.have.length(3);
   });
 });

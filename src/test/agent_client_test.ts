@@ -7,10 +7,11 @@ import {
     JsonContent,
     TextContent,
     EmptyContent,
-    RemoteToolkit,
     RoomClient,
+    startHostedToolkit,
     Tool,
     ToolkitDescription,
+    Toolkit,
     websocketProtocol,
 } from "../index";
 
@@ -95,13 +96,12 @@ class FileTool extends Tool {
     }
 }
 
-class RemoteTestToolkit extends RemoteToolkit {
-    constructor(client: RoomClient) {
+class TestToolkit extends Toolkit {
+    constructor() {
         super({
             name: "test-toolkit",
             title: "Test Toolkit",
             description: "A toolkit for testing",
-            room: client,
             tools: [
                 new AddToolJson(),
                 new AddToolText(),
@@ -211,7 +211,6 @@ describe("agent_client_test", function (this: Mocha.Suite) {
                     thumbnail_url: "https://example.com/tool.png",
                     defs: { NumberInput: { type: "number" } },
                     pricing: undefined,
-                    supports_context: false,
                 },
                 {
                     name: "subtractor",
@@ -226,17 +225,14 @@ describe("agent_client_test", function (this: Mocha.Suite) {
                     thumbnail_url: undefined,
                     defs: undefined,
                     pricing: undefined,
-                    supports_context: false,
                 },
             ],
         });
     });
 
     it("test_can_invoke_json_tool", async () => {
-        // Start toolkit
-        const remote = new RemoteTestToolkit(client1);
-
-        await remote.start();
+        const toolkit = new TestToolkit();
+        const hostedToolkit = await startHostedToolkit({ room: client1, toolkit });
 
         // 1) add-file
         const result1 = (await client1.agents.invokeTool({
@@ -289,6 +285,6 @@ describe("agent_client_test", function (this: Mocha.Suite) {
         expect(result5.mimeType).to.equal("application/text");
         expect(decoder.decode(result5.data)).to.equal("hello world");
 
-        await remote.stop();
+        await hostedToolkit.stop();
     });
 });

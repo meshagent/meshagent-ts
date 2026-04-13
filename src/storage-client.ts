@@ -2,8 +2,8 @@
 
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
-import { FileDeletedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
-import { BinaryContent, ControlContent, ErrorContent, JsonContent, FileContent, type Content } from "./response";
+import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
+import { BinaryContent, Content, ControlContent, ErrorContent, JsonContent, FileContent } from "./response";
 import { unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 import { RoomServerException } from "./room-server-client";
@@ -122,6 +122,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
 
     // Add protocol handlers
     this.client.protocol.addHandler("storage.file.deleted", this._handleFileDeleted.bind(this));
+    this.client.protocol.addHandler("storage.file.moved", this._handleFileMoved.bind(this));
     this.client.protocol.addHandler("storage.file.updated", this._handleFileUpdated.bind(this));
   }
 
@@ -138,6 +139,18 @@ export class StorageClient extends EventEmitter<RoomEvent> {
     const event = new FileDeletedEvent({ path: data["path"], participantId: data["participant_id"] });
     this.client.emit(event);
     this.emit('file.deleted', event);
+  }
+
+  private async _handleFileMoved(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
+    const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
+
+    const event = new FileMovedEvent({
+      sourcePath: data["source_path"],
+      destinationPath: data["destination_path"],
+      participantId: data["participant_id"],
+    });
+    this.client.emit(event);
+    this.emit("file.moved", event);
   }
 
   private _unexpectedResponseError(operation: string): RoomServerException {
@@ -211,6 +224,22 @@ export class StorageClient extends EventEmitter<RoomEvent> {
     } = {},
   ): Promise<void> {
     await this._invoke("delete", { path, recursive });
+  }
+
+  public async move(
+    sourcePath: string,
+    destinationPath: string,
+    {
+      overwrite = false,
+    }: {
+      overwrite?: boolean;
+    } = {},
+  ): Promise<void> {
+    await this._invoke("move", {
+      source_path: sourcePath,
+      destination_path: destinationPath,
+      overwrite,
+    });
   }
 
   /**

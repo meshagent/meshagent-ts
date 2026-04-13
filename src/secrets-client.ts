@@ -348,6 +348,27 @@ export class SecretsClient {
     return secrets.map((item) => this.parseSecretInfo(item));
   }
 
+  public async exists({
+    secretId,
+    delegatedTo,
+    forIdentity,
+  }: {
+    secretId: string;
+    delegatedTo?: string | null;
+    forIdentity?: string | null;
+  }): Promise<boolean> {
+    const response = await this.invoke("exists", {
+      secret_id: secretId,
+      delegated_to: delegatedTo ?? null,
+      for_identity: forIdentity ?? null,
+    });
+    if (!(response instanceof JsonContent) || typeof response.json["exists"] !== "boolean") {
+      throw this.unexpectedResponse("exists");
+    }
+
+    return response.json["exists"];
+  }
+
   public async deleteSecret({
     secretId,
     delegatedTo,

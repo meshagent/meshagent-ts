@@ -9,6 +9,8 @@ export interface TableRef {
   name: string;
   namespace?: string[];
   alias?: string;
+  branch?: string;
+  version?: number;
 }
 
 export interface TableVersion {
@@ -23,26 +25,136 @@ export interface TableIndex {
   type: string;
 }
 
-type DatabaseRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
+export interface TableBranch {
+  name: string;
+  parentBranch: string | null;
+  parentVersion: number | null;
+  createdAt: Date | null;
+  manifestSize: number | null;
+}
 
-type TypedValue =
-  | { type: "null" }
-  | { type: "bool"; value: boolean }
-  | { type: "int"; value: number }
-  | { type: "float"; value: number }
-  | { type: "text"; value: string }
-  | { type: "binary"; data: string }
-  | { type: "date"; value: string }
-  | { type: "timestamp"; value: string }
-  | { type: "list"; items: TypedValue[] }
-  | { type: "struct"; fields: Array<{ name: string; value: TypedValue }> };
+export abstract class DatabaseValueEncoder {
+  public abstract encodeDatabaseValue(): unknown;
+}
+
+export class DatabaseExpression extends DatabaseValueEncoder {
+  public readonly expression: string;
+
+  public constructor(expression: string) {
+    super();
+    const normalized = expression.trim();
+    if (normalized === "") {
+      throw new TypeError("database expression must not be empty");
+    }
+    this.expression = normalized;
+  }
+
+  public encodeDatabaseValue(): Record<string, string> {
+    return {
+      expression: this.expression,
+    };
+  }
+
+  public toString(): string {
+    return this.expression;
+  }
+}
+
+export class DatabaseDate extends DatabaseValueEncoder {
+  public readonly value: string;
+
+  public constructor(value: string) {
+    super();
+    const normalized = value.trim();
+    const parsed = new Date(`${normalized}T00:00:00Z`);
+    if (!ISO_DATE_REGEX.test(normalized) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== normalized) {
+      throw new TypeError("invalid database date format");
+    }
+    this.value = normalized;
+  }
+
+  public encodeDatabaseValue(): Record<string, string> {
+    return {
+      date: this.value,
+    };
+  }
+
+  public toString(): string {
+    return this.value;
+  }
+}
+
+export type DatabaseJsonScalarValue = null | boolean | number | string;
+export type DatabaseJsonValue =
+  | DatabaseJsonScalarValue
+  | DatabaseJsonValue[]
+  | { [key: string]: DatabaseJsonValue };
+
+export class DatabaseStruct extends DatabaseValueEncoder {
+  public readonly fields: Record<string, DatabaseValue>;
+
+  public constructor(fields: Record<string, DatabaseValue>) {
+    super();
+    this.fields = Object.fromEntries(
+      Object.entries(fields).map(([key, value]) => {
+        if (typeof key !== "string") {
+          throw new TypeError("database struct keys must be strings");
+        }
+        return [key, value];
+      }),
+    );
+  }
+
+  public toJson(): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(this.fields).map(([key, value]) => [key, encodeRecordValue(value)]),
+    );
+  }
+
+  public encodeDatabaseValue(): Record<string, Record<string, unknown>> {
+    return {
+      struct: this.toJson(),
+    };
+  }
+}
+
+export class DatabaseJson extends DatabaseValueEncoder {
+  public readonly value: DatabaseJsonValue;
+
+  public constructor(value: DatabaseJsonValue) {
+    super();
+    this.value = normalizeDatabaseJsonValue(value);
+  }
+
+  public toJson(): DatabaseJsonValue {
+    return this.value;
+  }
+
+  public encodeDatabaseValue(): Record<string, DatabaseJsonValue> {
+    return {
+      json: this.value,
+    };
+  }
+}
+
+export type DatabaseScalarValue = null | boolean | number | string | Uint8Array | DatabaseUuid | Date;
+export type DatabaseValue =
+  | DatabaseScalarValue
+  | DatabaseValueEncoder
+  | DatabaseValue[];
+export type DatabaseRecord = Record<string, DatabaseValue>;
+export type DatabaseRows = DatabaseRecord[];
+export type DatabaseRowChunks = AsyncIterable<DatabaseRows> | Iterable<DatabaseRows>;
+export type DatabaseWhere = string | Record<string, DatabaseValue>;
+
+type DatabaseRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
 
 type RowChunkJson = {
   kind: "rows";
   rows: Array<{
     columns: Array<{
       name: string;
-      value: TypedValue;
+      value: unknown;
     }>;
   }>;
 };
@@ -54,6 +166,39 @@ const globalScope = globalThis as typeof globalThis & {
   btoa?: (data: string) => string;
   atob?: (data: string) => string;
 };
+
+const UUID_HEX_REGEX = /^[0-9a-f]{32}$/;
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeUuidHex(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/-/g, "");
+  if (!UUID_HEX_REGEX.test(normalized)) {
+    throw new RoomServerException("invalid uuid format");
+  }
+  return normalized;
+}
+
+function formatUuidHex(value: string): string {
+  return (
+    `${value.substring(0, 8)}-` +
+    `${value.substring(8, 12)}-` +
+    `${value.substring(12, 16)}-` +
+    `${value.substring(16, 20)}-` +
+    `${value.substring(20)}`
+  );
+}
+
+export class DatabaseUuid {
+  public readonly value: string;
+
+  public constructor(value: string) {
+    this.value = formatUuidHex(normalizeUuidHex(value));
+  }
+
+  public toString(): string {
+    return this.value;
+  }
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   if (globalScope.Buffer) {
@@ -92,13 +237,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && (
+    Object.getPrototypeOf(value) === Object.prototype
+    || Object.getPrototypeOf(value) === null
+  );
+}
+
+function normalizeDatabaseJsonValue(value: unknown): DatabaseJsonValue {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeDatabaseJsonValue(item));
+  }
+  if (isPlainRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeDatabaseJsonValue(item)]),
+    );
+  }
+  throw new TypeError("database json values must be valid JSON");
+}
+
 function metadataEntries(metadata?: Record<string, unknown>): Array<{ key: string; value: string }> | null {
   if (metadata == null) {
     return null;
   }
   return Object.entries(metadata).map(([key, value]) => ({
     key,
-    value: typeof value === "string" ? value : JSON.stringify(encodeLegacyValue(value)),
+    value: typeof value === "string" ? value : JSON.stringify(value),
   }));
 }
 
@@ -196,135 +368,144 @@ function publicDataTypeJson(value: unknown): Record<string, unknown> {
   return payload;
 }
 
-function encodeLegacyValue(value: unknown): unknown {
+function encodeRecordValue(value: unknown): unknown {
+  if (value instanceof DatabaseValueEncoder) {
+    return value.encodeDatabaseValue();
+  }
+  if (value instanceof DatabaseUuid) {
+    return {
+      uuid: value.toString(),
+    };
+  }
   if (value instanceof Uint8Array) {
     return {
-      encoding: "base64",
-      data: bytesToBase64(value),
+      binary: bytesToBase64(value),
     };
   }
   if (value instanceof Date) {
-    return value.toISOString().replace("+00:00", "Z");
+    return {
+      timestamp: value.toISOString().replace("+00:00", "Z"),
+    };
   }
   if (Array.isArray(value)) {
-    return value.map((item) => encodeLegacyValue(item));
+    return {
+      list: value.map((item) => encodeRecordValue(item)),
+    };
   }
   if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, entryValue]) => [key, encodeLegacyValue(entryValue)]));
+    throw new RoomServerException("database object values must use DatabaseStruct or DatabaseJson");
   }
   return value;
 }
 
-function encodeStreamValue(value: unknown): TypedValue {
-  if (value == null) {
-    return { type: "null" };
+function databaseSqlLiteral(value: unknown): string {
+  if (value instanceof DatabaseUuid) {
+    return `X'${normalizeUuidHex(value.toString())}'`;
   }
-  if (typeof value === "boolean") {
-    return { type: "bool", value };
-  }
-  if (typeof value === "number") {
-    if (Number.isInteger(value)) {
-      return { type: "int", value };
-    }
-    return { type: "float", value };
-  }
-  if (typeof value === "string") {
-    return { type: "text", value };
-  }
-  if (value instanceof Uint8Array) {
-    return {
-      type: "binary",
-      data: bytesToBase64(value),
-    };
+  if (value instanceof DatabaseDate) {
+    return JSON.stringify(value.toString());
   }
   if (value instanceof Date) {
-    return {
-      type: "timestamp",
-      value: value.toISOString().replace("+00:00", "Z"),
-    };
+    return JSON.stringify(value.toISOString().replace("+00:00", "Z"));
   }
+  if (value instanceof DatabaseJson) {
+    return JSON.stringify(JSON.stringify(value.toJson()));
+  }
+  if (value instanceof DatabaseStruct) {
+    const fields = Object.entries(value.fields).map(([key, fieldValue]) => (
+      `${JSON.stringify(key)}, ${databaseSqlLiteral(fieldValue)}`
+    ));
+    return `named_struct(${fields.join(", ")})`;
+  }
+  return JSON.stringify(encodeRecordValue(value));
+}
+
+function decodeRecordValue(value: unknown): DatabaseValue {
   if (Array.isArray(value)) {
-    return {
-      type: "list",
-      items: value.map((item) => encodeStreamValue(item)),
-    };
+    throw new RoomServerException("database list values must use a {'list': [...]} wrapper");
   }
-  if (isRecord(value)) {
-    return {
-      type: "struct",
-      fields: Object.entries(value).map(([name, fieldValue]) => ({
-        name,
-        value: encodeStreamValue(fieldValue),
-      })),
-    };
-  }
-  throw new RoomServerException(`database stream does not support value type ${typeof value}`);
-}
-
-function decodeStreamValue(value: unknown, operation: string): unknown {
-  if (!isRecord(value) || typeof value.type !== "string") {
-    throw new RoomServerException(`unexpected return type from database.${operation}`);
+  if (!isRecord(value)) {
+    return value as DatabaseScalarValue;
   }
 
-  switch (value.type) {
-    case "null":
-      return null;
-    case "bool":
-      if (typeof value.value !== "boolean") {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
-      }
-      return value.value;
-    case "int":
-    case "float":
-      if (typeof value.value !== "number") {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
-      }
-      return value.value;
-    case "text":
-    case "date":
-    case "timestamp":
-      if (typeof value.value !== "string") {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
-      }
-      return value.value;
+  const entries = Object.entries(value);
+  if (entries.length !== 1) {
+    throw new RoomServerException("database object values must use a single-key type wrapper");
+  }
+
+  const [wrapper, payload] = entries[0];
+  switch (wrapper) {
     case "binary":
-      if (typeof value.data !== "string") {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      if (typeof payload !== "string") {
+        throw new RoomServerException("database binary values must be base64 strings");
       }
-      return base64ToBytes(value.data);
-    case "list":
-      if (!Array.isArray(value.items)) {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      return base64ToBytes(payload);
+    case "uuid":
+      if (typeof payload !== "string") {
+        throw new RoomServerException("database uuid values must be strings");
       }
-      return value.items.map((item) => decodeStreamValue(item, operation));
-    case "struct":
-      if (!Array.isArray(value.fields)) {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      return new DatabaseUuid(payload);
+    case "expression":
+      if (typeof payload !== "string") {
+        throw new RoomServerException("database expression values must be strings");
       }
-      return Object.fromEntries(value.fields.map((field) => {
-        if (!isRecord(field) || typeof field.name !== "string") {
-          throw new RoomServerException(`unexpected return type from database.${operation}`);
+      return new DatabaseExpression(payload);
+    case "date":
+      if (typeof payload !== "string") {
+        throw new RoomServerException("database date values must be strings");
+      }
+      return new DatabaseDate(payload);
+    case "timestamp":
+      if (typeof payload !== "string") {
+        throw new RoomServerException("database timestamp values must be strings");
+      }
+      {
+        const parsed = new Date(payload);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new RoomServerException("database timestamp value is not valid");
         }
-        return [field.name, decodeStreamValue(field.value, operation)];
-      }));
+        return parsed;
+      }
+    case "list":
+      if (!Array.isArray(payload)) {
+        throw new RoomServerException("database list values must be arrays");
+      }
+      return payload.map((item) => decodeRecordValue(item));
+    case "struct":
+      if (!isRecord(payload)) {
+        throw new RoomServerException("database struct values must be objects");
+      }
+      return new DatabaseStruct(
+        Object.fromEntries(
+          Object.entries(payload).map(([key, item]) => [key, decodeRecordValue(item)]),
+        ) as DatabaseRecord,
+      );
+    case "json":
+      return new DatabaseJson(normalizeDatabaseJsonValue(payload));
     default:
-      throw new RoomServerException(`unexpected return type from database.${operation}`);
+      throw new RoomServerException(`unsupported database value wrapper '${wrapper}'`);
   }
 }
 
-function rowsChunk(records: Array<Record<string, unknown>>): RowChunkJson {
+function encodeDatabaseRecord(record: DatabaseRecord): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, encodeRecordValue(value)]),
+  );
+}
+
+function rowsChunk(records: DatabaseRows): RowChunkJson {
   return {
     kind: "rows",
     rows: records.map((record) => ({
       columns: Object.entries(record).map(([name, value]) => ({
         name,
-        value: encodeStreamValue(value),
+        value: encodeRecordValue(value),
       })),
     })),
   };
 }
 
-function recordsFromRowsChunk(payload: unknown, operation: string): Array<Record<string, any>> {
+function recordsFromRowsChunk(payload: unknown, operation: string): DatabaseRows {
   if (!isRecord(payload) || payload.kind !== "rows" || !Array.isArray(payload.rows)) {
     throw new RoomServerException(`unexpected return type from database.${operation}`);
   }
@@ -337,16 +518,20 @@ function recordsFromRowsChunk(payload: unknown, operation: string): Array<Record
       if (!isRecord(column) || typeof column.name !== "string") {
         throw new RoomServerException(`unexpected return type from database.${operation}`);
       }
-      return [column.name, decodeStreamValue(column.value, operation)];
-    }));
+      try {
+        return [column.name, decodeRecordValue(column.value)];
+      } catch {
+        throw new RoomServerException(`unexpected return type from database.${operation}`);
+      }
+    })) as DatabaseRecord;
   });
 }
 
-function rowChunkList(records: Array<Record<string, any>>, rowsPerChunk = 128): Array<Array<Record<string, any>>> {
+function rowChunkList(records: DatabaseRows, rowsPerChunk = 128): DatabaseRows[] {
   if (rowsPerChunk <= 0) {
     throw new RoomServerException("rowsPerChunk must be greater than zero");
   }
-  const chunks: Array<Array<Record<string, any>>> = [];
+  const chunks: DatabaseRows[] = [];
   for (let index = 0; index < records.length; index += rowsPerChunk) {
     chunks.push(records.slice(index, index + rowsPerChunk));
   }
@@ -365,10 +550,10 @@ async function* toAsyncIterable<T>(chunks: AsyncIterable<T> | Iterable<T>): Asyn
   }
 }
 
-function buildWhereClause(where?: string | Record<string, any>): string | null {
+function buildWhereClause(where?: DatabaseWhere): string | null {
   if (where != null && typeof where === "object" && !Array.isArray(where)) {
     return Object.entries(where)
-      .map(([key, value]) => `${key} = ${JSON.stringify(encodeLegacyValue(value))}`)
+      .map(([key, value]) => `${key} = ${databaseSqlLiteral(value)}`)
       .join(" AND ");
   }
   if (typeof where === "string") {
@@ -423,14 +608,55 @@ function tableVersionFromJson(value: unknown): TableVersion {
   };
 }
 
+function tableBranchFromJson(value: unknown): TableBranch {
+  if (!isRecord(value) || typeof value.name !== "string") {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+
+  if (value.parent_branch != null && typeof value.parent_branch !== "string") {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+  if (
+    value.parent_version != null
+    && (typeof value.parent_version !== "number" || !Number.isInteger(value.parent_version))
+  ) {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+  if (
+    value.manifest_size != null
+    && (typeof value.manifest_size !== "number" || !Number.isInteger(value.manifest_size))
+  ) {
+    throw new RoomServerException("unexpected return type from database.list_branches");
+  }
+
+  let createdAt: Date | null = null;
+  if (value.created_at != null) {
+    if (typeof value.created_at !== "string") {
+      throw new RoomServerException("unexpected return type from database.list_branches");
+    }
+    createdAt = new Date(value.created_at);
+    if (Number.isNaN(createdAt.getTime())) {
+      throw new RoomServerException("unexpected return type from database.list_branches");
+    }
+  }
+
+  return {
+    name: value.name,
+    parentBranch: value.parent_branch ?? null,
+    parentVersion: value.parent_version ?? null,
+    createdAt,
+    manifestSize: value.manifest_size ?? null,
+  };
+}
+
 class DatabaseWriteInputStream {
-  private readonly source: AsyncIterator<Array<Record<string, any>>>;
+  private readonly source: AsyncIterator<DatabaseRows>;
   private readonly pulls: Array<() => void> = [];
   private closed = false;
 
   constructor(
-    private readonly start: Record<string, any>,
-    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>,
+    private readonly start: Record<string, unknown>,
+    chunks: DatabaseRowChunks,
   ) {
     this.source = toAsyncIterable(chunks)[Symbol.asyncIterator]();
   }
@@ -496,7 +722,7 @@ class DatabaseReadInputStream {
   private readonly pulls: Array<() => void> = [];
   private closed = false;
 
-  constructor(private readonly start: Record<string, any>) {}
+  constructor(private readonly start: Record<string, unknown>) {}
 
   public requestNext(): void {
     if (this.closed) {
@@ -558,7 +784,7 @@ export class DatabaseClient {
     return new RoomServerException(`unexpected return type from database.${operation}`);
   }
 
-  private async invoke(operation: string, input: Record<string, any>): Promise<JsonContent | null> {
+  private async invoke(operation: string, input: Record<string, unknown>): Promise<JsonContent | null> {
     const response = await this.room.invoke({ toolkit: "database", tool: operation, input });
     if (response instanceof JsonContent) {
       return response;
@@ -596,7 +822,7 @@ export class DatabaseClient {
     }
   }
 
-  private async *streamRows(operation: string, start: Record<string, any>): AsyncIterable<Array<Record<string, any>>> {
+  private async *streamRows(operation: string, start: Record<string, unknown>): AsyncIterable<DatabaseRows> {
     const input = new DatabaseReadInputStream(start);
     const response = await this.invokeStream(operation, input.stream());
     input.requestNext();
@@ -622,10 +848,14 @@ export class DatabaseClient {
     }
   }
 
-  public async listTables({ namespace }: {
+  public async listTables({ namespace, branch }: {
     namespace?: string[];
+    branch?: string;
   } = {}): Promise<string[]> {
-    const response = await this.invoke("list_tables", { namespace: namespace ?? null });
+    const response = await this.invoke("list_tables", {
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+    });
     if (!(response instanceof JsonContent)) {
       throw this._unexpectedResponseError("list_tables");
     }
@@ -638,13 +868,15 @@ export class DatabaseClient {
     schema,
     mode = "create",
     namespace,
+    branch,
     metadata,
   }: {
     name: string;
-    data?: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    data?: DatabaseRowChunks;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream(
@@ -654,6 +886,7 @@ export class DatabaseClient {
         fields: schemaEntries(schema),
         mode,
         namespace: namespace ?? null,
+        branch: branch ?? null,
         metadata: metadataEntries(metadata),
       },
       data ?? [],
@@ -661,12 +894,13 @@ export class DatabaseClient {
     await this.drainWriteStream("create_table", input);
   }
 
-  public async createTableWithSchema({ name, schema, data, mode = "create", namespace, metadata }: {
+  public async createTableWithSchema({ name, schema, data, mode = "create", namespace, branch, metadata }: {
     name: string;
     schema?: Record<string, DataType>;
-    data?: Array<Record<string, any>>;
+    data?: DatabaseRows;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({
@@ -675,15 +909,17 @@ export class DatabaseClient {
       data: data == null ? undefined : rowChunkList(data),
       mode,
       namespace,
+      branch,
       metadata,
     });
   }
 
-  public async createTableFromData({ name, data, mode = "create", namespace, metadata }: {
+  public async createTableFromData({ name, data, mode = "create", namespace, branch, metadata }: {
     name: string;
-    data?: Array<Record<string, any>>;
+    data?: DatabaseRows;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({
@@ -691,49 +927,59 @@ export class DatabaseClient {
       data: data == null ? undefined : rowChunkList(data),
       mode,
       namespace,
+      branch,
       metadata,
     });
   }
 
-  public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, metadata }: {
+  public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, branch, metadata }: {
     name: string;
-    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    chunks: DatabaseRowChunks;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
     namespace?: string[];
+    branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    return this.createTable({ name, data: chunks, schema, mode, namespace, metadata });
+    return this.createTable({ name, data: chunks, schema, mode, namespace, branch, metadata });
   }
 
-  public async dropTable({ name, ignoreMissing = false, namespace }: {
+  public async dropTable({ name, ignoreMissing = false, namespace, branch }: {
     name: string;
     ignoreMissing?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_table",
-      input: { name, ignore_missing: ignoreMissing, namespace: namespace ?? null },
+      input: {
+        name,
+        ignore_missing: ignoreMissing,
+        namespace: namespace ?? null,
+        branch: branch ?? null,
+      },
     });
   }
 
-  public async dropIndex({ table, name, namespace }: {
+  public async dropIndex({ table, name, namespace, branch }: {
     table: string;
     name: string;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_index",
-      input: { table, name, namespace: namespace ?? null },
+      input: { table, name, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async addColumns({ table, newColumns, namespace }: {
+  public async addColumns({ table, newColumns, namespace, branch }: {
     table: string;
     newColumns: Record<string, string | DataType>;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
@@ -746,49 +992,54 @@ export class DatabaseClient {
             : { name, value_sql: value, data_type: null }
         )),
         namespace: namespace ?? null,
+        branch: branch ?? null,
       },
     });
   }
 
-  public async dropColumns({ table, columns, namespace }: {
+  public async dropColumns({ table, columns, namespace, branch }: {
     table: string;
     columns: string[];
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "drop_columns",
-      input: { table, columns, namespace: namespace ?? null },
+      input: { table, columns, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async insert({ table, records, namespace }: {
+  public async insert({ table, records, namespace, branch }: {
     table: string;
-    records: Array<Record<string, any>>;
+    records: DatabaseRows;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
-    await this.insertStream({ table, chunks: rowChunkList(records), namespace });
+    await this.insertStream({ table, chunks: rowChunkList(records), namespace, branch });
   }
 
-  public async insertStream({ table, chunks, namespace }: {
+  public async insertStream({ table, chunks, namespace, branch }: {
     table: string;
-    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    chunks: DatabaseRowChunks;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream({
       kind: "start",
       table,
       namespace: namespace ?? null,
+      branch: branch ?? null,
     }, chunks);
     await this.drainWriteStream("insert", input);
   }
 
-  public async update({ table, where, values, valuesSql, namespace }: {
+  public async update({ table, where, values, namespace, branch }: {
     table: string;
     where: string;
-    values?: Record<string, any>;
-    valuesSql?: Record<string, string>;
+    values: DatabaseRecord;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
@@ -796,45 +1047,49 @@ export class DatabaseClient {
       input: {
         table,
         where,
-        values: values == null ? null : Object.entries(values).map(([column, value]) => ({ column, value_json: JSON.stringify(encodeLegacyValue(value)) })),
-        values_sql: valuesSql == null ? null : Object.entries(valuesSql).map(([column, expression]) => ({ column, expression })),
+        values: Object.entries(values).map(([column, value]) => ({ column, value_json: JSON.stringify(encodeRecordValue(value)) })),
         namespace: namespace ?? null,
+        branch: branch ?? null,
       },
     });
   }
 
-  public async delete({ table, where, namespace }: {
+  public async delete({ table, where, namespace, branch }: {
     table: string;
     where: string;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "delete",
-      input: { table, where, namespace: namespace ?? null },
+      input: { table, where, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async merge({ table, on, records, namespace }: {
+  public async merge({ table, on, records, namespace, branch }: {
     table: string;
     on: string;
-    records: Array<Record<string, any>>;
+    records: DatabaseRows;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
-    await this.mergeStream({ table, on, chunks: rowChunkList(records), namespace });
+    await this.mergeStream({ table, on, chunks: rowChunkList(records), namespace, branch });
   }
 
-  public async mergeStream({ table, on, chunks, namespace }: {
+  public async mergeStream({ table, on, chunks, namespace, branch }: {
     table: string;
     on: string;
-    chunks: AsyncIterable<Array<Record<string, any>>> | Iterable<Array<Record<string, any>>>;
+    chunks: DatabaseRowChunks;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     const input = new DatabaseWriteInputStream({
       kind: "start",
       table,
       on,
       namespace: namespace ?? null,
+      branch: branch ?? null,
     }, chunks);
     await this.drainWriteStream("merge", input);
   }
@@ -842,9 +1097,9 @@ export class DatabaseClient {
   public async sql({ query, tables, params }: {
     query: string;
     tables: Array<TableRef | string>;
-    params?: Record<string, any>;
-  }): Promise<Array<Record<string, any>>> {
-    const rows: Array<Record<string, any>> = [];
+    params?: DatabaseRecord;
+  }): Promise<DatabaseRows> {
+    const rows: DatabaseRows = [];
     for await (const chunk of this.sqlStream({ query, tables, params })) {
       rows.push(...chunk);
     }
@@ -854,43 +1109,58 @@ export class DatabaseClient {
   public async *sqlStream({ query, tables, params }: {
     query: string;
     tables: Array<TableRef | string>;
-    params?: Record<string, any>;
-  }): AsyncIterable<Array<Record<string, any>>> {
+    params?: DatabaseRecord;
+  }): AsyncIterable<DatabaseRows> {
     yield* this.streamRows("sql", {
       kind: "start",
       query,
       tables: normalizeTableRefs(tables),
-      params_json: params == null ? null : JSON.stringify(encodeLegacyValue(params)),
+      params_json: params == null ? null : JSON.stringify(encodeDatabaseRecord(params)),
     });
   }
 
-  public async search({ table, text, vector, where, offset, limit, select, namespace }: {
+  public async search({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {
     table: string;
     text?: string;
     vector?: number[];
-    where?: string | Record<string, any>;
+    where?: DatabaseWhere;
     offset?: number;
     limit?: number;
     select?: string[];
     namespace?: string[];
-  }): Promise<Array<Record<string, any>>> {
-    const rows: Array<Record<string, any>> = [];
-    for await (const chunk of this.searchStream({ table, text, vector, where, offset, limit, select, namespace })) {
+    branch?: string;
+    version?: number;
+  }): Promise<DatabaseRows> {
+    const rows: DatabaseRows = [];
+    for await (const chunk of this.searchStream({
+      table,
+      text,
+      vector,
+      where,
+      offset,
+      limit,
+      select,
+      namespace,
+      branch,
+      version,
+    })) {
       rows.push(...chunk);
     }
     return rows;
   }
 
-  public async *searchStream({ table, text, vector, where, offset, limit, select, namespace }: {
+  public async *searchStream({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {
     table: string;
     text?: string;
     vector?: number[];
-    where?: string | Record<string, any>;
+    where?: DatabaseWhere;
     offset?: number;
     limit?: number;
     select?: string[];
     namespace?: string[];
-  }): AsyncIterable<Array<Record<string, any>>> {
+    branch?: string;
+    version?: number;
+  }): AsyncIterable<DatabaseRows> {
     yield* this.streamRows("search", {
       kind: "start",
       table,
@@ -902,15 +1172,19 @@ export class DatabaseClient {
       limit: limit ?? null,
       select: select ?? null,
       namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
     });
   }
 
-  public async count({ table, text, vector, where, namespace }: {
+  public async count({ table, text, vector, where, namespace, branch, version }: {
     table: string;
     text?: string;
     vector?: number[];
-    where?: string | Record<string, any>;
+    where?: DatabaseWhere;
     namespace?: string[];
+    branch?: string;
+    version?: number;
   }): Promise<number> {
     const response = await this.invoke("count", {
       table,
@@ -919,6 +1193,8 @@ export class DatabaseClient {
       text_columns: null,
       where: buildWhereClause(where),
       namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
     });
     if (!(response instanceof JsonContent) || typeof response.json.count !== "number" || !Number.isInteger(response.json.count)) {
       throw this._unexpectedResponseError("count");
@@ -926,11 +1202,18 @@ export class DatabaseClient {
     return response.json.count;
   }
 
-  public async inspect({ table, namespace }: {
+  public async inspect({ table, namespace, branch, version }: {
     table: string;
     namespace?: string[];
+    branch?: string;
+    version?: number;
   }): Promise<Record<string, DataType>> {
-    const response = await this.invoke("inspect", { table, namespace: namespace ?? null });
+    const response = await this.invoke("inspect", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
+    });
     if (!(response instanceof JsonContent) || !Array.isArray(response.json.fields)) {
       throw this._unexpectedResponseError("inspect");
     }
@@ -943,92 +1226,143 @@ export class DatabaseClient {
   }
 
   public async optimize(table: string): Promise<void>;
-  public async optimize(params: { table: string; namespace?: string[] }): Promise<void>;
-  public async optimize(tableOrParams: string | { table: string; namespace?: string[] }): Promise<void> {
+  public async optimize(params: { table: string; namespace?: string[]; branch?: string }): Promise<void>;
+  public async optimize(tableOrParams: string | { table: string; namespace?: string[]; branch?: string }): Promise<void> {
     const table = typeof tableOrParams === "string" ? tableOrParams : tableOrParams.table;
     const namespace = typeof tableOrParams === "string" ? undefined : tableOrParams.namespace;
-    await this.room.invoke({ toolkit: "database", tool: "optimize", input: { table, namespace: namespace ?? null } });
+    const branch = typeof tableOrParams === "string" ? undefined : tableOrParams.branch;
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "optimize",
+      input: { table, namespace: namespace ?? null, branch: branch ?? null },
+    });
   }
 
-  public async restore({ table, version, namespace }: {
+  public async restore({ table, version, namespace, branch }: {
     table: string;
     version: number;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "restore",
-      input: { table, version, namespace: namespace ?? null },
+      input: { table, version, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async checkout({ table, version, namespace }: {
-    table: string;
-    version: number;
-    namespace?: string[];
-  }): Promise<void> {
-    await this.room.invoke({
-      toolkit: "database",
-      tool: "checkout",
-      input: { table, version, namespace: namespace ?? null },
-    });
-  }
-
-  public async listVersions({ table, namespace }: {
+  public async listVersions({ table, namespace, branch }: {
     table: string;
     namespace?: string[];
+    branch?: string;
   }): Promise<TableVersion[]> {
-    const response = await this.invoke("list_versions", { table, namespace: namespace ?? null });
+    const response = await this.invoke("list_versions", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+    });
     if (!(response instanceof JsonContent) || !Array.isArray(response.json.versions)) {
       throw this._unexpectedResponseError("list_versions");
     }
     return response.json.versions.map((version) => tableVersionFromJson(version));
   }
 
-  public async createVectorIndex({ table, column, replace = false, namespace }: {
+  public async createVectorIndex({ table, column, replace = false, namespace, branch }: {
     table: string;
     column: string;
     replace?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_vector_index",
-      input: { table, column, replace, namespace: namespace ?? null },
+      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async createScalarIndex({ table, column, replace = false, namespace }: {
+  public async createScalarIndex({ table, column, replace = false, namespace, branch }: {
     table: string;
     column: string;
     replace?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_scalar_index",
-      input: { table, column, replace, namespace: namespace ?? null },
+      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async createFullTextSearchIndex({ table, column, replace = false, namespace }: {
+  public async createFullTextSearchIndex({ table, column, replace = false, namespace, branch }: {
     table: string;
     column: string;
     replace?: boolean;
     namespace?: string[];
+    branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "database",
       tool: "create_full_text_search_index",
-      input: { table, column, replace, namespace: namespace ?? null },
+      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
-  public async listIndexes({ table, namespace }: { table: string; namespace?: string[] }): Promise<TableIndex[]> {
-    const response = await this.invoke("list_indexes", { table, namespace: namespace ?? null });
+  public async listIndexes({ table, namespace, branch, version }: {
+    table: string;
+    namespace?: string[];
+    branch?: string;
+    version?: number;
+  }): Promise<TableIndex[]> {
+    const response = await this.invoke("list_indexes", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
+    });
     if (!(response instanceof JsonContent) || !Array.isArray(response.json.indexes)) {
       throw this._unexpectedResponseError("list_indexes");
     }
     return response.json.indexes.map((index) => tableIndexFromJson(index));
+  }
+
+  public async listBranches({ namespace }: {
+    namespace?: string[];
+  } = {}): Promise<TableBranch[]> {
+    const response = await this.invoke("list_branches", {
+      namespace: namespace ?? null,
+    });
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json.branches)) {
+      throw this._unexpectedResponseError("list_branches");
+    }
+    return response.json.branches.map((branch) => tableBranchFromJson(branch));
+  }
+
+  public async createBranch({ branch, fromBranch, namespace }: {
+    branch: string;
+    fromBranch?: string;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "create_branch",
+      input: {
+        branch,
+        from_branch: fromBranch ?? null,
+        namespace: namespace ?? null,
+      },
+    });
+  }
+
+  public async deleteBranch({ branch, namespace }: {
+    branch: string;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.room.invoke({
+      toolkit: "database",
+      tool: "delete_branch",
+      input: { branch, namespace: namespace ?? null },
+    });
   }
 }

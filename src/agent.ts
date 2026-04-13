@@ -83,17 +83,29 @@ export abstract class Tool {
 
 /*
 -------------------------------------------------------------------------
-Toolkit (abstract)
+Toolkit
 -------------------------------------------------------------------------
 */
-export abstract class Toolkit {
+export class Toolkit {
+    readonly name: string;
+    readonly title: string;
+    readonly description: string;
+    readonly thumbnailUrl?: string;
     readonly tools: Tool[];
     readonly rules: string[];
 
-    constructor({tools, rules = []}: {
+    constructor({name, title = name, description = "", thumbnailUrl, tools, rules = []}: {
+        name: string;
+        title?: string;
+        description?: string;
+        thumbnailUrl?: string;
         tools: Tool[];
         rules?: string[];
     }) {
+        this.name = name;
+        this.title = title;
+        this.description = description;
+        this.thumbnailUrl = thumbnailUrl;
         this.tools = tools;
         this.rules = rules;
     }
@@ -127,37 +139,44 @@ export abstract class Toolkit {
 
 /*
 -------------------------------------------------------------------------
-RemoteToolkit (abstract)
+HostedToolkit
 -------------------------------------------------------------------------
 */
-export abstract class RemoteToolkit extends Toolkit {
+export class HostedToolkit {
+    public readonly toolkit: Toolkit;
+    private readonly _stopHostedToolkit: () => Promise<void>;
+
+    constructor({ toolkit, stopHostedToolkit }: {
+        toolkit: Toolkit;
+        stopHostedToolkit: () => Promise<void>;
+    }) {
+        this.toolkit = toolkit;
+        this._stopHostedToolkit = stopHostedToolkit;
+    }
+
+    async stop(): Promise<void> {
+        await this._stopHostedToolkit();
+    }
+}
+
+class _RemoteToolkitWrapper {
     protected readonly client: RoomClient;
-    protected readonly name: string;
-    protected readonly title: string;
-    protected readonly description: string;
+    protected readonly toolkit: Toolkit;
     private _registrationId?: string;
 
-    constructor({ name, title, description, room, tools, rules = [] }: {
-        name: string;
-        title: string;
-        description: string;
+    constructor({ toolkit, room }: {
+        toolkit: Toolkit;
         room: RoomClient;
-        tools: Tool[];
-        rules?: string[];
     }) {
-        super({ tools, rules });
-
+        this.toolkit = toolkit;
         this.client = room;
-        this.name = name;
-        this.title = title;
-        this.description = description;
     }
 
     async start({ public_: isPublic = false }: { public_?: boolean } = {}): Promise<void> {
         // Add a handler for room.tool_call.<name>
         const handler = this._toolCall.bind(this);
 
-        this.client.protocol.addHandler(`room.tool_call.${this.name}`, handler);
+        this.client.protocol.addHandler(`room.tool_call.${this.toolkit.name}`, handler);
 
         await this._register(isPublic);
     }
@@ -166,16 +185,17 @@ export abstract class RemoteToolkit extends Toolkit {
         await this._unregister();
 
         // Remove the handler
-        this.client.protocol.removeHandler(`room.tool_call.${this.name}`);
+        this.client.protocol.removeHandler(`room.tool_call.${this.toolkit.name}`);
     }
 
     private async _register(public_: boolean): Promise<void> {
         const response = await this.client.sendRequest("room.register_toolkit", {
-            name: this.name,
-            title: this.title,
-            description: this.description,
-            tools: this.getTools(),
+            name: this.toolkit.name,
+            title: this.toolkit.title,
+            description: this.toolkit.description,
+            tools: this.toolkit.getTools(),
             public: public_,
+            thumbnail_url: this.toolkit.thumbnailUrl,
         }) as JsonContent;
 
         // Assume response is a JsonContent
@@ -219,7 +239,7 @@ export abstract class RemoteToolkit extends Toolkit {
                 args = (rawArguments as Record<string, any>) ?? {};
             }
 
-            const response = await this.execute(toolName, args);
+            const response = await this.toolkit.execute(toolName, args);
             await this.client.protocol.send("room.tool_call_response", response.pack(), messageId);
 
         } catch (e: any) {
@@ -229,6 +249,19 @@ export abstract class RemoteToolkit extends Toolkit {
             await this.client.protocol.send("room.tool_call_response", err.pack(), messageId);
         }
     }
+}
+
+export async function startHostedToolkit({ room, toolkit, public_: isPublic = false }: {
+    room: RoomClient;
+    toolkit: Toolkit;
+    public_?: boolean;
+}): Promise<HostedToolkit> {
+    const wrapper = new _RemoteToolkitWrapper({ toolkit, room });
+    await wrapper.start({ public_: isPublic });
+    return new HostedToolkit({
+        toolkit,
+        stopHostedToolkit: () => wrapper.stop(),
+    });
 }
 
 /*

@@ -17,6 +17,60 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("meshagent_client_secret_test", () => {
+    it("addUserToProject omits unset permission fields but keeps explicit false", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
+
+        globalThis.fetch = (async (url, init) => {
+            if (typeof url !== "string") {
+                throw new Error("expected string url");
+            }
+
+            calls.push({
+                method: init?.method ?? "GET",
+                url,
+                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
+            });
+
+            return jsonResponse({ ok: true });
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+
+            await client.addUserToProject("proj_123", "user-1");
+            await client.addUserToProject("proj_123", "user-2", {
+                isAdmin: false,
+                isDeveloper: false,
+                canCreateRooms: false,
+            });
+
+            expect(calls).to.deep.equal([
+                {
+                    method: "POST",
+                    url: "http://example.test/accounts/projects/proj_123/users",
+                    body: {
+                        project_id: "proj_123",
+                        user_id: "user-1",
+                    },
+                },
+                {
+                    method: "POST",
+                    url: "http://example.test/accounts/projects/proj_123/users",
+                    body: {
+                        project_id: "proj_123",
+                        user_id: "user-2",
+                        is_admin: false,
+                        is_developer: false,
+                        can_create_rooms: false,
+                    },
+                },
+            ]);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it("createProjectSecret sends a base64 payload", async () => {
         const originalFetch = globalThis.fetch;
         const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];

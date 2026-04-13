@@ -6,6 +6,7 @@ import { expect } from "chai";
 // Example placeholder type definitions and imports.
 // Replace with the real imports from your project.
 import {
+    DatabaseRows,
     RoomClient,
     IntDataType,
     TextDataType,
@@ -215,7 +216,7 @@ describe("database_client_test", function (this: Mocha.Suite) {
         });
 
         // Insert 1000 rows with random vector data
-        const data: Array<Record<string, unknown>> = [];
+        const data: DatabaseRows = [];
 
         for (let i = 0; i < 1000; i++) {
             const vector: number[] = [];

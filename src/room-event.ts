@@ -119,6 +119,38 @@ export class FileUpdatedEvent extends RoomEvent {
 }
 
 /**
+ * A FileMovedEvent, indicating a file or folder was moved.
+ */
+export class FileMovedEvent extends RoomEvent {
+    public sourcePath: string;
+    public destinationPath: string;
+    public participantId: string;
+
+    constructor({
+        sourcePath,
+        destinationPath,
+        participantId,
+    }: {
+        sourcePath: string;
+        destinationPath: string;
+        participantId: string;
+    }) {
+        super();
+        this.sourcePath = sourcePath;
+        this.destinationPath = destinationPath;
+        this.participantId = participantId;
+    }
+
+    get name(): string {
+        return "file moved";
+    }
+
+    get description(): string {
+        return `a file was moved from ${this.sourcePath} to ${this.destinationPath}`;
+    }
+}
+
+/**
  * A RoomLogEvent for developer or system logs.
  */
 export class RoomLogEvent extends RoomEvent {
