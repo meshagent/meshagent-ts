@@ -419,6 +419,20 @@ function base64ToBytes(base64: string): Uint8Array {
     return bytes;
 }
 
+function toFetchBody(body: RequestBody): string | ArrayBuffer | undefined {
+    if (body == null) {
+        return undefined;
+    }
+
+    if (typeof body === "string" || body instanceof ArrayBuffer) {
+        return body;
+    }
+
+    const copy = new Uint8Array(body.byteLength);
+    copy.set(body);
+    return copy.buffer;
+}
+
 function normalizeBinary(data: Uint8Array | ArrayBuffer | Buffer): Uint8Array {
     if (data instanceof Uint8Array) {
         return data;
@@ -480,7 +494,7 @@ export class Meshagent {
         const response = await fetch(url, {
             method,
             headers: finalHeaders,
-            body: requestBody ?? undefined,
+            body: toFetchBody(requestBody),
         });
 
         if (!response.ok) {

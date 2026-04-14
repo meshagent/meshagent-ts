@@ -2,7 +2,7 @@
 import { EventEmitter } from "./event-emitter";
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
-import { BinaryContent, Content, ControlContent, ErrorContent } from "./response";
+import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response";
 import { unpackMessage } from "./utils";
 import { RoomLogEvent } from "./room-event";
 

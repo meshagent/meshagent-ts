@@ -1,6 +1,6 @@
 import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client";
 import { Protocol } from "./protocol";
-import { BinaryContent, Content, EmptyContent, FileContent, JsonContent } from "./response";
+import { BinaryContent, EmptyContent, FileContent, JsonContent, type Content } from "./response";
 import { RoomClient } from "./room-client";
 import { RoomServerException } from "./room-server-client";
 import { unpackMessage } from "./utils";

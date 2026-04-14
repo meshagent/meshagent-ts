@@ -10,8 +10,8 @@ import {
     registerDocument,
     unregisterDocument,
     applyChanges,
-    UpdatePayload,
 } from "./runtime";
+import type { UpdatePayload } from "./runtime";
 
 /** Simulates Dart's `Uint8List`. In TypeScript, we usually use `Uint8Array`. */
 export type Uint8List = Uint8Array;
