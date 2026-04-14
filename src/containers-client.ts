@@ -201,30 +201,40 @@ function parseBuildJob(data: Record<string, unknown>, operation: string): BuildJ
   };
 }
 
-function buildRequestPayload(params: {
+async function* buildInputStream(params: {
   tag: string;
-  mounts: ContainerMountSpec[];
+  mountPath: string;
   contextPath: string;
+  chunks: AsyncIterable<Uint8Array>;
   dockerfilePath?: string;
+  optimizeImage?: boolean;
   private?: boolean;
   credentials?: DockerSecret[];
-  contextArchivePath?: string;
-  contextArchiveRef?: string;
-  contextArchiveMountPath?: string;
-  contextArchiveArch?: string;
-}): Record<string, unknown> {
-  return {
-    tag: params.tag,
-    mounts: toMountList(params.mounts),
-    context_path: params.contextPath,
-    dockerfile_path: params.dockerfilePath ?? null,
-    private: params.private ?? false,
-    credentials: toCredentials(params.credentials ?? []),
-    context_archive_path: params.contextArchivePath ?? null,
-    context_archive_ref: params.contextArchiveRef ?? null,
-    context_archive_mount_path: params.contextArchiveMountPath ?? null,
-    context_archive_arch: params.contextArchiveArch ?? null,
-  };
+  builderName?: string;
+  size?: number;
+}): AsyncIterable<Content> {
+  yield new BinaryContent({
+    data: new Uint8Array(0),
+    headers: {
+      kind: "start",
+      tag: params.tag,
+      mount_path: params.mountPath,
+      context_path: params.contextPath,
+      dockerfile_path: params.dockerfilePath ?? null,
+      optimize_image: params.optimizeImage ?? true,
+      private: params.private ?? false,
+      credentials: toCredentials(params.credentials ?? []),
+      builder_name: params.builderName ?? null,
+      size: params.size ?? null,
+    },
+  });
+
+  for await (const chunk of params.chunks) {
+    yield new BinaryContent({
+      data: new Uint8Array(chunk),
+      headers: { kind: "data" },
+    });
+  }
 }
 
 export class ExecSession {
@@ -540,38 +550,23 @@ export class ContainersClient {
     return readStringField(output.json, "container_id", "run");
   }
 
-  public async startBuild(params: {
-    tag: string;
-    mounts: ContainerMountSpec[];
-    contextPath: string;
-    dockerfilePath?: string;
-    private?: boolean;
-    credentials?: DockerSecret[];
-    contextArchivePath?: string;
-    contextArchiveRef?: string;
-    contextArchiveMountPath?: string;
-    contextArchiveArch?: string;
-  }): Promise<string> {
-    const output = await this.invoke("start_build", buildRequestPayload(params));
-    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
-      throw this.unexpectedResponseError("start_build");
-    }
-    return readStringField(output.json, "build_id", "start_build");
-  }
-
   public async build(params: {
     tag: string;
-    mounts: ContainerMountSpec[];
+    mountPath: string;
     contextPath: string;
+    chunks: AsyncIterable<Uint8Array>;
     dockerfilePath?: string;
+    optimizeImage?: boolean;
     private?: boolean;
     credentials?: DockerSecret[];
-    contextArchivePath?: string;
-    contextArchiveRef?: string;
-    contextArchiveMountPath?: string;
-    contextArchiveArch?: string;
+    builderName?: string;
+    size?: number;
   }): Promise<string> {
-    const output = await this.invoke("build", buildRequestPayload(params));
+    const output = await this.room.invokeWithStreamInput({
+      toolkit: "containers",
+      tool: "build",
+      input: buildInputStream(params),
+    });
     if (!(output instanceof JsonContent) || !isRecord(output.json)) {
       throw this.unexpectedResponseError("build");
     }
