@@ -1,7 +1,7 @@
 // agents_client.ts
 
 import { RoomClient } from "./room-client";
-import { Content } from "./response";
+import type { Content } from "./response";
 import { ToolContentSpec } from "./tool-content-type";
 
 /**

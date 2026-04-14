@@ -3,7 +3,7 @@ import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { MeshSchema } from "./schema";
 import { MeshDocument, RoomServerException } from "./room-server-client";
-import { BinaryContent, Content, ControlContent, ErrorContent } from "./response";
+import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response";
 import { decoder, encoder, RefCount, unpackMessage } from "./utils";
 import { unregisterDocument, applyBackendChanges } from "./runtime";
 import { Completer } from "./completer";

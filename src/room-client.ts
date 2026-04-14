@@ -19,7 +19,7 @@ import { ServicesClient } from "./services-client";
 import { RoomServerException } from "./room-server-client";
 
 import { RoomEvent } from "./room-event";
-import { BinaryContent, Content, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response";
+import { BinaryContent, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent, type Content } from "./response";
 
 /**
  * Represents a request/response structure for your protocol.

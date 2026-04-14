@@ -1,5 +1,5 @@
 import { RoomClient } from "./room-client";
-import { Content, EmptyContent, JsonContent } from "./response";
+import { EmptyContent, JsonContent, type Content } from "./response";
 import { RoomServerException } from "./room-server-client";
 
 
