@@ -6,6 +6,7 @@ import {
   Protocol,
   ProtocolChannel,
   ProtocolCloseKind,
+  ProtocolHandshakeException,
   ProtocolReconnectUnsupportedException,
 } from "../protocol";
 import {
@@ -128,6 +129,41 @@ class IdleProtocolChannel implements ProtocolChannel {
   ): void {}
 
   public dispose(): void {}
+
+  public async sendData(_data: Uint8Array): Promise<void> {}
+}
+
+class HandshakeStatusChannel implements ProtocolChannel {
+  private readonly _statusCode: number;
+  private readonly _statusText: string;
+  private _started = false;
+
+  constructor({ statusCode, statusText }: { statusCode: number; statusText: string }) {
+    this._statusCode = statusCode;
+    this._statusText = statusText;
+  }
+
+  public start(
+    _onDataReceived: (data: Uint8Array) => void,
+    { onError }: { onDone?: () => void; onError?: (error: unknown) => void },
+  ): void {
+    if (this._started) {
+      throw new Error("Already started");
+    }
+    this._started = true;
+    queueMicrotask(() => {
+      onError?.(
+        new ProtocolHandshakeException({
+          statusCode: this._statusCode,
+          statusText: this._statusText,
+        }),
+      );
+    });
+  }
+
+  public dispose(): void {
+    this._started = false;
+  }
 
   public async sendData(_data: Uint8Array): Promise<void> {}
 }
@@ -286,6 +322,85 @@ describe("room_client_request_lifecycle", () => {
 
     pair.dispose();
   });
+
+  for (const handshakeStatus of [
+    { statusCode: 403, statusText: "Forbidden" },
+    { statusCode: 404, statusText: "Not Found" },
+  ]) {
+    it(`start does not retry websocket handshake status ${handshakeStatus.statusCode}`, async () => {
+      let protocolFactoryCalls = 0;
+      const room = new RoomClient({
+        protocolFactory: () => {
+          protocolFactoryCalls += 1;
+          return new Protocol({
+            channel: new HandshakeStatusChannel(handshakeStatus),
+          });
+        },
+        reconnectTimeout: 500,
+      });
+
+      try {
+        await room.start();
+        throw new Error("expected start to fail");
+      } catch (error) {
+        expect(error).to.be.instanceOf(RoomServerException);
+        expect((error as RoomServerException).message).to.equal(
+          `websocket connect failed with status ${handshakeStatus.statusCode}: ${handshakeStatus.statusText}`,
+        );
+      } finally {
+        room.dispose();
+      }
+
+      expect(protocolFactoryCalls).to.equal(1);
+    });
+
+    it(`reconnect does not retry websocket handshake status ${handshakeStatus.statusCode}`, async () => {
+      const pair = new ProtocolPair();
+      let protocolFactoryCalls = 0;
+
+      const room = new RoomClient({
+        protocolFactory: () => {
+          protocolFactoryCalls += 1;
+          if (protocolFactoryCalls === 1) {
+            return pair.clientProtocolFactory();
+          }
+          return new Protocol({
+            channel: new HandshakeStatusChannel(handshakeStatus),
+          });
+        },
+        reconnectTimeout: 500,
+      });
+
+      pair.serverProtocol.start({ onMessage: async () => {} });
+
+      const start = room.start();
+      await sendRoomReady(pair.serverProtocol);
+      await start;
+
+      pair.disconnectClientWithError(new Error("socket disconnected"));
+      await room.waitForClose();
+
+      expect(protocolFactoryCalls).to.equal(2);
+      expect(room.isClosed).to.equal(true);
+      expect(room.closeKind).to.equal(ProtocolCloseKind.ERROR);
+      expect(room.closeReason).to.equal(
+        `websocket connect failed with status ${handshakeStatus.statusCode}: ${handshakeStatus.statusText}`,
+      );
+
+      try {
+        await room.sendRequest("noop", {});
+        throw new Error("expected sendRequest to fail");
+      } catch (error) {
+        expect(error).to.be.instanceOf(RoomServerException);
+        expect((error as RoomServerException).message).to.equal(
+          `room connection unexpectedly closed before request completed: websocket connect failed with status ${handshakeStatus.statusCode}: ${handshakeStatus.statusText}`,
+        );
+      } finally {
+        room.dispose();
+        pair.dispose();
+      }
+    });
+  }
 
   it("reconnect resends local attributes, reenables messaging, reopens sync docs, and flushes queued sends", async () => {
     const pair1 = new ProtocolPair();

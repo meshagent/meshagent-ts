@@ -9,6 +9,7 @@ import {
   Protocol,
   ProtocolCloseException,
   ProtocolCloseKind,
+  ProtocolHandshakeException,
   ProtocolFactory,
   ProtocolReconnectUnsupportedException,
   WebSocketClientProtocol,
@@ -75,6 +76,27 @@ class RoomClientTerminalState {
   }
 }
 
+class RoomConnectionStatusException extends RoomServerException {
+  public readonly statusCode: number;
+
+  constructor({
+    statusCode,
+    statusText,
+  }: {
+    statusCode: number;
+    statusText?: string;
+  }) {
+    const normalizedStatusText = statusText?.trim();
+    super(
+      normalizedStatusText == null || normalizedStatusText.length === 0
+        ? `websocket connect failed with status ${statusCode}`
+        : `websocket connect failed with status ${statusCode}: ${normalizedStatusText}`,
+    );
+    this.name = "RoomConnectionStatusException";
+    this.statusCode = statusCode;
+  }
+}
+
 function normalizeCloseReason(reason: string | null | undefined): string | null {
   if (reason == null) {
     return null;
@@ -87,12 +109,28 @@ function wrapRoomConnectionError(error: unknown): RoomServerException {
   if (error instanceof RoomServerException) {
     return error;
   }
+  if (error instanceof ProtocolHandshakeException) {
+    return new RoomConnectionStatusException({
+      statusCode: error.statusCode,
+      statusText: error.statusText,
+    });
+  }
   if (error instanceof ProtocolCloseException) {
     return new RoomServerException(
       normalizeCloseReason(error.reason) ?? `room connection closed with status ${error.closeCode}`,
     );
   }
   return new RoomServerException(`room connection error: ${String(error)}`);
+}
+
+function nonRetryableConnectFailureReason(error: unknown): string | null {
+  if (
+    error instanceof RoomConnectionStatusException
+    && (error.statusCode === 403 || error.statusCode === 404)
+  ) {
+    return error.message;
+  }
+  return null;
 }
 
 function roomClosedBeforeReadyError(protocol: Protocol): RoomServerException {
@@ -869,10 +907,15 @@ export class RoomClient {
           return false;
         }
 
+        const nonRetryableCloseReason = nonRetryableConnectFailureReason(error);
         this._allowDisconnectedRequests = false;
         await this._closeProtocol(nextProtocol);
         await this.sync._onRoomDisconnect();
         this.messaging._onRoomDisconnect({ reason: normalizeCloseReason(nextProtocol.closeReason) });
+        if (nonRetryableCloseReason != null) {
+          await this._closeAfterUnexpectedDisconnect({ closeReason: nonRetryableCloseReason });
+          return false;
+        }
         continue;
       }
 

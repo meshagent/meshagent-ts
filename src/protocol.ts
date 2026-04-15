@@ -1,3 +1,4 @@
+import type { ClientRequest, IncomingMessage } from "http";
 import WebSocket, { type MessageEvent } from "isomorphic-ws";
 
 import { Completer } from "./completer";
@@ -40,6 +41,27 @@ export class ProtocolCloseException extends Error {
     this.closeCode = closeCode;
     this.reason = reason;
   }
+}
+
+export class ProtocolHandshakeException extends Error {
+  public readonly statusCode: number;
+  public readonly statusText?: string;
+
+  constructor({ statusCode, statusText }: { statusCode: number; statusText?: string }) {
+    const normalizedStatusText = statusText?.trim();
+    super(
+      normalizedStatusText == null || normalizedStatusText.length === 0
+        ? `websocket connect failed with status ${statusCode}`
+        : `websocket connect failed with status ${statusCode}: ${normalizedStatusText}`,
+    );
+    this.name = "ProtocolHandshakeException";
+    this.statusCode = statusCode;
+    this.statusText = normalizedStatusText;
+  }
+}
+
+function isNodeRuntime(): boolean {
+  return typeof process !== "undefined" && process.release?.name === "node";
 }
 
 export interface ProtocolChannel {
@@ -121,6 +143,23 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
   private _onDataReceived?: (data: Uint8Array) => void;
   private _doneHandler?: () => void;
   private _errorHandler?: (error: unknown) => void;
+  private readonly _onUnexpectedResponse = (
+    _request: ClientRequest,
+    response: IncomingMessage,
+  ): void => {
+    const statusCode = response.statusCode;
+    if (statusCode == null) {
+      this._finish("error", new Error("websocket connect failed"));
+      return;
+    }
+    this._finish(
+      "error",
+      new ProtocolHandshakeException({
+        statusCode,
+        statusText: response.statusMessage,
+      }),
+    );
+  };
 
   constructor({ url, jwt }: { url: string; jwt: string }) {
     this.url = url;
@@ -142,6 +181,9 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
 
     const socket = new WebSocket(url.toString());
     this.webSocket = socket;
+    if (isNodeRuntime()) {
+      socket.on("unexpected-response", this._onUnexpectedResponse);
+    }
     socket.addEventListener("open", this._onOpen);
     socket.addEventListener("message", this._onMessage);
     socket.addEventListener("close", this._onClose);
@@ -222,6 +264,9 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
     socket.removeEventListener("message", this._onMessage);
     socket.removeEventListener("close", this._onClose);
     socket.removeEventListener("error", this._onError);
+    if (isNodeRuntime()) {
+      socket.off("unexpected-response", this._onUnexpectedResponse);
+    }
 
     if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
       socket.close(1000);
