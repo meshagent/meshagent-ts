@@ -1,4 +1,5 @@
-import { decodeJwt, jwtVerify, JWTPayload, SignJWT } from "jose";
+import { decodeJwt, jwtVerify, SignJWT } from "jose";
+import type { JWTPayload } from "jose";
 import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client";
 import { parseApiKey } from "./api_keys";
 import { __version__ } from "./version";

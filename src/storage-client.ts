@@ -3,10 +3,12 @@
 import { RoomClient } from "./room-client";
 import { Protocol } from "./protocol";
 import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
-import { BinaryContent, Content, ControlContent, ErrorContent, JsonContent, FileContent } from "./response";
+import { BinaryContent, ControlContent, ErrorContent, JsonContent, FileContent } from "./response";
+import type { Content } from "./response";
 import { unpackMessage } from "./utils";
 import { EventEmitter } from "./event-emitter";
 import { RoomServerException } from "./room-server-client";
+
 
 const _DEFAULT_UPLOAD_MIME_TYPE = "application/octet-stream";
 const _UPLOAD_MIME_TYPES_BY_SUFFIX = new Map<string, string>([
