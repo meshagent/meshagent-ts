@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { MessagingClient } from "../messaging-client";
 import { RemoteParticipant } from "../participant";
 import { RoomMessage } from "../room-event";
+import { JsonContent } from "../response";
 import { RoomServerException } from "../room-server-client";
 
 class FakeProtocol {
@@ -12,7 +13,11 @@ class FakeProtocol {
     this.handlers.set(type, handler);
   }
 
-  public removeHandler(type: string): void {
+  public removeHandler(type: string, handler: unknown): void {
+    const current = this.handlers.get(type);
+    if (current !== handler) {
+      throw new Error(`handler mismatch for ${type}`);
+    }
     this.handlers.delete(type);
   }
 }
@@ -20,13 +25,48 @@ class FakeProtocol {
 class FakeRoom {
   public readonly protocol = new FakeProtocol();
   public readonly invocations: Array<{toolkit: string; tool: string; input: Record<string, any>}> = [];
+  public isConnected = true;
+  public _allowDisconnectedRequests = false;
+  public localParticipant = null;
 
   public async invoke(params: {
     toolkit: string;
     tool: string;
-    input: Record<string, any>;
+    input: unknown;
   }): Promise<void> {
-    this.invocations.push(params);
+    this.invocations.push({
+      toolkit: params.toolkit,
+      tool: params.tool,
+      input: params.input instanceof JsonContent ? params.input.json : (params.input as Record<string, any>),
+    });
+  }
+
+  public invokeNowait(params: {
+    toolkit: string;
+    tool: string;
+    input?: unknown;
+  }): void {
+    void this.invoke({
+      toolkit: params.toolkit,
+      tool: params.tool,
+      input: params.input ?? {},
+    });
+  }
+
+  public isActiveProtocol(): boolean {
+    return true;
+  }
+
+  public async _waitUntilConnectedForMessages(): Promise<void> {}
+
+  public _raiseIfTerminalForMessages(): void {}
+
+  public _coerceMessageSendError(error: RoomServerException): RoomServerException {
+    return error;
+  }
+
+  public _messageStopError(): RoomServerException {
+    return new RoomServerException("Cannot send messages because messaging has been stopped");
   }
 
   public emit(): void {}
@@ -56,7 +96,7 @@ describe("messaging participant presence", () => {
   it("resolves ad-hoc remote participants by id before sending", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
-    await client.start();
+    client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
 
@@ -83,7 +123,7 @@ describe("messaging participant presence", () => {
   it("ignores offline remotes when ignoreOffline is enabled", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
-    await client.start();
+    client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
     const remote = [...client.remoteParticipants][0];
@@ -106,7 +146,7 @@ describe("messaging participant presence", () => {
   it("throws when sending to an offline remote without ignoreOffline", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
-    await client.start();
+    client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
     const remote = [...client.remoteParticipants][0];
@@ -133,7 +173,7 @@ describe("messaging participant presence", () => {
     const client = new MessagingClient({ room: room as never });
 
     expect(client.isEnabled).to.equal(false);
-    await client.enable();
+    client.enable();
     expect(client.isEnabled).to.equal(true);
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
@@ -143,14 +183,14 @@ describe("messaging participant presence", () => {
     expect(client.getParticipant("remote-1")).to.equal(participants[0]);
     expect(client.getParticipantByName("Remote User")).to.equal(participants[0]);
 
-    await client.disable();
+    client.disable();
     expect(client.isEnabled).to.equal(false);
   });
 
   it("drops nowait messages for removed participants", async () => {
     const room = new FakeRoom();
     const client = new MessagingClient({ room: room as never });
-    await client.start();
+    client.start();
 
     (client as any)._onParticipantEnabled(participantEnabledMessage());
     const remote = client.getParticipant("remote-1");
@@ -168,5 +208,40 @@ describe("messaging participant presence", () => {
     expect(room.invocations).to.deep.equal([]);
     expect(remote!.online).to.equal(false);
     expect(client.getParticipant("remote-1")).to.equal(null);
+  });
+
+  it("clears participants while disconnected and reenables on reconnect", () => {
+    const room = new FakeRoom();
+    const client = new MessagingClient({ room: room as never });
+    client.start();
+    client.enable();
+
+    (client as any)._onMessagingEnabled(new RoomMessage({
+      fromParticipantId: "remote-1",
+      type: "messaging.enabled",
+      message: {
+        participants: [{
+          id: "remote-1",
+          role: "member",
+          attributes: { name: "Remote User" },
+        }],
+      },
+    }));
+
+    expect(client.online).to.equal(true);
+    expect(client.remoteParticipants).to.have.length(1);
+
+    client._onRoomDisconnect({ reason: "socket error" });
+
+    expect(client.online).to.equal(false);
+    expect(client.remoteParticipants).to.deep.equal([]);
+
+    client._onRoomReconnect();
+
+    expect(room.invocations).to.deep.include({
+      toolkit: "messaging",
+      tool: "enable",
+      input: {},
+    });
   });
 });

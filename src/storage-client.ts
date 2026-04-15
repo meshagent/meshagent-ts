@@ -44,6 +44,7 @@ const _UPLOAD_MIME_TYPES_BY_EXTENSION = new Map<string, string>([
 ]);
 
 type StorageClientRoom = Pick<RoomClient, "invoke" | "invokeStream" | "emit"> & {
+  isActiveProtocol(protocol: Protocol): boolean;
   protocol: Pick<Protocol, "addHandler">;
 };
 
@@ -127,6 +128,9 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   }
 
   private async _handleFileUpdated(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
+    if (!this.client.isActiveProtocol(protocol)) {
+      return;
+    }
     const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
     const event = new FileUpdatedEvent({ path: data["path"], participantId: data["participant_id"] });
     this.client.emit(event);
@@ -134,6 +138,9 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   }
 
   private async _handleFileDeleted(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
+    if (!this.client.isActiveProtocol(protocol)) {
+      return;
+    }
     const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
    
     const event = new FileDeletedEvent({ path: data["path"], participantId: data["participant_id"] });
@@ -142,6 +149,9 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   }
 
   private async _handleFileMoved(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
+    if (!this.client.isActiveProtocol(protocol)) {
+      return;
+    }
     const [ data, _ ] = unpackMessage(bytes || new Uint8Array());
 
     const event = new FileMovedEvent({

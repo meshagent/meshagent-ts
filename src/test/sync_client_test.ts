@@ -8,19 +8,13 @@ import { ElementType } from "../schema";
 import { encoder, packMessage, unpackMessage } from "../utils";
 
 class ProtocolPair {
-  public readonly clientProtocol: Protocol;
   public readonly serverProtocol: Protocol;
 
   private readonly clientToServer = new ProtocolMessageStream<Uint8Array>();
   private readonly serverToClient = new ProtocolMessageStream<Uint8Array>();
+  private _clientProtocol: Protocol | null = null;
 
   constructor() {
-    this.clientProtocol = new Protocol({
-      channel: new StreamProtocolChannel({
-        input: this.serverToClient,
-        output: this.clientToServer,
-      }),
-    });
     this.serverProtocol = new Protocol({
       channel: new StreamProtocolChannel({
         input: this.clientToServer,
@@ -29,8 +23,22 @@ class ProtocolPair {
     });
   }
 
+  public clientProtocolFactory(): Protocol {
+    if (this._clientProtocol != null) {
+      throw new Error("protocolFactory was not configured for reconnecting this protocol");
+    }
+    const protocol = new Protocol({
+      channel: new StreamProtocolChannel({
+        input: this.serverToClient,
+        output: this.clientToServer,
+      }),
+    });
+    this._clientProtocol = protocol;
+    return protocol;
+  }
+
   dispose(): void {
-    this.clientProtocol.dispose();
+    this._clientProtocol?.dispose();
     this.serverProtocol.dispose();
     this.clientToServer.close();
     this.serverToClient.close();
@@ -42,6 +50,11 @@ async function sendRoomReady(protocol: Protocol): Promise<void> {
     room_name: "test-room",
     room_url: "ws://example/rooms/test-room",
     session_id: "session-1",
+  }));
+  await protocol.send("connected", packMessage({
+    type: "init",
+    participantId: "self",
+    attributes: { name: "self" },
   }));
 }
 
@@ -126,7 +139,7 @@ describe("sync_client_test", () => {
       },
     });
 
-    const room = new RoomClient({ protocol: pair.clientProtocol });
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
     const start = room.start();
     await sendRoomReady(pair.serverProtocol);
     await start;

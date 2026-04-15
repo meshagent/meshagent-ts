@@ -42,7 +42,7 @@ describe("error_content_test", () => {
   it("maps ErrorContent.code to RoomServerException.code in sendRequest", async () => {
     const messageId = 77;
     const protocol = new TestProtocol(messageId);
-    const room = new RoomClient({ protocol });
+    const room = new RoomClient({ protocolFactory: () => protocol });
 
     const pending = room.sendRequest("room.test", {});
     await (room as any)._handleResponse(

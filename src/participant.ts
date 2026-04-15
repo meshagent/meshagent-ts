@@ -1,12 +1,11 @@
 // participant.ts
 import { RoomClient } from "./room-client";
-import { packMessage } from "./utils";
 
 /**
  * An abstract base class for participants.
  */
 export abstract class Participant {
-  public readonly id: string;
+  public id: string;
 
   protected readonly client: RoomClient;
   protected _attributes: Record<string, unknown> = {};
@@ -31,6 +30,17 @@ export abstract class Participant {
     return this._attributes[name];
   }
 
+  public _replaceIdentity({
+    participantId,
+    attributes,
+  }: {
+    participantId: string;
+    attributes: Record<string, unknown>;
+  }): void {
+    this.id = participantId;
+    this._attributes = { ...attributes };
+  }
+
   public _setAttribute(name: string, value: unknown): void {
     this._attributes[name] = value;
   }
@@ -39,6 +49,10 @@ export abstract class Participant {
     for (const [name, value] of Object.entries(attributes)) {
       this._setAttribute(name, value);
     }
+  }
+
+  public _attributesSnapshot(): Record<string, unknown> {
+    return { ...this._attributes };
   }
 }
 
@@ -71,16 +85,8 @@ export class LocalParticipant extends Participant {
   /**
    * Sets an attribute locally, then sends an update over the protocol.
    */
-  async setAttribute(name: string, value: unknown): Promise<void> {
+  setAttribute(name: string, value: unknown): void {
     this._setAttribute(name, value);
-
-    try {
-      const payload = packMessage({ [name]: value });
-
-      await this.client.protocol.send("set_attributes", payload);
-
-    } catch (err) {
-      console.warn("Unable to send attribute changes", err);
-    }
+    this.client._sendLocalAttributesNowait({ [name]: value });
   }
 }

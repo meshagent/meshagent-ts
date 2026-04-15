@@ -62,13 +62,13 @@ describe("test storage client", function (this: Mocha.Suite) {
     before(async () => {
         const config = getConfig();
 
-        const protocol = await websocketProtocol({
+        const protocolFactory = await websocketProtocol({
             roomName: room,
             participantName: "client",
             ...config,
         });
 
-        client = new RoomClient({ protocol });
+        client = new RoomClient({ protocolFactory });
 
         // Start the client and wait for readiness
         await client.start();

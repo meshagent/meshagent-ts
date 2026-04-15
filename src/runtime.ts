@@ -1,6 +1,8 @@
 export {
     applyBackendChanges,
     applyChanges,
+    getState,
+    getStateVector,
     registerDocument,
     unregisterDocument,
 } from './entrypoint.js';
