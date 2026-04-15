@@ -1,6 +1,6 @@
 {
     "name": "@meshagent/meshagent",
-    "version": "0.37.0",
+    "version": "0.37.2",
     "description": "Meshagent Client",
     "homepage": "https://github.com/meshagent/meshagent-ts",
     "scripts": {
@@ -11,10 +11,13 @@
     "author": "Meshagent Software",
     "license": "Apache-2.0",
     "main": "./dist/node/index.js",
+    "types": "./dist/node/index.d.ts",
     "exports": {
         ".": {
-            "module": "./dist/esm/index.js",
+            "types": "./dist/node/index.d.ts",
+            "import": "./dist/esm/index.js",
             "browser": "./dist/browser/index.js",
+            "require": "./dist/node/index.js",
             "default": "./dist/node/index.js"
         },
         "./package.json": "./package.json"

@@ -4,8 +4,10 @@ import { Protocol } from "./protocol";
 import { RoomClient } from "./room-client";
 import { RequiredToolkit } from "./requirement";
 import { ErrorContent, JsonContent, type Content } from "./response";
+import { RoomServerException } from "./room-server-client";
 import { ToolContentSpec } from "./tool-content-type";
 import { unpackMessage } from "./utils";
+import { RoomEvent, RoomStatusEvent } from "./room-event";
 
 /*
 -------------------------------------------------------------------------
@@ -162,7 +164,12 @@ export class HostedToolkit {
 class _RemoteToolkitWrapper {
     protected readonly client: RoomClient;
     protected readonly toolkit: Toolkit;
+    private readonly _toolCallHandler = this._toolCall.bind(this);
+    private readonly _roomEventHandler = this._onRoomEvent.bind(this);
     private _registrationId?: string;
+    private _started = false;
+    private _public = false;
+    private _registerTask: Promise<void> | null = null;
 
     constructor({ toolkit, room }: {
         toolkit: Toolkit;
@@ -173,19 +180,38 @@ class _RemoteToolkitWrapper {
     }
 
     async start({ public_: isPublic = false }: { public_?: boolean } = {}): Promise<void> {
-        // Add a handler for room.tool_call.<name>
-        const handler = this._toolCall.bind(this);
+        if (this._started) {
+            throw new RoomServerException(`toolkit '${this.toolkit.name}' is already started`);
+        }
 
-        this.client.protocol.addHandler(`room.tool_call.${this.toolkit.name}`, handler);
+        this._public = isPublic;
+        this.client.protocol.addHandler(`room.tool_call.${this.toolkit.name}`, this._toolCallHandler);
+        this.client.on("disconnected", this._roomEventHandler);
+        this.client.on("reconnected", this._roomEventHandler);
 
-        await this._register(isPublic);
+        try {
+            await this._register(isPublic);
+            this._started = true;
+        } catch (error) {
+            this.client.off("disconnected", this._roomEventHandler);
+            this.client.off("reconnected", this._roomEventHandler);
+            this.client.protocol.removeHandler(`room.tool_call.${this.toolkit.name}`, this._toolCallHandler);
+            throw error;
+        }
     }
 
     async stop(): Promise<void> {
-        await this._unregister();
-
-        // Remove the handler
-        this.client.protocol.removeHandler(`room.tool_call.${this.toolkit.name}`);
+        if (!this._started) {
+            return;
+        }
+        this._started = false;
+        this.client.off("disconnected", this._roomEventHandler);
+        this.client.off("reconnected", this._roomEventHandler);
+        try {
+            await this._unregister();
+        } finally {
+            this.client.protocol.removeHandler(`room.tool_call.${this.toolkit.name}`, this._toolCallHandler);
+        }
     }
 
     private async _register(public_: boolean): Promise<void> {
@@ -205,14 +231,50 @@ class _RemoteToolkitWrapper {
     }
 
     private async _unregister(): Promise<void> {
-        if (!this._registrationId) return;
+        const registrationId = this._registrationId;
+        this._registrationId = undefined;
+        if (registrationId == null || this.client.isClosed) {
+            return;
+        }
 
         await this.client.sendRequest("room.unregister_toolkit", {
-            id: this._registrationId,
+            id: registrationId,
         });
     }
 
+    private _scheduleRegisterIfNeeded(): void {
+        if (!this._started || this._registrationId != null || this._registerTask != null || this.client.isClosed) {
+            return;
+        }
+
+        this._registerTask = this._register(this._public)
+            .catch((error: unknown) => {
+                console.warn(`unable to reregister hosted toolkit ${this.toolkit.name}`, error);
+            })
+            .finally(() => {
+                this._registerTask = null;
+            });
+    }
+
+    private _onRoomEvent(event: RoomEvent): void {
+        if (!this._started || !(event instanceof RoomStatusEvent)) {
+            return;
+        }
+
+        if (event.status === "disconnected") {
+            this._registrationId = undefined;
+            return;
+        }
+
+        if (event.status === "reconnected") {
+            this._scheduleRegisterIfNeeded();
+        }
+    }
+
     private async _toolCall(protocol: Protocol, messageId: number, type: string, data?: Uint8Array): Promise<void> {
+        if (!this.client.isActiveProtocol(protocol)) {
+            return;
+        }
         try {
             const [ message, _ ] = unpackMessage(data!);
             const toolName = message["name"] as string;
@@ -240,13 +302,13 @@ class _RemoteToolkitWrapper {
             }
 
             const response = await this.toolkit.execute(toolName, args);
-            await this.client.protocol.send("room.tool_call_response", response.pack(), messageId);
+            await this.client.protocol.send("room.tool_call_response", response.pack(), { id: messageId });
 
         } catch (e: any) {
             // On error
             const err = new ErrorContent({text: String(e)});
 
-            await this.client.protocol.send("room.tool_call_response", err.pack(), messageId);
+            await this.client.protocol.send("room.tool_call_response", err.pack(), { id: messageId });
         }
     }
 }
@@ -310,7 +372,10 @@ export abstract class RemoteTaskRunner {
 
     async stop(): Promise<void> {
     
-        this.client.protocol.removeHandler("agent.ask");
+        const handler = this.client.protocol.getHandler("agent.ask");
+        if (handler != null) {
+            this.client.protocol.removeHandler("agent.ask", handler);
+        }
     }
 
     /**

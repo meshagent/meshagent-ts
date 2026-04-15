@@ -10,6 +10,10 @@ export declare function applyBackendChanges(
 
 export declare function applyChanges(update: UpdatePayload): void;
 
+export declare function getState(documentID: string, vector?: string | null): string;
+
+export declare function getStateVector(documentID: string): string;
+
 export declare function registerDocument(
   id: string,
   base64Data?: string | null,

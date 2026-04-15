@@ -135,7 +135,9 @@ export class SecretsClient {
     type: string,
     bytes?: Uint8Array,
   ): Promise<void> {
-    void protocol;
+    if (!this.client.isActiveProtocol(protocol)) {
+      return;
+    }
     void messageId;
     void type;
 
@@ -183,7 +185,9 @@ export class SecretsClient {
     type: string,
     bytes?: Uint8Array,
   ): Promise<void> {
-    void protocol;
+    if (!this.client.isActiveProtocol(protocol)) {
+      return;
+    }
     void messageId;
     void type;
 

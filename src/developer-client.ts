@@ -31,6 +31,9 @@ export class DeveloperClient extends EventEmitter<RoomLogEvent> {
    * Handler for "developer.log" messages from the protocol.
    */
   private async _handleDeveloperLog(protocol: Protocol, messageId: number, type: string, bytes?: Uint8Array): Promise<void> {
+    if (!this.client.isActiveProtocol(protocol)) {
+      return;
+    }
     // Decode the message
     const [ rawJson, _ ] = unpackMessage(bytes || new Uint8Array());
     this._emitDeveloperLog(rawJson["type"], rawJson["data"]);

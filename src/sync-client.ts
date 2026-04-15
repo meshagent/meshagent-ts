@@ -1,12 +1,11 @@
-import { EventEmitter } from "./event-emitter";
-import { RoomClient } from "./room-client";
-import { Protocol } from "./protocol";
-import { MeshSchema } from "./schema";
-import { MeshDocument, RoomServerException } from "./room-server-client";
-import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response";
-import { decoder, encoder, RefCount, unpackMessage } from "./utils";
-import { unregisterDocument, applyBackendChanges } from "./runtime";
 import { Completer } from "./completer";
+import { EventEmitter } from "./event-emitter";
+import { MeshSchema } from "./schema";
+import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response";
+import { RoomClient } from "./room-client";
+import { MeshDocument, RoomServerException } from "./room-server-client";
+import { applyBackendChanges, unregisterDocument } from "./runtime";
+import { decoder, encoder, RefCount } from "./utils";
 
 function normalizeSyncPath(path: string): string {
   let normalized = path;
@@ -25,7 +24,7 @@ function normalizeSyncPath(path: string): string {
 type SyncOpenStateChunkHeaders = {
   kind: "state";
   path: string;
-  schema: Record<string, any>;
+  schema: Record<string, unknown>;
 };
 
 type SyncOpenOutputChunkHeaders = {
@@ -33,28 +32,32 @@ type SyncOpenOutputChunkHeaders = {
   path: string;
 };
 
-function parseSyncOpenStateChunkHeaders(headers: Record<string, any>): SyncOpenStateChunkHeaders {
+type SyncOpenDocumentConfig = {
+  create: boolean;
+  schemaJson: Record<string, unknown> | null;
+  schemaPath: string | null;
+};
+
+function parseSyncOpenStateChunkHeaders(headers: Record<string, unknown>): SyncOpenStateChunkHeaders {
   if (
     headers["kind"] !== "state" ||
     typeof headers["path"] !== "string" ||
     typeof headers["schema"] !== "object" ||
-    headers["schema"] == null
+    headers["schema"] == null ||
+    Array.isArray(headers["schema"])
   ) {
     throw new RoomServerException("unexpected return type from sync.open");
   }
   return {
     kind: "state",
     path: headers["path"],
-    schema: headers["schema"] as Record<string, any>,
+    schema: headers["schema"] as Record<string, unknown>,
   };
 }
 
-function parseSyncOpenOutputChunkHeaders(headers: Record<string, any>): SyncOpenOutputChunkHeaders {
+function parseSyncOpenOutputChunkHeaders(headers: Record<string, unknown>): SyncOpenOutputChunkHeaders {
   const kind = headers["kind"];
-  if (
-    (kind !== "state" && kind !== "sync") ||
-    typeof headers["path"] !== "string"
-  ) {
+  if ((kind !== "state" && kind !== "sync") || typeof headers["path"] !== "string") {
     throw new RoomServerException("unexpected return type from sync.open");
   }
   return {
@@ -77,15 +80,15 @@ class SyncOpenStreamState {
       path: string;
       create: boolean;
       vector: string | null;
-      schemaJson: Record<string, any> | null;
+      schemaJson: Record<string, unknown> | null;
       schemaPath: string | null;
-      initialJson: Record<string, any> | null;
+      initialJson: Record<string, unknown> | null;
     },
   ) {}
 
   private _enqueueChunk(chunk: BinaryContent | symbol): void {
     const waiter = this._inputWaiters.shift();
-    if (waiter) {
+    if (waiter != null) {
       waiter(chunk);
       return;
     }
@@ -155,10 +158,12 @@ class SyncOpenStreamState {
     if (this._inputClosed) {
       throw new RoomServerException("attempted to sync to a document that is not connected");
     }
-    this._enqueueChunk(new BinaryContent({
-      data,
-      headers: { kind: "sync" },
-    }));
+    this._enqueueChunk(
+      new BinaryContent({
+        data,
+        headers: { kind: "sync" },
+      }),
+    );
   }
 
   public async wait(): Promise<void> {
@@ -166,41 +171,37 @@ class SyncOpenStreamState {
   }
 }
 
+type SyncOpenResult = {
+  streamState: SyncOpenStreamState;
+  iterator: AsyncIterator<Content>;
+  stateHeaders: SyncOpenStateChunkHeaders;
+  firstChunk: BinaryContent;
+};
+
 export interface SyncClientEvent {
   type: string;
   doc?: MeshDocument;
-  status?: unknown;
 }
 
 export class SyncClient extends EventEmitter<SyncClientEvent> {
-  private readonly client: RoomClient;
-  private _connectingDocuments: Record<string, Promise<RefCount<MeshDocument>>> = {};
-  private _connectedDocuments: Record<string, RefCount<MeshDocument>> = {};
-  private _documentStreams: Record<string, SyncOpenStreamState> = {};
+  private readonly room: RoomClient;
+  private readonly _connectingDocuments: Record<string, Promise<RefCount<MeshDocument>>> = {};
+  private readonly _closingDocuments: Record<string, Promise<void>> = {};
+  private readonly _connectedDocuments: Record<string, RefCount<MeshDocument>> = {};
+  private readonly _documentStreams: Record<string, SyncOpenStreamState> = {};
+  private readonly _documentConfigs: Record<string, SyncOpenDocumentConfig> = {};
+  private _started = false;
 
-  constructor({room}: {room: RoomClient}) {
+  constructor({ room }: { room: RoomClient }) {
     super();
-    this.client = room;
-    this.client.protocol.addHandler("room.status", this._handleStatus.bind(this));
+    this.room = room;
   }
 
-  private _unexpectedResponseError(operation: string): RoomServerException {
-    return new RoomServerException(`unexpected return type from sync.${operation}`);
-  }
-
-  private async _invoke(operation: string, input: Record<string, any> | Content) {
-    return await this.client.invoke({
-      toolkit: "sync",
-      tool: operation,
-      input,
-    });
-  }
-
-  public start({onDone, onError}: {
-    onDone?: () => void;
-    onError?: (error: Error) => void;
-  } = {}): void {
-    this.client.protocol.start({onDone, onError});
+  public start(): void {
+    if (this._started) {
+      throw new RoomServerException("client already started");
+    }
+    this._started = true;
   }
 
   public override dispose(): void {
@@ -208,42 +209,39 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
     for (const streamState of Object.values(this._documentStreams)) {
       streamState.closeInputStream();
     }
-    this._documentStreams = {};
-    for (const rc of Object.values(this._connectedDocuments)) {
-      unregisterDocument(rc.ref.id);
+    for (const doc of Object.values(this._connectedDocuments)) {
+      unregisterDocument(doc.ref.id);
     }
-    this._connectedDocuments = {};
-    this._connectingDocuments = {};
+    Object.keys(this._documentStreams).forEach((key) => delete this._documentStreams[key]);
+    Object.keys(this._documentConfigs).forEach((key) => delete this._documentConfigs[key]);
+    Object.keys(this._connectedDocuments).forEach((key) => delete this._connectedDocuments[key]);
+    Object.keys(this._connectingDocuments).forEach((key) => delete this._connectingDocuments[key]);
+    Object.keys(this._closingDocuments).forEach((key) => delete this._closingDocuments[key]);
+    this._started = false;
+  }
+
+  private _unexpectedResponseError(operation: string): RoomServerException {
+    return new RoomServerException(`unexpected return type from sync.${operation}`);
+  }
+
+  private async _invoke(operation: string, input: Record<string, unknown> | Content): Promise<Content> {
+    return await this.room.invoke({
+      toolkit: "sync",
+      tool: operation,
+      input,
+    });
   }
 
   private _applySyncPayload(rc: RefCount<MeshDocument>, payload: Uint8Array): void {
-    const doc = rc.ref;
     if (payload.length > 0) {
-      const base64 = decoder.decode(payload);
-      applyBackendChanges(doc.id, base64);
+      applyBackendChanges(rc.ref.id, decoder.decode(payload));
     }
-
-    this.emit("synced", { type: "sync", doc });
-
-    if (!doc.isSynchronized) {
-      doc.setSynchronizedComplete();
+    if (!rc.ref.isSynchronized) {
+      rc.ref.setSynchronizedComplete();
     }
   }
 
-  private async _handleStatus(
-    _protocol: Protocol,
-    _messageId: number,
-    _type: string,
-    bytes?: Uint8Array,
-  ): Promise<void> {
-    if (!bytes) {
-      return;
-    }
-    const [header] = unpackMessage(bytes);
-    this.emit("status", { type: "status", status: header.status });
-  }
-
-  public async create(path: string, json?: Record<string, any>): Promise<void> {
+  public async create(path: string, json?: Record<string, unknown>): Promise<void> {
     const normalizedPath = normalizeSyncPath(path);
     await this._invoke("create", {
       path: normalizedPath,
@@ -261,140 +259,138 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
       schema,
     }: {
       create?: boolean;
-      initialJson?: Record<string, any>;
+      initialJson?: Record<string, unknown>;
       schema?: MeshSchema;
     } = {},
   ): Promise<MeshDocument> {
-    path = normalizeSyncPath(path);
-    const pending = this._connectingDocuments[path];
-    if (pending) {
+    const normalizedPath = normalizeSyncPath(path);
+    const closing = this._closingDocuments[normalizedPath];
+    if (closing != null) {
+      await closing;
+    }
+
+    const pending = this._connectingDocuments[normalizedPath];
+    if (pending != null) {
       await pending;
     }
 
-    const connected = this._connectedDocuments[path];
-    if (connected) {
-      connected.count++;
+    const connected = this._connectedDocuments[normalizedPath];
+    if (connected != null) {
+      connected.count += 1;
       return connected.ref;
     }
 
     const connecting = new Completer<RefCount<MeshDocument>>();
-    this._connectingDocuments[path] = connecting.fut;
+    this._connectingDocuments[normalizedPath] = connecting.fut;
 
-    let streamState: SyncOpenStreamState | undefined;
-    let iterator: AsyncIterator<Content> | undefined;
     try {
-      streamState = new SyncOpenStreamState({
-        path,
+      const config: SyncOpenDocumentConfig = {
         create,
-        vector: null,
-        schemaJson: schema == null ? null : schema.toJson(),
+        schemaJson: schema?.toJson() ?? null,
         schemaPath: null,
+      };
+      const openResult = await this._openStream({
+        path: normalizedPath,
+        config,
+        vector: null,
         initialJson: initialJson ?? null,
       });
-
-      const responseStream = await this.client.invokeStream({
-        toolkit: "sync",
-        tool: "open",
-        input: streamState.inputStream(),
-      });
-      iterator = responseStream[Symbol.asyncIterator]();
-      const first = await iterator.next();
-      if (first.done || first.value === undefined) {
-        throw new RoomServerException(
-          "sync.open stream closed before the initial document state was returned",
-        );
-      }
-
-      const firstChunk = first.value;
-      if (firstChunk instanceof ErrorContent) {
-        throw new RoomServerException(firstChunk.text, firstChunk.code);
-      }
-      if (!(firstChunk instanceof BinaryContent)) {
-        throw this._unexpectedResponseError("open");
-      }
-
-      const stateHeaders = parseSyncOpenStateChunkHeaders(firstChunk.headers);
-      if (normalizeSyncPath(stateHeaders.path) !== path) {
-        throw new RoomServerException("sync.open stream returned a mismatched path");
-      }
-
+      const resolvedSchema = MeshSchema.fromJson(openResult.stateHeaders.schema as Record<string, any>);
       const doc = new MeshDocument({
-        schema: MeshSchema.fromJson(stateHeaders.schema),
+        schema: resolvedSchema,
         sendChangesToBackend: (base64: string) => {
+          const currentStream = this._documentStreams[normalizedPath];
+          if (currentStream == null) {
+            return;
+          }
           try {
-            streamState?.queueSync(encoder.encode(base64));
+            currentStream.queueSync(encoder.encode(base64));
           } catch {
           }
         },
       });
       const rc = new RefCount<MeshDocument>(doc);
-      this._connectedDocuments[path] = rc;
-      this._documentStreams[path] = streamState;
-      this._applySyncPayload(rc, firstChunk.data);
-      streamState.attachTask(this._consumeOpenStream({
-        path,
-        rc,
-        iterator,
-        streamState,
-      }));
+      this._connectedDocuments[normalizedPath] = rc;
+      this._documentConfigs[normalizedPath] = config;
+      this._documentStreams[normalizedPath] = openResult.streamState;
+      this._applySyncPayload(rc, openResult.firstChunk.data);
+      this._attachStreamConsumer({
+        path: normalizedPath,
+        doc: rc,
+        streamState: openResult.streamState,
+        iterator: openResult.iterator,
+      });
 
       this.emit("connected", { type: "connect", doc });
       connecting.complete(rc);
       await doc.synchronized;
       return doc;
     } catch (error) {
-      streamState?.closeInputStream();
-      if (iterator) {
-        await iterator.return?.();
-      }
       connecting.completeError(error);
       throw error;
     } finally {
-      delete this._connectingDocuments[path];
+      delete this._connectingDocuments[normalizedPath];
     }
   }
 
   public async close(path: string): Promise<void> {
-    path = normalizeSyncPath(path);
-    const rc = this._connectedDocuments[path];
-    if (!rc) {
-      throw new RoomServerException(`Not connected to ${path}`);
+    const normalizedPath = normalizeSyncPath(path);
+    const rc = this._connectedDocuments[normalizedPath];
+    if (rc == null) {
+      throw new RoomServerException(`Not connected to ${normalizedPath}`);
     }
 
-    const doc = rc.ref;
-    rc.count--;
+    rc.count -= 1;
     if (rc.count === 0) {
-      delete this._connectedDocuments[path];
-      const streamState = this._documentStreams[path];
-      delete this._documentStreams[path];
-      if (streamState) {
-        streamState.closeInputStream();
-        try {
-          await streamState.wait();
-        } finally {
-          unregisterDocument(doc.id);
+      delete this._connectedDocuments[normalizedPath];
+      delete this._documentConfigs[normalizedPath];
+      const streamState = this._documentStreams[normalizedPath];
+      delete this._documentStreams[normalizedPath];
+
+      const closeFuture = (async () => {
+        if (streamState != null) {
+          streamState.closeInputStream();
+          try {
+            await streamState.wait();
+          } finally {
+            unregisterDocument(rc.ref.id);
+          }
+        } else {
+          unregisterDocument(rc.ref.id);
         }
-      } else {
-        unregisterDocument(doc.id);
+      })();
+
+      this._closingDocuments[normalizedPath] = closeFuture;
+      try {
+        await closeFuture;
+      } finally {
+        if (this._closingDocuments[normalizedPath] === closeFuture) {
+          delete this._closingDocuments[normalizedPath];
+        }
       }
     }
 
-    this.emit("closed", { type: "close", doc });
+    this.emit("closed", { type: "close", doc: rc.ref });
   }
 
   public async sync(path: string, data: Uint8Array): Promise<void> {
-    path = normalizeSyncPath(path);
-    if (!this._connectedDocuments[path]) {
+    const normalizedPath = normalizeSyncPath(path);
+    if (this._connectedDocuments[normalizedPath] == null) {
       throw new RoomServerException("attempted to sync to a document that is not connected");
     }
-    const streamState = this._documentStreams[path];
-    if (!streamState) {
+    const streamState = this._documentStreams[normalizedPath];
+    if (streamState == null) {
       throw new RoomServerException("attempted to sync to a document that is not connected");
     }
     streamState.queueSync(data);
   }
 
-  private async _consumeOpenStream(params: {
+  private async _consumeOpenStream({
+    path,
+    rc,
+    iterator,
+    streamState,
+  }: {
     path: string;
     rc: RefCount<MeshDocument>;
     iterator: AsyncIterator<Content>;
@@ -402,7 +398,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   }): Promise<void> {
     try {
       while (true) {
-        const next = await params.iterator.next();
+        const next = await iterator.next();
         if (next.done || next.value === undefined) {
           return;
         }
@@ -421,16 +417,133 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
           throw this._unexpectedResponseError("open");
         }
 
-        const headers = parseSyncOpenOutputChunkHeaders(chunk.headers);
-        if (normalizeSyncPath(headers.path) !== params.path) {
+        const headers = parseSyncOpenOutputChunkHeaders(chunk.headers as Record<string, unknown>);
+        if (normalizeSyncPath(headers.path) !== path) {
           throw new RoomServerException("sync.open stream returned a mismatched path");
         }
 
-        this._applySyncPayload(params.rc, chunk.data);
+        this._applySyncPayload(rc, chunk.data);
       }
     } finally {
-      params.streamState.closeInputStream();
-      await params.iterator.return?.();
+      streamState.closeInputStream();
+      await iterator.return?.();
+    }
+  }
+
+  private async _openStream({
+    path,
+    config,
+    vector,
+    initialJson,
+  }: {
+    path: string;
+    config: SyncOpenDocumentConfig;
+    vector: string | null;
+    initialJson: Record<string, unknown> | null;
+  }): Promise<SyncOpenResult> {
+    const streamState = new SyncOpenStreamState({
+      path,
+      create: config.create,
+      vector,
+      schemaJson: config.schemaJson,
+      schemaPath: config.schemaPath,
+      initialJson,
+    });
+
+    let iterator: AsyncIterator<Content> | undefined;
+    try {
+      const responseStream = await this.room.invokeStream({
+        toolkit: "sync",
+        tool: "open",
+        input: streamState.inputStream(),
+      });
+
+      iterator = responseStream[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      if (first.done || first.value === undefined) {
+        throw new RoomServerException(
+          "sync.open stream closed before the initial document state was returned",
+        );
+      }
+
+      const firstChunk = first.value;
+      if (firstChunk instanceof ErrorContent) {
+        throw new RoomServerException(firstChunk.text, firstChunk.code);
+      }
+      if (!(firstChunk instanceof BinaryContent)) {
+        throw this._unexpectedResponseError("open");
+      }
+
+      const stateHeaders = parseSyncOpenStateChunkHeaders(firstChunk.headers as Record<string, unknown>);
+      if (normalizeSyncPath(stateHeaders.path) !== path) {
+        throw new RoomServerException("sync.open stream returned a mismatched path");
+      }
+
+      return {
+        streamState,
+        iterator,
+        stateHeaders,
+        firstChunk,
+      };
+    } catch (error) {
+      streamState.closeInputStream();
+      if (iterator != null) {
+        await iterator.return?.();
+      }
+      throw error;
+    }
+  }
+
+  private _attachStreamConsumer({
+    path,
+    doc,
+    streamState,
+    iterator,
+  }: {
+    path: string;
+    doc: RefCount<MeshDocument>;
+    streamState: SyncOpenStreamState;
+    iterator: AsyncIterator<Content>;
+  }): void {
+    streamState.attachTask(
+      this._consumeOpenStream({
+        path,
+        rc: doc,
+        iterator,
+        streamState,
+      }),
+    );
+  }
+
+  public async _onRoomDisconnect(): Promise<void> {
+    const openStreams = Object.values(this._documentStreams);
+    Object.keys(this._documentStreams).forEach((key) => delete this._documentStreams[key]);
+    for (const streamState of openStreams) {
+      streamState.closeInputStream();
+    }
+  }
+
+  public async _onRoomReconnect(): Promise<void> {
+    for (const [path, ref] of Object.entries(this._connectedDocuments)) {
+      const config = this._documentConfigs[path];
+      if (config == null) {
+        continue;
+      }
+
+      const openResult = await this._openStream({
+        path,
+        config,
+        vector: ref.ref.getStateVector(),
+        initialJson: null,
+      });
+      this._documentStreams[path] = openResult.streamState;
+      this._applySyncPayload(ref, openResult.firstChunk.data);
+      this._attachStreamConsumer({
+        path,
+        doc: ref,
+        streamState: openResult.streamState,
+        iterator: openResult.iterator,
+      });
     }
   }
 }

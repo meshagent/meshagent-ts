@@ -8,6 +8,32 @@ export abstract class RoomEvent {
     abstract get description(): string;
 }
 
+export class RoomStatusEvent extends RoomEvent {
+    public readonly status: string;
+    public readonly message: string;
+
+    constructor({ status, message }: { status: string; message: string }) {
+        super();
+        this.status = status;
+        this.message = message;
+    }
+
+    get name(): string {
+        return this.status;
+    }
+
+    get description(): string {
+        return this.message;
+    }
+
+    static fromJson(json: Record<string, unknown>): RoomStatusEvent {
+        return new RoomStatusEvent({
+            status: String(json["status"]),
+            message: String(json["message"]),
+        });
+    }
+}
+
 /**
  * A basic RoomMessage class containing message details and optional attachment.
  */

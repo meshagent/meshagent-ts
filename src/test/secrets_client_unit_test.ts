@@ -43,6 +43,10 @@ class FakeSecretsRoom {
   public readonly protocol = new FakeProtocol();
   public readonly requests: InvokeParams[] = [];
 
+  public isActiveProtocol(protocol: Protocol): boolean {
+    return protocol === (this.protocol as unknown as Protocol);
+  }
+
   public async invoke(params: InvokeParams): Promise<Content> {
     this.requests.push(params);
 

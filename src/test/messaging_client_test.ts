@@ -18,18 +18,18 @@ describe("messaging", function (this: Mocha.Suite) {
 
     before(async () => {
         const config = getConfig();
-        const protocol1 = await websocketProtocol({roomName: room, participantName: 'client1', ...config});
-        const protocol2 = await websocketProtocol({roomName: room, participantName: 'client2', ...config});
+        const protocolFactory1 = await websocketProtocol({roomName: room, participantName: 'client1', ...config});
+        const protocolFactory2 = await websocketProtocol({roomName: room, participantName: 'client2', ...config});
 
-        client1 = new RoomClient({protocol: protocol1});
-        client2 = new RoomClient({protocol: protocol2});
+        client1 = new RoomClient({protocolFactory: protocolFactory1});
+        client2 = new RoomClient({protocolFactory: protocolFactory2});
 
         await client1.start();
         await client2.start();
 
         // Enable the messaging module
-        await client1.messaging.enable();
-        await client2.messaging.enable();
+        client1.messaging.enable();
+        client2.messaging.enable();
     });
 
     after(async () => {

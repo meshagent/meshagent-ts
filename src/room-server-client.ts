@@ -10,6 +10,8 @@ import {
     registerDocument,
     unregisterDocument,
     applyChanges,
+    getState,
+    getStateVector,
 } from "./runtime";
 import type { UpdatePayload } from "./runtime";
 
@@ -75,6 +77,14 @@ export class MeshDocument extends RuntimeDocument {
     const parsed = JSON.parse(base64);
 
     this.receiveChanges(parsed.data);
+  }
+
+  public getState(vector?: string): string {
+    return getState(this.id, vector ?? null);
+  }
+
+  public getStateVector(): string {
+    return getStateVector(this.id);
   }
 
   get synchronized(): Promise<boolean> {

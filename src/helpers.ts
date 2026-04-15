@@ -1,7 +1,7 @@
 import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken, ApiScope } from './participant-token';
-import { WebSocketClientProtocol } from './protocol';
+import { ProtocolFactory, WebSocketClientProtocol } from './protocol';
 import { parseApiKey } from './api_keys';
 
 /**
@@ -109,7 +109,7 @@ export function participantToken({
 }
 
 /**
- * Create a WebSocket protocol instance for the given participant and room.
+ * Create a WebSocket protocol factory for the given participant and room.
  */
 export async function websocketProtocol({ participantName, roomName, role, projectId, apiKeyId, apiKey, secret, apiUrl }: {
     participantName: string;
@@ -120,10 +120,10 @@ export async function websocketProtocol({ participantName, roomName, role, proje
     secret?: string;
     apiUrl?: string;
     apiKey?: string;
-}): Promise<WebSocketClientProtocol> {
+}): Promise<ProtocolFactory> {
     const url = websocketRoomUrl({ roomName, apiUrl });
     const token = participantToken({ participantName, roomName, role, projectId, apiKeyId, apiKey });
     const jwt = await token.toJwt({ token: secret, apiKey });
 
-    return new WebSocketClientProtocol({ url, token: jwt });
+    return WebSocketClientProtocol.createFactory({ url, token: jwt });
 }

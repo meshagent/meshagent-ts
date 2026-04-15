@@ -27,11 +27,11 @@ describe("database_client_test", function (this: Mocha.Suite) {
     before(async () => {
         const config = getConfig();
 
-        const protocol1 = await websocketProtocol({ roomName: room, participantName: 'client1', ...config });
-        const protocol2 = await websocketProtocol({ roomName: room, participantName: 'client2', ...config });
+        const protocolFactory1 = await websocketProtocol({ roomName: room, participantName: 'client1', ...config });
+        const protocolFactory2 = await websocketProtocol({ roomName: room, participantName: 'client2', ...config });
 
-        client1 = new RoomClient({ protocol: protocol1 });
-        client2 = new RoomClient({ protocol: protocol2 });
+        client1 = new RoomClient({ protocolFactory: protocolFactory1 });
+        client2 = new RoomClient({ protocolFactory: protocolFactory2 });
 
         // Start the clients
         await client1.start();

@@ -1,6 +1,6 @@
 import { expect } from "chai";
 
-import { Protocol } from "../protocol";
+import { MessageHandler, Protocol } from "../protocol";
 import { BinaryContent, Content, ControlContent, JsonContent } from "../response";
 import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "../room-event";
 import { StorageClient, StorageEntry } from "../storage-client";
@@ -20,12 +20,7 @@ type InvokeStreamParams = {
   callerContext?: Record<string, any>;
 };
 
-type StorageEventHandler = (
-  protocol: Protocol,
-  messageId: number,
-  type: string,
-  bytes?: Uint8Array,
-) => Promise<void>;
+type StorageEventHandler = MessageHandler;
 
 class FakeProtocol {
   private handlers = new Map<string, StorageEventHandler>();
@@ -62,6 +57,10 @@ class FakeStorageRoom {
 
   public emit(event: RoomEvent): void {
     this.emittedEvents.push(event);
+  }
+
+  public isActiveProtocol(_protocol: Protocol): boolean {
+    return true;
   }
 
   public async invoke(params: InvokeParams): Promise<Content> {
