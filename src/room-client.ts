@@ -19,7 +19,7 @@ import { QueuesClient } from "./queues-client";
 import { BinaryContent, Content, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response";
 import { RoomEvent, RoomStatusEvent } from "./room-event";
 import { RoomServerException } from "./room-server-client";
-import { SecretsClient } from "./secrets-client";
+import { SecretsClient, type OAuthTokenRequestHandler, type SecretRequestHandler } from "./secrets-client";
 import { ServicesClient } from "./services-client";
 import { StorageClient } from "./storage-client";
 import { StreamController } from "./stream-controller";
@@ -337,9 +337,13 @@ export class RoomClient {
   constructor({
     protocolFactory = null,
     reconnectTimeout = null,
+    oauthTokenRequestHandler,
+    secretRequestHandler,
   }: {
     protocolFactory?: ProtocolFactory | null;
     reconnectTimeout?: number | null;
+    oauthTokenRequestHandler?: OAuthTokenRequestHandler;
+    secretRequestHandler?: SecretRequestHandler;
   } = {}) {
     if (reconnectTimeout != null && reconnectTimeout < 0) {
       throw new Error("reconnectTimeout must be null or non-negative");
@@ -363,7 +367,11 @@ export class RoomClient {
     this.queues = new QueuesClient({ room: this });
     this.database = new DatabaseClient({ room: this });
     this.agents = new AgentsClient({ room: this });
-    this.secrets = new SecretsClient({ room: this });
+    this.secrets = new SecretsClient({
+      room: this,
+      oauthTokenRequestHandler,
+      secretRequestHandler,
+    });
     this.containers = new ContainersClient({ room: this });
     this.memory = new MemoryClient({ room: this });
     this.services = new ServicesClient({ room: this });

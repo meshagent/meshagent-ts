@@ -1,7 +1,8 @@
 import { MeshSchema, MeshSchemaValidationException } from './schema';
 import { RoomClient } from './room-client';
 import { ParticipantToken, ApiScope } from './participant-token';
-import { ProtocolFactory, WebSocketClientProtocol } from './protocol';
+import { WebSocketClientProtocol } from './protocol';
+import type { ProtocolFactory } from './protocol';
 import { parseApiKey } from './api_keys';
 
 /**
