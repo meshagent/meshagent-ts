@@ -44,6 +44,17 @@ class ProtocolStartupFailure extends Error {
   }
 }
 
+type ProtocolConnectAttempt = (params: {
+  protocol: Protocol;
+  remaining: number | null;
+}) => Promise<void>;
+
+interface ProtocolRetryResult {
+  connected: boolean;
+  closeKind?: ProtocolCloseKind | null;
+  closeReason?: string | null;
+}
+
 class RoomClientTerminalState {
   public readonly requestMessage: string;
   public readonly toolCallMessage: string;
@@ -521,6 +532,13 @@ export class RoomClient {
     return `${baseMessage}: ${normalized}`;
   }
 
+  private _connectionFailureReason(error: unknown): string | null {
+    if (error instanceof RoomServerException) {
+      return normalizeCloseReason(error.message);
+    }
+    return normalizeCloseReason(String(error));
+  }
+
   private _protocolTerminalState({ protocol }: { protocol?: Protocol } = {}): RoomClientTerminalState {
     return new RoomClientTerminalState({
       requestMessage: this._formatClosedMessage({
@@ -567,6 +585,39 @@ export class RoomClient {
     });
   }
 
+  private _setStartupTerminalState({
+    closeKind,
+    closeReason,
+    protocol,
+  }: {
+    closeKind: ProtocolCloseKind;
+    closeReason: string | null;
+    protocol?: Protocol;
+  }): void {
+    const normalizedCloseReason = normalizeCloseReason(closeReason);
+    this._closeKind = closeKind;
+    this._closeReason = normalizedCloseReason;
+    if (closeKind === ProtocolCloseKind.ERROR) {
+      this._setTerminalState({
+        state: this._unexpectedCloseTerminalState({ closeReason: normalizedCloseReason }),
+      });
+    } else if (closeKind === ProtocolCloseKind.CLIENT) {
+      this._setTerminalState({ state: this._clientClosedTerminalState() });
+    } else {
+      this._setTerminalState({ state: this._protocolTerminalState({ protocol }) });
+    }
+    if (!this._ready.completed) {
+      this._ready.completeError(
+        this._startupException({
+          closeKind,
+          closeReason: normalizedCloseReason,
+          protocol,
+        }),
+      );
+    }
+    this._completeRoomClosed();
+  }
+
   private _setTerminalState({ state }: { state: RoomClientTerminalState }): RoomClientTerminalState {
     if (this._terminalState == null) {
       this._terminalState = state;
@@ -604,6 +655,51 @@ export class RoomClient {
         baseMessage,
       }),
     );
+  }
+
+  private _startupException({
+    closeKind,
+    closeReason,
+    protocol,
+  }: {
+    closeKind: ProtocolCloseKind;
+    closeReason: string | null;
+    protocol?: Protocol;
+  }): RoomServerException {
+    const baseMessage =
+      closeKind === ProtocolCloseKind.ERROR
+        ? "room connection unexpectedly closed before the room became ready"
+        : closeKind === ProtocolCloseKind.CLIENT
+          ? "room client was closed before the room became ready"
+          : "room connection closed before the room became ready";
+    return new RoomServerException(
+      this._formatClosedMessage({
+        baseMessage,
+        protocol,
+        closeReason,
+      }),
+    );
+  }
+
+  private _finalizeInitialStartupRetryFailure({
+    retryResult,
+  }: {
+    retryResult: ProtocolRetryResult;
+  }): never {
+    const closeKind = retryResult.closeKind ?? null;
+    if (closeKind == null) {
+      throw new Error("initial startup retry failure requires a close kind");
+    }
+    this._setStartupTerminalState({
+      closeKind,
+      closeReason: retryResult.closeReason ?? null,
+      protocol: this._protocolInstance,
+    });
+    throw this._startupException({
+      closeKind,
+      closeReason: retryResult.closeReason ?? null,
+      protocol: this._protocolInstance,
+    });
   }
 
   public _coerceMessageSendError(error: RoomServerException): RoomServerException {
@@ -678,7 +774,7 @@ export class RoomClient {
         if (!this._localParticipantReady.completed) {
           this._localParticipantReady.completeError(error);
         }
-        if (!this._ready.completed) {
+        if (!initial && !this._ready.completed) {
           this._ready.completeError(error);
         }
       },
@@ -690,7 +786,7 @@ export class RoomClient {
         if (!this._localParticipantReady.completed) {
           this._localParticipantReady.completeError(wrapped);
         }
-        if (!this._ready.completed) {
+        if (!initial && !this._ready.completed) {
           this._ready.completeError(wrapped);
         }
       },
@@ -725,7 +821,89 @@ export class RoomClient {
     this._errorHandler = onError;
 
     try {
-      await this._openProtocol({ initial: true });
+      try {
+        await this._openProtocol({ initial: true });
+      } catch (error) {
+        if (error instanceof ProtocolStartupFailure) {
+          if (error.kind !== ProtocolCloseKind.ERROR || this._reconnectTimeout === 0) {
+            this._setStartupTerminalState({
+              closeKind: error.kind,
+              closeReason: error.reason,
+              protocol: this._protocolInstance,
+            });
+            throw this._startupException({
+              closeKind: error.kind,
+              closeReason: error.reason,
+              protocol: this._protocolInstance,
+            });
+          }
+
+          await this._closeProtocol(this._protocolInstance);
+          const retryResult = await this._retryProtocolConnection({
+            disconnectReason: error.reason,
+            protocolFactoryFailureLogMessage:
+              "unable to create replacement room protocol during initial startup",
+            attemptFailureLogMessage: "room startup attempt failed",
+            attempt: this._attemptInitialProtocolStartup.bind(this),
+          });
+          if (!retryResult.connected) {
+            this._finalizeInitialStartupRetryFailure({ retryResult });
+          }
+        } else {
+          const nonRetryableCloseReason = nonRetryableConnectFailureReason(error);
+          if (nonRetryableCloseReason != null) {
+            this._finalizeInitialStartupRetryFailure({
+              retryResult: {
+                connected: false,
+                closeKind: ProtocolCloseKind.ERROR,
+                closeReason: nonRetryableCloseReason,
+              },
+            });
+          }
+
+          const closeKind = this._protocolInstance.closeKind;
+          const protocolCloseReason = normalizeCloseReason(this._protocolInstance.closeReason);
+          if (closeKind != null && closeKind !== ProtocolCloseKind.ERROR) {
+            this._setStartupTerminalState({
+              closeKind,
+              closeReason: protocolCloseReason,
+              protocol: this._protocolInstance,
+            });
+            throw this._startupException({
+              closeKind,
+              closeReason: protocolCloseReason,
+              protocol: this._protocolInstance,
+            });
+          }
+
+          const closeReason = this._connectionFailureReason(error);
+          if (this._reconnectTimeout === 0) {
+            this._setStartupTerminalState({
+              closeKind: ProtocolCloseKind.ERROR,
+              closeReason,
+              protocol: this._protocolInstance,
+            });
+            throw this._startupException({
+              closeKind: ProtocolCloseKind.ERROR,
+              closeReason,
+              protocol: this._protocolInstance,
+            });
+          }
+
+          console.debug("room startup attempt failed", error);
+          await this._closeProtocol(this._protocolInstance);
+          const retryResult = await this._retryProtocolConnection({
+            disconnectReason: closeReason,
+            protocolFactoryFailureLogMessage:
+              "unable to create replacement room protocol during initial startup",
+            attemptFailureLogMessage: "room startup attempt failed",
+            attempt: this._attemptInitialProtocolStartup.bind(this),
+          });
+          if (!retryResult.connected) {
+            this._finalizeInitialStartupRetryFailure({ retryResult });
+          }
+        }
+      }
       this.sync.start();
       this.messaging.start();
       this._entered = true;
@@ -755,12 +933,75 @@ export class RoomClient {
     }
   }
 
+  private _replaceProtocol(nextProtocol: Protocol): void {
+    const currentProtocol = this._protocolInstance;
+    this.protocol._unbind(currentProtocol);
+    this._protocolInstance = nextProtocol;
+    this.protocol._bind(nextProtocol);
+  }
+
   private _remainingReconnectTimeout(deadline: number | null): number | null {
     if (deadline == null) {
       return null;
     }
     const remaining = deadline - Date.now();
     return remaining <= 0 ? 0 : remaining;
+  }
+
+  private async _attemptInitialProtocolStartup({
+    protocol,
+    remaining,
+  }: {
+    protocol: Protocol;
+    remaining: number | null;
+  }): Promise<void> {
+    void protocol;
+    if (remaining == null) {
+      await this._openProtocol({ initial: false });
+      return;
+    }
+
+    await Promise.race([
+      this._openProtocol({ initial: false }),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("timeout")), remaining);
+      }),
+    ]);
+  }
+
+  private async _attemptReconnect({
+    protocol,
+    remaining,
+  }: {
+    protocol: Protocol;
+    remaining: number | null;
+  }): Promise<void> {
+    try {
+      if (remaining == null) {
+        await this._completeReconnect();
+      } else {
+        await Promise.race([
+          this._completeReconnect(),
+          new Promise<never>((_resolve, reject) => {
+            setTimeout(() => reject(new Error("timeout")), remaining);
+          }),
+        ]);
+      }
+    } catch (error) {
+      if (error instanceof ProtocolStartupFailure) {
+        throw error;
+      }
+      if (error instanceof Error && error.message === "timeout") {
+        this._allowDisconnectedRequests = false;
+        await this.sync._onRoomDisconnect();
+        this.messaging._onRoomDisconnect({ reason: normalizeCloseReason(protocol.closeReason) });
+        throw error;
+      }
+      this._allowDisconnectedRequests = false;
+      await this.sync._onRoomDisconnect();
+      this.messaging._onRoomDisconnect({ reason: normalizeCloseReason(protocol.closeReason) });
+      throw error;
+    }
   }
 
   private _formatDuration(milliseconds: number): string {
@@ -785,6 +1026,22 @@ export class RoomClient {
     return `room reconnect timed out after ${timeoutDisplay} (${disconnectReason})`;
   }
 
+  private _timedOutRetryResult({
+    disconnectReason,
+  }: {
+    disconnectReason: string | null;
+  }): ProtocolRetryResult {
+    if (this._reconnectTimeout == null) {
+      throw new Error("timed out retry result requires a configured timeout");
+    }
+
+    return {
+      connected: false,
+      closeKind: ProtocolCloseKind.ERROR,
+      closeReason: this._reconnectTimeoutReason({ disconnectReason }),
+    };
+  }
+
   private async _closeAfterUnexpectedDisconnect({
     closeReason,
   }: {
@@ -807,11 +1064,26 @@ export class RoomClient {
     await protocol.waitForClose();
   }
 
-  private async _reconnect({
+  private async _retryProtocolConnection({
     disconnectReason,
+    protocolFactoryFailureLogMessage,
+    attemptFailureLogMessage,
+    attempt,
   }: {
     disconnectReason: string | null;
-  }): Promise<boolean> {
+    protocolFactoryFailureLogMessage: string;
+    attemptFailureLogMessage: string;
+    attempt: ProtocolConnectAttempt;
+  }): Promise<ProtocolRetryResult> {
+    let failureReason = normalizeCloseReason(disconnectReason);
+
+    const recordFailureReason = (reason: string | null): void => {
+      const normalizedReason = normalizeCloseReason(reason);
+      if (failureReason == null && normalizedReason != null) {
+        failureReason = normalizedReason;
+      }
+    };
+
     const deadline =
       this._reconnectTimeout == null ? null : Date.now() + this._reconnectTimeout;
     let firstAttempt = true;
@@ -827,10 +1099,7 @@ export class RoomClient {
       } else {
         const remaining = this._remainingReconnectTimeout(deadline);
         if (remaining != null && remaining === 0) {
-          const timeoutReason = this._reconnectTimeoutReason({ disconnectReason });
-          console.warn(`${timeoutReason}; closing room client`);
-          await this._closeAfterUnexpectedDisconnect({ closeReason: timeoutReason });
-          return false;
+          return this._timedOutRetryResult({ disconnectReason: failureReason });
         }
 
         const delay =
@@ -844,81 +1113,85 @@ export class RoomClient {
 
       const remaining = this._remainingReconnectTimeout(deadline);
       if (remaining != null && remaining === 0) {
-        const timeoutReason = this._reconnectTimeoutReason({ disconnectReason });
-        console.warn(`${timeoutReason}; closing room client`);
-        await this._closeAfterUnexpectedDisconnect({ closeReason: timeoutReason });
-        return false;
+        return this._timedOutRetryResult({ disconnectReason: failureReason });
       }
 
-      let nextProtocol: Protocol | null = null;
+      let nextProtocol: Protocol;
       try {
         nextProtocol = this._protocolFactory();
       } catch (error) {
         if (error instanceof ProtocolReconnectUnsupportedException) {
-          await this._closeAfterUnexpectedDisconnect({ closeReason: disconnectReason });
-          return false;
+          return {
+            connected: false,
+            closeKind: ProtocolCloseKind.ERROR,
+            closeReason: failureReason,
+          };
         }
-        nextProtocol = null;
-      }
-
-      if (nextProtocol == null) {
+        recordFailureReason(String(error));
+        console.debug(protocolFactoryFailureLogMessage, error);
         continue;
       }
 
-      const currentProtocol = this._protocolInstance;
-      this.protocol._unbind(currentProtocol);
-      this._protocolInstance = nextProtocol;
-      this.protocol._bind(nextProtocol);
-
+      this._replaceProtocol(nextProtocol);
       try {
-        if (remaining == null) {
-          await this._completeReconnect();
-        } else {
-          await Promise.race([
-            this._completeReconnect(),
-            new Promise<never>((_resolve, reject) => {
-              setTimeout(() => reject(new Error("timeout")), remaining);
-            }),
-          ]);
-        }
+        await attempt({ protocol: nextProtocol, remaining });
       } catch (error) {
-        if (error instanceof ProtocolStartupFailure) {
-          await this._closeProtocol(nextProtocol);
-          if (error.kind === ProtocolCloseKind.ERROR) {
-            continue;
-          }
-          const state = this._protocolTerminalState({ protocol: nextProtocol });
-          this._closeKind = error.kind;
-          this._closeReason = normalizeCloseReason(error.reason);
-          this._setTerminalState({ state });
-          this._completeRoomClosed();
-          this._invokeTerminalCallbacks({ useErrorCallback: false });
-          return false;
-        }
-
         if (error instanceof Error && error.message === "timeout") {
-          this._allowDisconnectedRequests = false;
+          recordFailureReason(normalizeCloseReason(nextProtocol.closeReason));
           await this._closeProtocol(nextProtocol);
-          await this.sync._onRoomDisconnect();
-          this.messaging._onRoomDisconnect({ reason: normalizeCloseReason(nextProtocol.closeReason) });
-          const timeoutReason = this._reconnectTimeoutReason({ disconnectReason });
-          console.warn(`${timeoutReason}; closing room client`);
-          await this._closeAfterUnexpectedDisconnect({ closeReason: timeoutReason });
-          return false;
+          return this._timedOutRetryResult({ disconnectReason: failureReason });
+        }
+        if (error instanceof ProtocolStartupFailure) {
+          recordFailureReason(error.reason);
+          await this._closeProtocol(nextProtocol);
+          if (error.kind !== ProtocolCloseKind.ERROR) {
+            return {
+              connected: false,
+              closeKind: error.kind,
+              closeReason: error.reason,
+            };
+          }
+          continue;
         }
 
         const nonRetryableCloseReason = nonRetryableConnectFailureReason(error);
-        this._allowDisconnectedRequests = false;
-        await this._closeProtocol(nextProtocol);
-        await this.sync._onRoomDisconnect();
-        this.messaging._onRoomDisconnect({ reason: normalizeCloseReason(nextProtocol.closeReason) });
         if (nonRetryableCloseReason != null) {
-          await this._closeAfterUnexpectedDisconnect({ closeReason: nonRetryableCloseReason });
-          return false;
+          await this._closeProtocol(nextProtocol);
+          return {
+            connected: false,
+            closeKind: ProtocolCloseKind.ERROR,
+            closeReason: nonRetryableCloseReason,
+          };
         }
+
+        recordFailureReason(this._connectionFailureReason(error));
+        console.debug(attemptFailureLogMessage, error);
+        await this._closeProtocol(nextProtocol);
         continue;
       }
 
+      return { connected: true };
+    }
+
+    return {
+      connected: false,
+      closeKind: ProtocolCloseKind.CLIENT,
+      closeReason: this.closeReason,
+    };
+  }
+
+  private async _reconnect({
+    disconnectReason,
+  }: {
+    disconnectReason: string | null;
+  }): Promise<boolean> {
+    const retryResult = await this._retryProtocolConnection({
+      disconnectReason,
+      protocolFactoryFailureLogMessage: "unable to create replacement room protocol",
+      attemptFailureLogMessage: "room reconnect attempt failed",
+      attempt: this._attemptReconnect.bind(this),
+    });
+    if (retryResult.connected) {
       this._emitStatus({
         status: "reconnected",
         message: "room connection restored",
@@ -926,6 +1199,26 @@ export class RoomClient {
       return true;
     }
 
+    const closeKind = retryResult.closeKind ?? null;
+    if (closeKind === ProtocolCloseKind.ERROR) {
+      const closeReason = retryResult.closeReason ?? null;
+      if (closeReason != null && closeReason.startsWith("room reconnect timed out after")) {
+        console.warn(`${closeReason}; closing room client`);
+      }
+      await this._closeAfterUnexpectedDisconnect({ closeReason });
+      return false;
+    }
+
+    if (closeKind == null) {
+      throw new Error("reconnect failure requires a close kind");
+    }
+
+    const state = this._protocolTerminalState({ protocol: this._protocolInstance });
+    this._setTerminalState({ state });
+    this._closeKind = closeKind;
+    this._closeReason = normalizeCloseReason(retryResult.closeReason ?? null);
+    this._completeRoomClosed();
+    this._invokeTerminalCallbacks({ useErrorCallback: false });
     return false;
   }
 
