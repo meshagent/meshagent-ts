@@ -10,13 +10,14 @@ import {
   ProtocolCloseException,
   ProtocolCloseKind,
   ProtocolHandshakeException,
-  ProtocolFactory,
   ProtocolReconnectUnsupportedException,
   WebSocketClientProtocol,
   type MessageHandler,
+  type ProtocolFactory,
 } from "./protocol";
 import { QueuesClient } from "./queues-client";
-import { BinaryContent, Content, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response";
+import { BinaryContent, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response";
+import type { Content } from "./response";
 import { RoomEvent, RoomStatusEvent } from "./room-event";
 import { RoomServerException } from "./room-server-client";
 import { SecretsClient, type OAuthTokenRequestHandler, type SecretRequestHandler } from "./secrets-client";
