@@ -175,8 +175,8 @@ class FakeContainersServer {
         case "load":
           await protocol.send("__response__", new JsonContent({
             json: {
-              resolved_ref: "room.meshagent.com/images/example.tar:latest",
-              refs: ["room.meshagent.com/images/example.tar:latest"],
+              resolved_ref: "registry.meshagent.com/images/example.tar:latest",
+              refs: ["registry.meshagent.com/images/example.tar:latest"],
             },
           }).pack(), messageId);
           return;
@@ -514,8 +514,8 @@ describe("container_client_test", () => {
 
       const imported = await harness.room.containers.load({ archivePath: "/images/example.tar" });
       expect(imported).to.deep.equal({
-        resolvedRef: "room.meshagent.com/images/example.tar:latest",
-        refs: ["room.meshagent.com/images/example.tar:latest"],
+        resolvedRef: "registry.meshagent.com/images/example.tar:latest",
+        refs: ["registry.meshagent.com/images/example.tar:latest"],
       });
 
       expect(await harness.room.containers.loadImage({
