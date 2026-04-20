@@ -291,6 +291,15 @@ export interface Mailbox {
     queue: string;
 }
 
+export interface ProjectRepository {
+    id: string;
+    projectId: string;
+    name: string;
+    description: string;
+    annotations: Record<string, string>;
+    createdAt: Date;
+}
+
 export interface Balance {
     balance: number;
     autoRechargeThreshold?: number | null;
@@ -585,6 +594,48 @@ export class Meshagent {
             name,
             metadata: metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : {},
             annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+        };
+    }
+
+    private parseProjectRepository(data: any): ProjectRepository {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid repository payload");
+        }
+
+        const {
+            id,
+            project_id: projectIdRaw,
+            projectId,
+            name,
+            description,
+            annotations,
+            created_at: createdAtRaw,
+            createdAt,
+        } = data as any;
+        const projectIdValue =
+            typeof projectId === "string"
+                ? projectId
+                : typeof projectIdRaw === "string"
+                  ? projectIdRaw
+                  : undefined;
+        const createdAtValue =
+            typeof createdAt === "string"
+                ? createdAt
+                : typeof createdAtRaw === "string"
+                  ? createdAtRaw
+                  : undefined;
+
+        if (typeof id !== "string" || typeof projectIdValue !== "string" || typeof name !== "string" || typeof createdAtValue !== "string") {
+            throw new RoomException("Invalid repository payload: missing required fields");
+        }
+
+        return {
+            id,
+            projectId: projectIdValue,
+            name,
+            description: typeof description === "string" ? description : "",
+            annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+            createdAt: new Date(createdAtValue),
         };
     }
 
@@ -1363,6 +1414,78 @@ export class Meshagent {
         await this.request(`/accounts/projects/${projectId}/mailboxes/${address}`, {
             method: "DELETE",
             action: "delete mailbox",
+            responseType: "void",
+        });
+    }
+
+    // Repositories ------------------------------------------------------------
+
+    async createRepository(params: {
+        projectId: string;
+        name: string;
+        description?: string;
+        annotations?: Record<string, string>;
+    }): Promise<ProjectRepository> {
+        const { projectId, name, description = "", annotations = {} } = params;
+        const data = await this.request<Record<string, unknown>>(
+            `/accounts/projects/${projectId}/repositories`,
+            {
+                method: "POST",
+                json: { name, description, annotations },
+                action: "create repository",
+            },
+        );
+        return this.parseProjectRepository(data);
+    }
+
+    async updateRepository(params: {
+        projectId: string;
+        repositoryId: string;
+        name: string;
+        description?: string;
+        annotations?: Record<string, string>;
+    }): Promise<ProjectRepository> {
+        const { projectId, repositoryId, name, description = "", annotations = {} } =
+            params;
+        const data = await this.request<Record<string, unknown>>(
+            `/accounts/projects/${projectId}/repositories/${repositoryId}`,
+            {
+                method: "PUT",
+                json: { name, description, annotations },
+                action: "update repository",
+            },
+        );
+        return this.parseProjectRepository(data);
+    }
+
+    async getRepository(
+        projectId: string,
+        repositoryId: string,
+    ): Promise<ProjectRepository> {
+        const data = await this.request<Record<string, unknown>>(
+            `/accounts/projects/${projectId}/repositories/${repositoryId}`,
+            {
+                action: "fetch repository",
+            },
+        );
+        return this.parseProjectRepository(data);
+    }
+
+    async listRepositories(projectId: string): Promise<ProjectRepository[]> {
+        const data = await this.request<{ repositories?: unknown[] }>(
+            `/accounts/projects/${projectId}/repositories`,
+            {
+                action: "list repositories",
+            },
+        );
+        const repositories = Array.isArray(data?.repositories) ? data.repositories : [];
+        return repositories.map((item) => this.parseProjectRepository(item));
+    }
+
+    async deleteRepository(projectId: string, repositoryId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/repositories/${repositoryId}`, {
+            method: "DELETE",
+            action: "delete repository",
             responseType: "void",
         });
     }
