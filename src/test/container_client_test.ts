@@ -158,10 +158,54 @@ class FakeContainersServer {
             json: {
               images: [{
                 id: "img-1",
-                tags: ["demo:latest"],
-                size: 1,
+                preferred_ref: "demo:latest",
+                references: ["demo:latest"],
                 labels: [{ key: "role", value: "demo" }],
+                created_at: "2026-01-01T00:00:00Z",
+                updated_at: "2026-01-02T00:00:00Z",
+                target_media_type: "application/vnd.oci.image.manifest.v1+json",
               }],
+            },
+          }).pack(), messageId);
+          return;
+        case "inspect_image":
+          await protocol.send("__response__", new JsonContent({
+            json: {
+              image: {
+                id: "img-1",
+                preferred_ref: "demo:latest",
+                references: ["demo:latest"],
+                labels: [{ key: "role", value: "demo" }],
+                created_at: "2026-01-01T00:00:00Z",
+                updated_at: "2026-01-02T00:00:00Z",
+                target_media_type: "application/vnd.oci.image.manifest.v1+json",
+              },
+              target: {
+                digest: "sha256:target",
+                media_type: "application/vnd.oci.image.manifest.v1+json",
+                size: 123,
+                annotations: [],
+              },
+              selected_manifest: {
+                digest: "sha256:target",
+                media_type: "application/vnd.oci.image.manifest.v1+json",
+                size: 123,
+                annotations: [],
+              },
+              manifests: [],
+              config: {
+                digest: "sha256:config",
+                media_type: "application/vnd.oci.image.config.v1+json",
+                size: 45,
+                annotations: [],
+              },
+              layers: [{
+                digest: "sha256:layer-1",
+                media_type: "application/vnd.oci.image.layer.v1.tar+gzip",
+                size: 67,
+                annotations: [],
+              }],
+              content_size: 235,
             },
           }).pack(), messageId);
           return;
@@ -426,8 +470,17 @@ describe("container_client_test", () => {
 
       const images = await harness.room.containers.listImages();
       expect(images).to.have.length(1);
-      expect(images[0].tags).to.deep.equal(["demo:latest"]);
+      expect(images[0].preferredRef).to.equal("demo:latest");
+      expect(images[0].references).to.deep.equal(["demo:latest"]);
       expect(images[0].labels).to.deep.equal({ role: "demo" });
+      expect(images[0].createdAt?.toISOString()).to.equal("2026-01-01T00:00:00.000Z");
+      expect(images[0].targetMediaType).to.equal("application/vnd.oci.image.manifest.v1+json");
+
+      const inspection = await harness.room.containers.inspectImage({ imageId: "img-1" });
+      expect(inspection.image.preferredRef).to.equal("demo:latest");
+      expect(inspection.target.digest).to.equal("sha256:target");
+      expect(inspection.layers[0].digest).to.equal("sha256:layer-1");
+      expect(inspection.contentSize).to.equal(235);
 
       const containers = await harness.room.containers.list();
       expect(containers).to.have.length(1);
@@ -459,6 +512,7 @@ describe("container_client_test", () => {
         "run",
         "run_service",
         "list_images",
+        "inspect_image",
         "list_containers",
         "wait_for_exit",
         "logs",
@@ -470,7 +524,7 @@ describe("container_client_test", () => {
       const runServiceInput = harness.server.requests[2].input;
       expect(runServiceInput["env"]).to.deep.equal([{ key: "A", value: "1" }]);
 
-      const logsInput = harness.server.requests[6].input;
+      const logsInput = harness.server.requests[7].input;
       expect(logsInput["kind"]).to.equal("start");
       expect(logsInput["container_id"]).to.equal("container-1");
       expect(logsInput["follow"]).to.equal(false);

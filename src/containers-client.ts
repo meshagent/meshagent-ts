@@ -16,9 +16,36 @@ export interface DockerSecret {
 
 export interface ContainerImage {
   id: string;
-  tags: string[];
-  size?: number;
+  preferredRef?: string | null;
+  references: string[];
   labels: Record<string, string>;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  targetMediaType?: string | null;
+}
+
+export interface ContainerImageDescriptor {
+  digest: string;
+  mediaType?: string | null;
+  size?: number;
+  annotations: Record<string, string>;
+}
+
+export interface ContainerImageManifest {
+  descriptor: ContainerImageDescriptor;
+  platformOs?: string | null;
+  platformArchitecture?: string | null;
+  platformVariant?: string | null;
+}
+
+export interface ContainerImageInspection {
+  image: ContainerImage;
+  target: ContainerImageDescriptor;
+  selectedManifest?: ContainerImageDescriptor | null;
+  manifests: ContainerImageManifest[];
+  config?: ContainerImageDescriptor | null;
+  layers: ContainerImageDescriptor[];
+  contentSize?: number;
 }
 
 export interface ImportedImage {
@@ -116,6 +143,32 @@ function readOptionalIntegerField(data: Record<string, unknown>, field: string, 
   return value;
 }
 
+function readOptionalStringField(data: Record<string, unknown>, field: string, operation: string): string | undefined {
+  const value = data[field];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return value;
+}
+
+function parseTimestampField(data: Record<string, unknown>, field: string, operation: string): Date | undefined {
+  const value = data[field];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return timestamp;
+}
+
 function decodeUtf8(data: Uint8Array, operation: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(data);
@@ -172,6 +225,116 @@ function normalizeImageLabels(labelsRaw: unknown, operation: string): Record<str
     return {};
   }
   throw new RoomServerException(`unexpected return type from containers.${operation}`);
+}
+
+function normalizeImageReferences(entry: Record<string, unknown>, operation: string): string[] {
+  const referencesRaw = entry["references"];
+  if (Array.isArray(referencesRaw)) {
+    const references = referencesRaw.filter((item): item is string => typeof item === "string");
+    if (references.length !== referencesRaw.length) {
+      throw new RoomServerException(`unexpected return type from containers.${operation}`);
+    }
+    return references;
+  }
+  const tagsRaw = entry["tags"];
+  if (Array.isArray(tagsRaw)) {
+    const references = tagsRaw.filter((item): item is string => typeof item === "string");
+    if (references.length !== tagsRaw.length) {
+      throw new RoomServerException(`unexpected return type from containers.${operation}`);
+    }
+    return references;
+  }
+  if (referencesRaw === undefined || referencesRaw === null) {
+    return [];
+  }
+  throw new RoomServerException(`unexpected return type from containers.${operation}`);
+}
+
+function parseContainerImage(entry: Record<string, unknown>, operation: string): ContainerImage {
+  const references = normalizeImageReferences(entry, operation);
+  const preferredRef = readOptionalStringField(entry, "preferred_ref", operation) ?? references[0];
+  return {
+    id: readStringField(entry, "id", operation),
+    preferredRef,
+    references,
+    labels: normalizeImageLabels(entry["labels"], operation),
+    createdAt: parseTimestampField(entry, "created_at", operation),
+    updatedAt: parseTimestampField(entry, "updated_at", operation),
+    targetMediaType: readOptionalStringField(entry, "target_media_type", operation),
+  };
+}
+
+function parseContainerImageDescriptor(
+  entry: Record<string, unknown>,
+  operation: string,
+): ContainerImageDescriptor {
+  return {
+    digest: readStringField(entry, "digest", operation),
+    mediaType: readOptionalStringField(entry, "media_type", operation),
+    size: readOptionalIntegerField(entry, "size", operation),
+    annotations: normalizeImageLabels(entry["annotations"], operation),
+  };
+}
+
+function parseOptionalContainerImageDescriptor(
+  value: unknown,
+  operation: string,
+): ContainerImageDescriptor | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return parseContainerImageDescriptor(value, operation);
+}
+
+function parseContainerImageManifest(
+  entry: Record<string, unknown>,
+  operation: string,
+): ContainerImageManifest {
+  const descriptorRaw = entry["descriptor"];
+  if (!isRecord(descriptorRaw)) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return {
+    descriptor: parseContainerImageDescriptor(descriptorRaw, operation),
+    platformOs: readOptionalStringField(entry, "platform_os", operation),
+    platformArchitecture: readOptionalStringField(entry, "platform_architecture", operation),
+    platformVariant: readOptionalStringField(entry, "platform_variant", operation),
+  };
+}
+
+function parseContainerImageInspection(
+  entry: Record<string, unknown>,
+  operation: string,
+): ContainerImageInspection {
+  const imageRaw = entry["image"];
+  const targetRaw = entry["target"];
+  const manifestsRaw = entry["manifests"];
+  const layersRaw = entry["layers"];
+  if (!isRecord(imageRaw) || !isRecord(targetRaw) || !Array.isArray(manifestsRaw) || !Array.isArray(layersRaw)) {
+    throw new RoomServerException(`unexpected return type from containers.${operation}`);
+  }
+  return {
+    image: parseContainerImage(imageRaw, operation),
+    target: parseContainerImageDescriptor(targetRaw, operation),
+    selectedManifest: parseOptionalContainerImageDescriptor(entry["selected_manifest"], operation),
+    manifests: manifestsRaw.map((manifest) => {
+      if (!isRecord(manifest)) {
+        throw new RoomServerException(`unexpected return type from containers.${operation}`);
+      }
+      return parseContainerImageManifest(manifest, operation);
+    }),
+    config: parseOptionalContainerImageDescriptor(entry["config"], operation),
+    layers: layersRaw.map((layer) => {
+      if (!isRecord(layer)) {
+        throw new RoomServerException(`unexpected return type from containers.${operation}`);
+      }
+      return parseContainerImageDescriptor(layer, operation);
+    }),
+    contentSize: readOptionalIntegerField(entry, "content_size", operation),
+  };
 }
 
 function parseImportedImage(data: Record<string, unknown>, operation: string): ImportedImage {
@@ -421,22 +584,19 @@ export class ContainersClient {
       if (!isRecord(entry)) {
         throw this.unexpectedResponseError("list_images");
       }
-      const id = entry["id"];
-      const tags = entry["tags"];
-      const labelsRaw = entry["labels"];
-      if (typeof id !== "string" || !Array.isArray(tags)) {
-        throw this.unexpectedResponseError("list_images");
-      }
-      const normalizedTags = tags.filter((tag): tag is string => typeof tag === "string");
-      const size = entry["size"];
-      images.push({
-        id,
-        tags: normalizedTags,
-        size: typeof size === "number" ? size : undefined,
-        labels: normalizeImageLabels(labelsRaw, "list_images"),
-      });
+      images.push(parseContainerImage(entry, "list_images"));
     }
     return images;
+  }
+
+  public async inspectImage(params: { imageId: string }): Promise<ContainerImageInspection> {
+    const output = await this.invoke("inspect_image", {
+      image_id: params.imageId,
+    });
+    if (!(output instanceof JsonContent) || !isRecord(output.json)) {
+      throw this.unexpectedResponseError("inspect_image");
+    }
+    return parseContainerImageInspection(output.json, "inspect_image");
   }
 
   public async deleteImage(params: { image: string }): Promise<void> {
