@@ -1260,8 +1260,11 @@ export class Meshagent {
         });
     }
 
-    async getUsage(projectId: string, options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string } = {}): Promise<Record<string, unknown>[]> {
-        const { start, end, interval, report, users, room } = options;
+    async getUsage(
+        projectId: string,
+        options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string; provider?: string; model?: string; usageType?: string } = {},
+    ): Promise<Record<string, unknown>[]> {
+        const { start, end, interval, report, users, room, provider, model, usageType } = options;
         const data = await this.request<Record<string, any>>(`/accounts/projects/${projectId}/usage`, {
             query: {
                 start: start ? start.toISOString() : undefined,
@@ -1270,6 +1273,9 @@ export class Meshagent {
                 report,
                 users: users && users.length > 0 ? users.join(",") : undefined,
                 room: room && room.trim().length > 0 ? room.trim() : undefined,
+                provider: provider && provider.trim().length > 0 ? provider.trim() : undefined,
+                model: model && model.trim().length > 0 ? model.trim() : undefined,
+                usage_type: usageType && usageType.trim().length > 0 ? usageType.trim() : undefined,
             },
             action: "retrieve usage",
         });
