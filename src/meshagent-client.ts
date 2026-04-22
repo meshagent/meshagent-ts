@@ -1260,14 +1260,16 @@ export class Meshagent {
         });
     }
 
-    async getUsage(projectId: string, options: { start?: Date; end?: Date; interval?: string; report?: string } = {}): Promise<Record<string, unknown>[]> {
-        const { start, end, interval, report } = options;
+    async getUsage(projectId: string, options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string } = {}): Promise<Record<string, unknown>[]> {
+        const { start, end, interval, report, users, room } = options;
         const data = await this.request<Record<string, any>>(`/accounts/projects/${projectId}/usage`, {
             query: {
                 start: start ? start.toISOString() : undefined,
                 end: end ? end.toISOString() : undefined,
                 interval,
                 report,
+                users: users && users.length > 0 ? users.join(",") : undefined,
+                room: room && room.trim().length > 0 ? room.trim() : undefined,
             },
             action: "retrieve usage",
         });
