@@ -306,6 +306,7 @@ export interface Balance {
     autoRechargeAmount?: number | null;
     lastRecharge?: Date | null;
     monthlyBudget?: number | null;
+    autoRechargePaused?: boolean;
 }
 
 export interface Transaction {
@@ -704,12 +705,14 @@ export class Meshagent {
         const amount = (data as any).auto_recharge_amount ?? (data as any).autoRechargeAmount;
         const lastRechargeRaw = (data as any).last_recharge ?? (data as any).lastRecharge;
         const monthlyBudget = (data as any).monthly_budget ?? (data as any).monthlyBudget;
+        const autoRechargePaused = (data as any).auto_recharge_paused ?? (data as any).autoRechargePaused;
         return {
             balance: balanceValue,
             autoRechargeThreshold: typeof threshold === "number" ? threshold : null,
             autoRechargeAmount: typeof amount === "number" ? amount : null,
             lastRecharge: typeof lastRechargeRaw === "string" ? new Date(lastRechargeRaw) : null,
             monthlyBudget: typeof monthlyBudget === "number" ? monthlyBudget : null,
+            autoRechargePaused: autoRechargePaused === true,
         };
     }
 
