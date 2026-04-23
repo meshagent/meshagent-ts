@@ -305,6 +305,7 @@ export interface Balance {
     autoRechargeThreshold?: number | null;
     autoRechargeAmount?: number | null;
     lastRecharge?: Date | null;
+    monthlyBudget?: number | null;
 }
 
 export interface Transaction {
@@ -702,11 +703,13 @@ export class Meshagent {
         const threshold = (data as any).auto_recharge_threshold ?? (data as any).autoRechargeThreshold;
         const amount = (data as any).auto_recharge_amount ?? (data as any).autoRechargeAmount;
         const lastRechargeRaw = (data as any).last_recharge ?? (data as any).lastRecharge;
+        const monthlyBudget = (data as any).monthly_budget ?? (data as any).monthlyBudget;
         return {
             balance: balanceValue,
             autoRechargeThreshold: typeof threshold === "number" ? threshold : null,
             autoRechargeAmount: typeof amount === "number" ? amount : null,
             lastRecharge: typeof lastRechargeRaw === "string" ? new Date(lastRechargeRaw) : null,
+            monthlyBudget: typeof monthlyBudget === "number" ? monthlyBudget : null,
         };
     }
 
@@ -1219,10 +1222,22 @@ export class Meshagent {
         return list.map((item) => this.parseTransaction(item));
     }
 
-    async setAutoRecharge({ projectId, enabled, amount, threshold }: { projectId: string; enabled: boolean; amount: number; threshold: number }): Promise<void> {
+    async setAutoRecharge({
+        projectId,
+        enabled,
+        amount,
+        threshold,
+        monthlyBudget = null,
+    }: {
+        projectId: string;
+        enabled: boolean;
+        amount: number;
+        threshold: number;
+        monthlyBudget?: number | null;
+    }): Promise<void> {
         await this.request(`/accounts/projects/${projectId}/recharge`, {
             method: "POST",
-            json: { enabled, amount, threshold },
+            json: { enabled, amount, threshold, monthly_budget: monthlyBudget },
             action: "update auto recharge settings",
             responseType: "void",
         });
