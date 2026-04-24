@@ -291,6 +291,31 @@ export interface Mailbox {
     queue: string;
 }
 
+export type FeedVisibility = "public" | "project" | "private";
+
+export interface Feed {
+    id: string;
+    projectId: string;
+    createdAt: Date;
+    name: string;
+    description: string;
+    visibility: FeedVisibility;
+    paused: boolean;
+    annotations: Record<string, string>;
+    messageSchema?: Record<string, unknown> | boolean | null;
+}
+
+export interface FeedSubscription {
+    id: string;
+    feedId: string;
+    projectId: string;
+    room: string;
+    roomId?: string | null;
+    path: string;
+    createdAt: Date;
+    annotations: Record<string, string>;
+}
+
 export interface ProjectRepository {
     id: string;
     projectId: string;
@@ -379,11 +404,12 @@ export interface ExternalOAuthClientRegistration {
 }
 
 type RequestBody = string | Uint8Array | ArrayBuffer | null | undefined;
+type JsonRequest = Record<string, unknown> | Array<unknown> | string | number | boolean | null;
 
 interface RequestOptions {
     method?: string;
     query?: Record<string, string | number | boolean | undefined | null>;
-    json?: Record<string, unknown> | Array<unknown> | null;
+    json?: JsonRequest;
     body?: RequestBody;
     headers?: Record<string, string>;
     action: string;
@@ -596,6 +622,118 @@ export class Meshagent {
             id,
             name,
             metadata: metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : {},
+            annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+        };
+    }
+
+    private parseFeed(data: any): Feed {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid feed payload");
+        }
+
+        const {
+            id,
+            project_id: projectIdRaw,
+            projectId,
+            created_at: createdAtRaw,
+            createdAt,
+            name,
+            description,
+            visibility,
+            paused,
+            annotations,
+            message_schema: messageSchemaRaw,
+            messageSchema,
+        } = data as any;
+        const projectIdValue =
+            typeof projectId === "string"
+                ? projectId
+                : typeof projectIdRaw === "string"
+                  ? projectIdRaw
+                  : undefined;
+        const createdAtValue =
+            typeof createdAt === "string"
+                ? createdAt
+                : typeof createdAtRaw === "string"
+                  ? createdAtRaw
+                  : undefined;
+        const visibilityValue =
+            visibility === "public" || visibility === "project" || visibility === "private"
+                ? visibility
+                : undefined;
+        const messageSchemaValue =
+            typeof messageSchema === "boolean" || (messageSchema && typeof messageSchema === "object")
+                ? messageSchema
+                : typeof messageSchemaRaw === "boolean" || (messageSchemaRaw && typeof messageSchemaRaw === "object")
+                  ? messageSchemaRaw
+                  : null;
+
+        if (
+            typeof id !== "string" ||
+            typeof projectIdValue !== "string" ||
+            typeof createdAtValue !== "string" ||
+            typeof name !== "string" ||
+            visibilityValue === undefined
+        ) {
+            throw new RoomException("Invalid feed payload: missing required fields");
+        }
+
+        return {
+            id,
+            projectId: projectIdValue,
+            createdAt: new Date(createdAtValue),
+            name,
+            description: typeof description === "string" ? description : "",
+            visibility: visibilityValue,
+            paused: paused === true,
+            annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+            messageSchema: messageSchemaValue,
+        };
+    }
+
+    private parseFeedSubscription(data: any): FeedSubscription {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid feed subscription payload");
+        }
+
+        const {
+            id,
+            feed_id: feedIdRaw,
+            feedId,
+            project_id: projectIdRaw,
+            projectId,
+            room,
+            room_id: roomIdRaw,
+            roomId,
+            path,
+            created_at: createdAtRaw,
+            createdAt,
+            annotations,
+        } = data as any;
+        const feedIdValue = typeof feedId === "string" ? feedId : feedIdRaw;
+        const projectIdValue = typeof projectId === "string" ? projectId : projectIdRaw;
+        const createdAtValue = typeof createdAt === "string" ? createdAt : createdAtRaw;
+        const roomIdValue = typeof roomId === "string" ? roomId : roomIdRaw;
+
+        if (
+            typeof id !== "string" ||
+            typeof feedIdValue !== "string" ||
+            typeof projectIdValue !== "string" ||
+            typeof room !== "string" ||
+            typeof path !== "string" ||
+            typeof createdAtValue !== "string"
+        ) {
+            throw new RoomException("Invalid feed subscription payload: missing required fields");
+        }
+
+        return {
+            id,
+            feedId: feedIdValue,
+            projectId: projectIdValue,
+            room,
+            roomId: typeof roomIdValue === "string" ? roomIdValue : undefined,
+            path,
+            createdAt: new Date(createdAtValue),
             annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
         };
     }
@@ -1443,6 +1581,187 @@ export class Meshagent {
         await this.request(`/accounts/projects/${projectId}/mailboxes/${address}`, {
             method: "DELETE",
             action: "delete mailbox",
+            responseType: "void",
+        });
+    }
+
+    // Feeds -------------------------------------------------------------------
+
+    async createFeed(params: {
+        projectId: string;
+        name: string;
+        description?: string;
+        visibility?: FeedVisibility;
+        paused?: boolean;
+        annotations?: Record<string, string>;
+        messageSchema?: Record<string, unknown> | boolean | null;
+    }): Promise<Feed> {
+        const {
+            projectId,
+            name,
+            description = "",
+            visibility = "private",
+            paused = false,
+            annotations = {},
+            messageSchema = null,
+        } = params;
+        const data = await this.request<Record<string, unknown>>(`/accounts/projects/${projectId}/feeds`, {
+            method: "POST",
+            json: {
+                name,
+                description,
+                visibility,
+                paused,
+                annotations,
+                message_schema: messageSchema,
+            },
+            action: "create feed",
+        });
+        return this.parseFeed((data as any).feed);
+    }
+
+    async updateFeed(params: {
+        projectId: string;
+        feedId: string;
+        name: string;
+        description?: string;
+        paused?: boolean;
+        annotations?: Record<string, string>;
+        messageSchema?: Record<string, unknown> | boolean | null;
+    }): Promise<void> {
+        const {
+            projectId,
+            feedId,
+            name,
+            description = "",
+            paused = false,
+            annotations = {},
+            messageSchema = null,
+        } = params;
+        await this.request(`/accounts/projects/${projectId}/feeds/${feedId}`, {
+            method: "PUT",
+            json: {
+                name,
+                description,
+                paused,
+                annotations,
+                message_schema: messageSchema,
+            },
+            action: "update feed",
+            responseType: "void",
+        });
+    }
+
+    async getFeed(projectId: string, feedId: string): Promise<Feed> {
+        const data = await this.request<Record<string, unknown>>(`/accounts/projects/${projectId}/feeds/${feedId}`, {
+            action: "get feed",
+        });
+        return this.parseFeed((data as any).feed);
+    }
+
+    async listFeeds(projectId: string): Promise<Feed[]> {
+        const data = await this.request<{ feeds?: any[] }>(`/accounts/projects/${projectId}/feeds`, {
+            action: "list feeds",
+        });
+        const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
+        return feeds.map((item) => this.parseFeed(item));
+    }
+
+    async listRoomFeeds(projectId: string, roomName: string): Promise<Feed[]> {
+        const data = await this.request<{ feeds?: any[] }>(`/accounts/projects/${projectId}/rooms/${roomName}/feeds`, {
+            action: "list room feeds",
+        });
+        const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
+        return feeds.map((item) => this.parseFeed(item));
+    }
+
+    async deleteFeed(projectId: string, feedId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/feeds/${feedId}`, {
+            method: "DELETE",
+            action: "delete feed",
+            responseType: "void",
+        });
+    }
+
+    async publishFeedMessage(params: { projectId: string; feedId: string; message: JsonRequest }): Promise<void> {
+        const { projectId, feedId, message } = params;
+        await this.request(`/accounts/projects/${projectId}/feeds/${feedId}/messages`, {
+            method: "POST",
+            json: message,
+            action: "publish feed message",
+            responseType: "void",
+        });
+    }
+
+    async publishFeedBatch(params: { projectId: string; feedId: string; messages: JsonRequest[] }): Promise<void> {
+        const { projectId, feedId, messages } = params;
+        await this.request(`/accounts/projects/${projectId}/feeds/${feedId}/messages/batch`, {
+            method: "POST",
+            json: messages,
+            action: "publish feed messages",
+            responseType: "void",
+        });
+    }
+
+    async createFeedSubscription(params: {
+        projectId: string;
+        feedId: string;
+        room: string;
+        path: string;
+        annotations?: Record<string, string>;
+    }): Promise<FeedSubscription> {
+        const { projectId, feedId, room, path, annotations = {} } = params;
+        const data = await this.request<Record<string, unknown>>(
+            `/accounts/projects/${projectId}/feeds/${feedId}/subscriptions`,
+            {
+                method: "POST",
+                json: { room, path, annotations },
+                action: "create feed subscription",
+            },
+        );
+        return this.parseFeedSubscription((data as any).subscription);
+    }
+
+    async updateFeedSubscription(params: {
+        projectId: string;
+        feedId: string;
+        subscriptionId: string;
+        annotations?: Record<string, string>;
+    }): Promise<void> {
+        const { projectId, feedId, subscriptionId, annotations = {} } = params;
+        await this.request(`/accounts/projects/${projectId}/feeds/${feedId}/subscriptions/${subscriptionId}`, {
+            method: "PUT",
+            json: { annotations },
+            action: "update feed subscription",
+            responseType: "void",
+        });
+    }
+
+    async getFeedSubscription(projectId: string, feedId: string, subscriptionId: string): Promise<FeedSubscription> {
+        const data = await this.request<Record<string, unknown>>(
+            `/accounts/projects/${projectId}/feeds/${feedId}/subscriptions/${subscriptionId}`,
+            {
+                action: "get feed subscription",
+            },
+        );
+        return this.parseFeedSubscription((data as any).subscription);
+    }
+
+    async listFeedSubscriptions(projectId: string, feedId: string): Promise<FeedSubscription[]> {
+        const data = await this.request<{ subscriptions?: any[] }>(
+            `/accounts/projects/${projectId}/feeds/${feedId}/subscriptions`,
+            {
+                action: "list feed subscriptions",
+            },
+        );
+        const subscriptions = Array.isArray(data?.subscriptions) ? data.subscriptions : [];
+        return subscriptions.map((item) => this.parseFeedSubscription(item));
+    }
+
+    async deleteFeedSubscription(projectId: string, feedId: string, subscriptionId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/feeds/${feedId}/subscriptions/${subscriptionId}`, {
+            method: "DELETE",
+            action: "delete feed subscription",
             responseType: "void",
         });
     }
