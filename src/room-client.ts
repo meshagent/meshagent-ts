@@ -446,8 +446,80 @@ export class RoomClient {
     this._eventEmitter.emit(event.name, event);
   }
 
-  public listen(): AsyncIterable<RoomEvent> {
-    return this._eventsController.stream;
+  public listen({abortSignal}: {abortSignal?: AbortSignal} = {}): AsyncIterable<RoomEvent> {
+    if (abortSignal === undefined || abortSignal === null) {
+      return this._eventsController.stream;
+    }
+
+    const source = this._eventsController.stream;
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<RoomEvent> {
+        const eventIterator = source[Symbol.asyncIterator]();
+        let abortReject: ((reason: unknown) => void) | null = null;
+        let cleanedUp = false;
+
+        const abortError = (): unknown => {
+          if (abortSignal.reason != null) {
+            return abortSignal.reason;
+          }
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          return error;
+        };
+
+        const cleanup = async (): Promise<void> => {
+          if (cleanedUp) {
+            return;
+          }
+          cleanedUp = true;
+          abortSignal.removeEventListener("abort", onAbort);
+          await eventIterator.return?.();
+        };
+
+        const onAbort = (): void => {
+          const reject = abortReject;
+          abortReject = null;
+          reject?.(abortError());
+          void cleanup();
+        };
+
+        abortSignal.addEventListener("abort", onAbort, { once: true });
+
+        return {
+          async next(): Promise<IteratorResult<RoomEvent>> {
+            if (abortSignal.aborted) {
+              await cleanup();
+              return Promise.reject(abortError());
+            }
+
+            const abortPromise = new Promise<never>((_, reject) => {
+              abortReject = reject;
+            });
+
+            try {
+              const result = await Promise.race([eventIterator.next(), abortPromise]);
+              if (result.done) {
+                await cleanup();
+              }
+              return result;
+            } catch (error) {
+              await cleanup();
+              throw error;
+            } finally {
+              abortReject = null;
+            }
+          },
+          async return(): Promise<IteratorResult<RoomEvent>> {
+            await cleanup();
+            return { done: true, value: undefined as any };
+          },
+          async throw(e?: unknown): Promise<IteratorResult<RoomEvent>> {
+            await cleanup();
+            return Promise.reject(e);
+          },
+        };
+      },
+    };
   }
 
   public async waitForClose(): Promise<void> {
