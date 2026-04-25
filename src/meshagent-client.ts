@@ -316,6 +316,16 @@ export interface FeedSubscription {
     annotations: Record<string, string>;
 }
 
+export interface LLMLogger {
+    id: string;
+    projectId: string;
+    destinationFeedId: string;
+    filterExpression: string;
+    paused: boolean;
+    createdAt: Date;
+    annotations: Record<string, string>;
+}
+
 export interface ProjectRepository {
     id: string;
     projectId: string;
@@ -733,6 +743,52 @@ export class Meshagent {
             room,
             roomId: typeof roomIdValue === "string" ? roomIdValue : undefined,
             path,
+            createdAt: new Date(createdAtValue),
+            annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+        };
+    }
+
+    private parseLLMLogger(data: any): LLMLogger {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid LLM logger payload");
+        }
+
+        const {
+            id,
+            project_id: projectIdRaw,
+            projectId,
+            destination_feed_id: destinationFeedIdRaw,
+            destinationFeedId,
+            filter_expression: filterExpressionRaw,
+            filterExpression,
+            paused,
+            created_at: createdAtRaw,
+            createdAt,
+            annotations,
+        } = data as any;
+        const projectIdValue = typeof projectId === "string" ? projectId : projectIdRaw;
+        const destinationFeedIdValue =
+            typeof destinationFeedId === "string" ? destinationFeedId : destinationFeedIdRaw;
+        const filterExpressionValue =
+            typeof filterExpression === "string" ? filterExpression : filterExpressionRaw;
+        const createdAtValue = typeof createdAt === "string" ? createdAt : createdAtRaw;
+
+        if (
+            typeof id !== "string" ||
+            typeof projectIdValue !== "string" ||
+            typeof destinationFeedIdValue !== "string" ||
+            typeof filterExpressionValue !== "string" ||
+            typeof createdAtValue !== "string"
+        ) {
+            throw new RoomException("Invalid LLM logger payload: missing required fields");
+        }
+
+        return {
+            id,
+            projectId: projectIdValue,
+            destinationFeedId: destinationFeedIdValue,
+            filterExpression: filterExpressionValue,
+            paused: paused === true,
             createdAt: new Date(createdAtValue),
             annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
         };
@@ -1421,9 +1477,9 @@ export class Meshagent {
 
     async getUsage(
         projectId: string,
-        options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string; provider?: string; model?: string; usageType?: string } = {},
+        options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string; provider?: string; model?: string; usageType?: string; client?: string } = {},
     ): Promise<Record<string, unknown>[]> {
-        const { start, end, interval, report, users, room, provider, model, usageType } = options;
+        const { start, end, interval, report, users, room, provider, model, usageType, client } = options;
         const data = await this.request<Record<string, any>>(`/accounts/projects/${projectId}/usage`, {
             query: {
                 start: start ? start.toISOString() : undefined,
@@ -1435,6 +1491,7 @@ export class Meshagent {
                 provider: provider && provider.trim().length > 0 ? provider.trim() : undefined,
                 model: model && model.trim().length > 0 ? model.trim() : undefined,
                 usage_type: usageType && usageType.trim().length > 0 ? usageType.trim() : undefined,
+                client: client && client.trim().length > 0 ? client.trim() : undefined,
             },
             action: "retrieve usage",
         });
@@ -1762,6 +1819,74 @@ export class Meshagent {
         await this.request(`/accounts/projects/${projectId}/feeds/${feedId}/subscriptions/${subscriptionId}`, {
             method: "DELETE",
             action: "delete feed subscription",
+            responseType: "void",
+        });
+    }
+
+    // LLM Loggers -------------------------------------------------------------
+
+    async createLLMLogger(params: {
+        projectId: string;
+        destinationFeedId: string;
+        filterExpression: string;
+        paused?: boolean;
+        annotations?: Record<string, string>;
+    }): Promise<LLMLogger> {
+        const { projectId, destinationFeedId, filterExpression, paused = false, annotations = {} } = params;
+        const data = await this.request<Record<string, unknown>>(`/accounts/projects/${projectId}/llm-loggers`, {
+            method: "POST",
+            json: {
+                destination_feed_id: destinationFeedId,
+                filter_expression: filterExpression,
+                paused,
+                annotations,
+            },
+            action: "create LLM logger",
+        });
+        return this.parseLLMLogger((data as any).logger);
+    }
+
+    async updateLLMLogger(params: {
+        projectId: string;
+        loggerId: string;
+        destinationFeedId: string;
+        filterExpression: string;
+        paused?: boolean;
+        annotations?: Record<string, string>;
+    }): Promise<void> {
+        const { projectId, loggerId, destinationFeedId, filterExpression, paused = false, annotations = {} } = params;
+        await this.request(`/accounts/projects/${projectId}/llm-loggers/${loggerId}`, {
+            method: "PUT",
+            json: {
+                destination_feed_id: destinationFeedId,
+                filter_expression: filterExpression,
+                paused,
+                annotations,
+            },
+            action: "update LLM logger",
+            responseType: "void",
+        });
+    }
+
+    async getLLMLogger(projectId: string, loggerId: string): Promise<LLMLogger> {
+        const data = await this.request<Record<string, unknown>>(`/accounts/projects/${projectId}/llm-loggers/${loggerId}`, {
+            action: "get LLM logger",
+        });
+        return this.parseLLMLogger((data as any).logger);
+    }
+
+    async listLLMLoggers(projectId: string): Promise<LLMLogger[]> {
+        const data = await this.request<{ loggers?: any[] }>(`/accounts/projects/${projectId}/llm-loggers`, {
+            action: "list LLM loggers",
+        });
+        const loggers = Array.isArray(data?.loggers) ? data.loggers : [];
+        return loggers.map((item) => this.parseLLMLogger(item));
+    }
+
+    async deleteLLMLogger(projectId: string, loggerId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/llm-loggers/${loggerId}`, {
+            method: "DELETE",
+            action: "delete LLM logger",
             responseType: "void",
         });
     }
