@@ -337,7 +337,7 @@ describe("room_client_stream_test", () => {
     controller.abort(new Error("stop listening"));
 
     try {
-      const iterator = room.listen(controller.signal)[Symbol.asyncIterator]();
+      const iterator = room.listen({abortSignal: controller.signal})[Symbol.asyncIterator]();
 
       try {
         await iterator.next();
@@ -358,7 +358,7 @@ describe("room_client_stream_test", () => {
     const controller = new AbortController();
 
     try {
-      const iterator = room.listen(controller.signal)[Symbol.asyncIterator]();
+      const iterator = room.listen({abortSignal: controller.signal})[Symbol.asyncIterator]();
       const next = iterator.next();
       controller.abort(new Error("stop listening"));
 
