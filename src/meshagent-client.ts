@@ -1477,9 +1477,9 @@ export class Meshagent {
 
     async getUsage(
         projectId: string,
-        options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string; provider?: string; model?: string; usageType?: string; client?: string } = {},
+        options: { start?: Date; end?: Date; interval?: string; report?: string; users?: string[]; room?: string; provider?: string; model?: string; usageType?: string; client?: string; annotations?: Record<string, string> } = {},
     ): Promise<Record<string, unknown>[]> {
-        const { start, end, interval, report, users, room, provider, model, usageType, client } = options;
+        const { start, end, interval, report, users, room, provider, model, usageType, client, annotations } = options;
         const data = await this.request<Record<string, any>>(`/accounts/projects/${projectId}/usage`, {
             query: {
                 start: start ? start.toISOString() : undefined,
@@ -1492,6 +1492,7 @@ export class Meshagent {
                 model: model && model.trim().length > 0 ? model.trim() : undefined,
                 usage_type: usageType && usageType.trim().length > 0 ? usageType.trim() : undefined,
                 client: client && client.trim().length > 0 ? client.trim() : undefined,
+                annotations: annotations && Object.keys(annotations).length > 0 ? JSON.stringify(annotations) : undefined,
             },
             action: "retrieve usage",
         });
