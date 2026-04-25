@@ -33,7 +33,7 @@
 - Meshagent TS client now normalizes binary request bodies for fetch and includes TypeScript declarations for runtime entrypoint functions.
 
 ## [0.37.0]
-- Breaking: Database client now supports `json`, `uuid`, `list`, and `struct` types with typed wrappers (DatabaseJson/DatabaseStruct/DatabaseExpression/DatabaseDate/DatabaseUuid); list/struct values must be wrapped and update now takes `values` only.
+- Breaking: Datasets client now supports `json`, `uuid`, `list`, and `struct` types with typed wrappers (DatasetJson/DatasetStruct/DatasetExpression/DatasetDate/DatasetUuid); list/struct values must be wrapped and update now takes `values` only.
 - Breaking: Containers build now streams build contexts (start/data chunks) with `mountPath`/`chunks` and removes `start_build`.
 - Breaking: Toolkit/hosting refactor replaces RemoteToolkit with startHostedToolkit/HostedToolkit, removes ToolkitConfiguration and `supports_context`, and updates React/Tailwind helpers to start hosted toolkits.
 - Participant tokens now include LLM grants and richer grant serialization (including allowed toolkits and extra payload preservation), and schema helpers add `json`/`uuid` data types.
@@ -136,7 +136,7 @@
 - Breaking: tool invocation now uses toolkit-based `room.invoke`/`room.*` events with streaming tool-call chunks, and `RemoteToolkit` registration follows the new room-scoped protocol.
 - Added a Containers client with image listing/pulling, container lifecycle operations, and exec/log streaming.
 - Storage client replaced handle-based writes with streaming upload/download, download URLs, and size metadata.
-- Database and Sync clients now stream inserts/queries/search and sync updates with typed value handling; messaging/queues/developer clients updated to toolkit invocation.
+- Datasets and Sync clients now stream inserts/queries/search and sync updates with typed value handling; messaging/queues/developer clients updated to toolkit invocation.
 
 ## [0.29.4]
 - Stability

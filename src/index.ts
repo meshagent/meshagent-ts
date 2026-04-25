@@ -5,7 +5,7 @@ export * from './client';
 export * from './completer';
 export * from './containers-client';
 export * from './data-types';
-export * from './database-client';
+export * from './datasets-client';
 export * from './developer-client';
 export * from './document';
 export * from './meshagent-client';

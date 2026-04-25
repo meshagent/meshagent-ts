@@ -6,7 +6,7 @@ import {
     ApiScope,
     ContainerRegistryGrant,
     ContainersGrant,
-    DatabaseGrant,
+    DatasetGrant,
     encodeApiKey,
     LivekitGrant,
     LLMGrant,
@@ -79,13 +79,13 @@ describe("Grants", () => {
         expect(restricted.canReceive("s1")).to.equal(false);
     });
 
-    it("database grant supports namespace matching", () => {
-        let grant = new DatabaseGrant();
+    it("datasets grant supports namespace matching", () => {
+        let grant = new DatasetGrant();
         expect(grant.canRead("tbl")).to.equal(true);
         expect(grant.canWrite("tbl")).to.equal(true);
         expect(grant.canAlter("tbl")).to.equal(true);
 
-        grant = new DatabaseGrant({
+        grant = new DatasetGrant({
             tables: [
                 new TableGrant({ name: "read_only", read: true, write: false, alter: false }),
                 new TableGrant({

@@ -1,13 +1,13 @@
 import { expect } from "chai";
 
 import {
-  DatabaseClient,
-  DatabaseDate,
-  DatabaseExpression,
-  DatabaseJson,
-  DatabaseStruct,
-  DatabaseUuid,
-} from "../database-client";
+  DatasetsClient,
+  DatasetDate,
+  DatasetExpression,
+  DatasetJson,
+  DatasetStruct,
+  DatasetUuid,
+} from "../datasets-client";
 import { IntDataType, JsonDataType, UuidDataType } from "../data-types";
 import { Content, ControlContent, JsonContent } from "../response";
 
@@ -15,7 +15,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function encodedDatabaseValue(value: unknown): unknown {
+function encodedDatasetValue(value: unknown): unknown {
   if (value == null) {
     return null;
   }
@@ -28,13 +28,13 @@ function encodedDatabaseValue(value: unknown): unknown {
   if (typeof value === "string") {
     return value;
   }
-  if (value instanceof DatabaseExpression) {
+  if (value instanceof DatasetExpression) {
     return { expression: value.expression };
   }
-  if (value instanceof DatabaseDate) {
+  if (value instanceof DatasetDate) {
     return { date: value.toString() };
   }
-  if (value instanceof DatabaseUuid) {
+  if (value instanceof DatasetUuid) {
     return { uuid: value.toString() };
   }
   if (value instanceof Uint8Array) {
@@ -43,19 +43,19 @@ function encodedDatabaseValue(value: unknown): unknown {
   if (value instanceof Date) {
     return { timestamp: value.toISOString().replace("+00:00", "Z") };
   }
-  if (value instanceof DatabaseStruct) {
+  if (value instanceof DatasetStruct) {
     return { struct: value.toJson() };
   }
-  if (value instanceof DatabaseJson) {
+  if (value instanceof DatasetJson) {
     return { json: value.toJson() };
   }
   if (Array.isArray(value)) {
-    return { list: value.map((entry) => encodedDatabaseValue(entry)) };
+    return { list: value.map((entry) => encodedDatasetValue(entry)) };
   }
   if (isRecord(value)) {
     return {
       struct: Object.fromEntries(
-        Object.entries(value).map(([name, fieldValue]) => [name, encodedDatabaseValue(fieldValue)]),
+        Object.entries(value).map(([name, fieldValue]) => [name, encodedDatasetValue(fieldValue)]),
       ),
     };
   }
@@ -68,7 +68,7 @@ function rowsChunk(rows: Array<Record<string, unknown>>): Record<string, unknown
     rows: rows.map((row) => ({
       columns: Object.entries(row).map(([name, value]) => ({
         name,
-        value: encodedDatabaseValue(value),
+        value: encodedDatasetValue(value),
       })),
     })),
   };
@@ -93,7 +93,7 @@ type InvokeStreamParams = {
   callerContext?: Record<string, any>;
 };
 
-class FakeDatabaseRoom {
+class FakeDatasetsRoom {
   public readonly invokeCalls: InvokeParams[] = [];
   public readonly writeStarts: Record<string, Array<Record<string, unknown>>> = {};
   public readonly writeChunks: Record<string, Array<Record<string, unknown>>> = {};
@@ -170,7 +170,7 @@ class FakeDatabaseRoom {
     if (params.tool === "search" || params.tool === "sql") {
       return this.handleReadStream(params.tool, params.input);
     }
-    throw new Error(`unsupported streamed database operation: ${params.tool}`);
+    throw new Error(`unsupported streamed datasets operation: ${params.tool}`);
   }
 
   private async *handleWriteStream(tool: string, input: AsyncIterable<Content>): AsyncIterable<Content> {
@@ -240,10 +240,10 @@ class FakeDatabaseRoom {
   }
 }
 
-describe("database_client_unit_test", () => {
+describe("datasets_client_unit_test", () => {
   it("forwards create-table metadata and namespace, and supports typed addColumns", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
 
     await client.createTableWithSchema({
       name: "records",
@@ -298,8 +298,8 @@ describe("database_client_unit_test", () => {
   });
 
   it("supports branch-aware inspect, search, counts, versions, and lifecycle operations", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
 
     const schema = await client.inspect({ table: "records", namespace: ["team"], branch: "exp", version: 7 });
     expect(schema["id"]).to.be.instanceOf(IntDataType);
@@ -420,8 +420,8 @@ describe("database_client_unit_test", () => {
   });
 
   it("accepts string SQL table references", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
 
     const rows = await client.sql({
       query: "SELECT * FROM records",
@@ -441,9 +441,9 @@ describe("database_client_unit_test", () => {
   });
 
   it("supports uuid schemas, values, and where filters", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
-    const id = new DatabaseUuid("123e4567-e89b-12d3-a456-426614174000");
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+    const id = new DatasetUuid("123e4567-e89b-12d3-a456-426614174000");
 
     room.inspectFields = [
       {
@@ -467,7 +467,7 @@ describe("database_client_unit_test", () => {
       where: { id },
     });
     expect(rows).to.have.length(1);
-    expect(rows[0]["id"]).to.be.instanceOf(DatabaseUuid);
+    expect(rows[0]["id"]).to.be.instanceOf(DatasetUuid);
     expect(String(rows[0]["id"])).to.equal(id.toString());
 
     await client.count({
@@ -525,9 +525,9 @@ describe("database_client_unit_test", () => {
   });
 
   it("supports json schemas and values", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
-    const payload = new DatabaseJson({ kind: "demo", count: 3, tags: ["a", "b"] });
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+    const payload = new DatasetJson({ kind: "demo", count: 3, tags: ["a", "b"] });
 
     room.inspectFields = [
       {
@@ -554,8 +554,8 @@ describe("database_client_unit_test", () => {
       table: "json_records",
     });
     expect(rows).to.have.length(1);
-    expect(rows[0]["payload"]).to.be.instanceOf(DatabaseJson);
-    expect((rows[0]["payload"] as DatabaseJson).toJson()).to.deep.equal(payload.toJson());
+    expect(rows[0]["payload"]).to.be.instanceOf(DatasetJson);
+    expect((rows[0]["payload"] as DatasetJson).toJson()).to.deep.equal(payload.toJson());
 
     expect(room.writeStarts["create_table"]).to.deep.equal([
       {
@@ -579,14 +579,14 @@ describe("database_client_unit_test", () => {
   });
 
   it("encodes expression values for streamed writes and updates", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
 
     await client.insert({
       table: "records",
       namespace: ["team"],
       branch: "exp",
-      records: [{ id: new DatabaseExpression("uuid()"), upper_name: new DatabaseExpression("upper(name)") }],
+      records: [{ id: new DatasetExpression("uuid()"), upper_name: new DatasetExpression("upper(name)") }],
     });
 
     await client.update({
@@ -595,8 +595,8 @@ describe("database_client_unit_test", () => {
       namespace: ["team"],
       branch: "exp",
       values: {
-        id: new DatabaseExpression("uuid()"),
-        upper_name: new DatabaseExpression("upper(name)"),
+        id: new DatasetExpression("uuid()"),
+        upper_name: new DatasetExpression("upper(name)"),
       },
     });
 
@@ -609,7 +609,7 @@ describe("database_client_unit_test", () => {
       },
     ]);
     expect(room.writeChunks["insert"]).to.deep.equal([
-      rowsChunk([{ id: new DatabaseExpression("uuid()"), upper_name: new DatabaseExpression("upper(name)") }]),
+      rowsChunk([{ id: new DatasetExpression("uuid()"), upper_name: new DatasetExpression("upper(name)") }]),
     ]);
 
     const updateCall = room.invokeCalls.find((call) => call.tool === "update");
@@ -626,20 +626,20 @@ describe("database_client_unit_test", () => {
   });
 
   it("decodes typed date and timestamp row values", async () => {
-    const room = new FakeDatabaseRoom();
-    const client = new DatabaseClient({ room });
-    room.searchRows = [{ event_date: new DatabaseDate("2026-04-09"), created_at: new Date("2026-04-09T12:30:45Z") }];
-    room.sqlRows = [{ event_date: new DatabaseDate("2026-04-09"), created_at: new Date("2026-04-09T12:30:45Z") }];
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+    room.searchRows = [{ event_date: new DatasetDate("2026-04-09"), created_at: new Date("2026-04-09T12:30:45Z") }];
+    room.sqlRows = [{ event_date: new DatasetDate("2026-04-09"), created_at: new Date("2026-04-09T12:30:45Z") }];
 
     const searchRows = await client.search({ table: "records" });
     const sqlRows = await client.sql({ query: "SELECT * FROM records", tables: ["records"] });
 
-    expect(searchRows[0]["event_date"]).to.be.instanceOf(DatabaseDate);
+    expect(searchRows[0]["event_date"]).to.be.instanceOf(DatasetDate);
     expect(String(searchRows[0]["event_date"])).to.equal("2026-04-09");
     expect(searchRows[0]["created_at"]).to.be.instanceOf(Date);
     expect((searchRows[0]["created_at"] as Date).toISOString()).to.equal("2026-04-09T12:30:45.000Z");
 
-    expect(sqlRows[0]["event_date"]).to.be.instanceOf(DatabaseDate);
+    expect(sqlRows[0]["event_date"]).to.be.instanceOf(DatasetDate);
     expect(String(sqlRows[0]["event_date"])).to.equal("2026-04-09");
     expect(sqlRows[0]["created_at"]).to.be.instanceOf(Date);
     expect((sqlRows[0]["created_at"] as Date).toISOString()).to.equal("2026-04-09T12:30:45.000Z");

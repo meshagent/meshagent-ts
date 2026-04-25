@@ -1,5 +1,5 @@
 import { Completer } from "./completer";
-import { DatabaseClient } from "./database-client";
+import { DatasetsClient } from "./datasets-client";
 import { DeveloperClient } from "./developer-client";
 import { EventEmitter, type EventHandler, type EventName } from "./event-emitter";
 import { MessagingClient } from "./messaging-client";
@@ -301,7 +301,7 @@ export class RoomClient {
   public readonly developer: DeveloperClient;
   public readonly messaging: MessagingClient;
   public readonly queues: QueuesClient;
-  public readonly database: DatabaseClient;
+  public readonly datasets: DatasetsClient;
   public readonly agents: AgentsClient;
   public readonly secrets: SecretsClient;
   public readonly containers: ContainersClient;
@@ -377,7 +377,7 @@ export class RoomClient {
     this.developer = new DeveloperClient({ room: this });
     this.messaging = new MessagingClient({ room: this });
     this.queues = new QueuesClient({ room: this });
-    this.database = new DatabaseClient({ room: this });
+    this.datasets = new DatasetsClient({ room: this });
     this.agents = new AgentsClient({ room: this });
     this.secrets = new SecretsClient({
       room: this,

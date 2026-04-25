@@ -328,7 +328,7 @@ export class TableGrant {
     }
 }
 
-export class DatabaseGrant {
+export class DatasetGrant {
     public tables?: TableGrant[];
     public listTables: boolean;
 
@@ -417,12 +417,12 @@ export class DatabaseGrant {
         return json;
     }
 
-    static fromJSON(obj: unknown): DatabaseGrant {
+    static fromJSON(obj: unknown): DatasetGrant {
         if (!isRecord(obj)) {
-            return new DatabaseGrant();
+            return new DatasetGrant();
         }
 
-        return new DatabaseGrant({
+        return new DatasetGrant({
             tables: Array.isArray(obj.tables)
                 ? obj.tables.map((tableGrant) => TableGrant.fromJSON(tableGrant))
                 : undefined,
@@ -1290,7 +1290,7 @@ export class ApiScope {
     public livekit?: LivekitGrant;
     public queues?: QueuesGrant;
     public messaging?: MessagingGrant;
-    public database?: DatabaseGrant;
+    public dataset?: DatasetGrant;
     public memory?: MemoryGrant;
     public sync?: SyncGrant;
     public storage?: StorageGrant;
@@ -1307,7 +1307,7 @@ export class ApiScope {
         livekit,
         queues,
         messaging,
-        database,
+        dataset,
         memory,
         sync,
         storage,
@@ -1323,7 +1323,7 @@ export class ApiScope {
         livekit?: LivekitGrant;
         queues?: QueuesGrant;
         messaging?: MessagingGrant;
-        database?: DatabaseGrant;
+        dataset?: DatasetGrant;
         memory?: MemoryGrant;
         sync?: SyncGrant;
         storage?: StorageGrant;
@@ -1339,7 +1339,7 @@ export class ApiScope {
         this.livekit = livekit;
         this.queues = queues;
         this.messaging = messaging;
-        this.database = database;
+        this.dataset = dataset;
         this.memory = memory;
         this.sync = sync;
         this.storage = storage;
@@ -1358,7 +1358,7 @@ export class ApiScope {
             livekit: new LivekitGrant(),
             queues: new QueuesGrant(),
             messaging: new MessagingGrant(),
-            database: new DatabaseGrant(),
+            dataset: new DatasetGrant(),
             memory: new MemoryGrant(),
             sync: new SyncGrant(),
             storage: new StorageGrant(),
@@ -1377,7 +1377,7 @@ export class ApiScope {
             livekit: new LivekitGrant(),
             queues: new QueuesGrant(),
             messaging: new MessagingGrant(),
-            database: new DatabaseGrant(),
+            dataset: new DatasetGrant(),
             memory: new MemoryGrant(),
             sync: new SyncGrant(),
             storage: new StorageGrant(),
@@ -1394,7 +1394,7 @@ export class ApiScope {
             livekit: new LivekitGrant(),
             queues: new QueuesGrant(),
             messaging: new MessagingGrant(),
-            database: new DatabaseGrant(),
+            dataset: new DatasetGrant(),
             memory: new MemoryGrant(),
             sync: new SyncGrant(),
             storage: new StorageGrant(),
@@ -1420,8 +1420,8 @@ export class ApiScope {
         if (this.messaging !== undefined) {
             json["messaging"] = this.messaging.toJSON();
         }
-        if (this.database !== undefined) {
-            json["database"] = this.database.toJSON();
+        if (this.dataset !== undefined) {
+            json["dataset"] = this.dataset.toJSON();
         }
         if (this.memory !== undefined) {
             json["memory"] = this.memory.toJSON();
@@ -1464,11 +1464,13 @@ export class ApiScope {
             return new ApiScope();
         }
 
+        const rawDataset = obj.dataset ?? obj.database ?? obj.datasets;
+
         return new ApiScope({
             livekit: obj.livekit ? LivekitGrant.fromJSON(obj.livekit) : undefined,
             queues: obj.queues ? QueuesGrant.fromJSON(obj.queues) : undefined,
             messaging: obj.messaging ? MessagingGrant.fromJSON(obj.messaging) : undefined,
-            database: obj.database ? DatabaseGrant.fromJSON(obj.database) : undefined,
+            dataset: rawDataset ? DatasetGrant.fromJSON(rawDataset) : undefined,
             memory: obj.memory ? MemoryGrant.fromJSON(obj.memory) : undefined,
             sync: obj.sync ? SyncGrant.fromJSON(obj.sync) : undefined,
             storage: obj.storage ? StorageGrant.fromJSON(obj.storage) : undefined,

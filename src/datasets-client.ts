@@ -33,23 +33,23 @@ export interface TableBranch {
   manifestSize: number | null;
 }
 
-export abstract class DatabaseValueEncoder {
-  public abstract encodeDatabaseValue(): unknown;
+export abstract class DatasetValueEncoder {
+  public abstract encodeDatasetValue(): unknown;
 }
 
-export class DatabaseExpression extends DatabaseValueEncoder {
+export class DatasetExpression extends DatasetValueEncoder {
   public readonly expression: string;
 
   public constructor(expression: string) {
     super();
     const normalized = expression.trim();
     if (normalized === "") {
-      throw new TypeError("database expression must not be empty");
+      throw new TypeError("dataset expression must not be empty");
     }
     this.expression = normalized;
   }
 
-  public encodeDatabaseValue(): Record<string, string> {
+  public encodeDatasetValue(): Record<string, string> {
     return {
       expression: this.expression,
     };
@@ -60,7 +60,7 @@ export class DatabaseExpression extends DatabaseValueEncoder {
   }
 }
 
-export class DatabaseDate extends DatabaseValueEncoder {
+export class DatasetDate extends DatasetValueEncoder {
   public readonly value: string;
 
   public constructor(value: string) {
@@ -68,12 +68,12 @@ export class DatabaseDate extends DatabaseValueEncoder {
     const normalized = value.trim();
     const parsed = new Date(`${normalized}T00:00:00Z`);
     if (!ISO_DATE_REGEX.test(normalized) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== normalized) {
-      throw new TypeError("invalid database date format");
+      throw new TypeError("invalid dataset date format");
     }
     this.value = normalized;
   }
 
-  public encodeDatabaseValue(): Record<string, string> {
+  public encodeDatasetValue(): Record<string, string> {
     return {
       date: this.value,
     };
@@ -84,21 +84,21 @@ export class DatabaseDate extends DatabaseValueEncoder {
   }
 }
 
-export type DatabaseJsonScalarValue = null | boolean | number | string;
-export type DatabaseJsonValue =
-  | DatabaseJsonScalarValue
-  | DatabaseJsonValue[]
-  | { [key: string]: DatabaseJsonValue };
+export type DatasetJsonScalarValue = null | boolean | number | string;
+export type DatasetJsonValue =
+  | DatasetJsonScalarValue
+  | DatasetJsonValue[]
+  | { [key: string]: DatasetJsonValue };
 
-export class DatabaseStruct extends DatabaseValueEncoder {
-  public readonly fields: Record<string, DatabaseValue>;
+export class DatasetStruct extends DatasetValueEncoder {
+  public readonly fields: Record<string, DatasetValue>;
 
-  public constructor(fields: Record<string, DatabaseValue>) {
+  public constructor(fields: Record<string, DatasetValue>) {
     super();
     this.fields = Object.fromEntries(
       Object.entries(fields).map(([key, value]) => {
         if (typeof key !== "string") {
-          throw new TypeError("database struct keys must be strings");
+          throw new TypeError("dataset struct keys must be strings");
         }
         return [key, value];
       }),
@@ -111,43 +111,43 @@ export class DatabaseStruct extends DatabaseValueEncoder {
     );
   }
 
-  public encodeDatabaseValue(): Record<string, Record<string, unknown>> {
+  public encodeDatasetValue(): Record<string, Record<string, unknown>> {
     return {
       struct: this.toJson(),
     };
   }
 }
 
-export class DatabaseJson extends DatabaseValueEncoder {
-  public readonly value: DatabaseJsonValue;
+export class DatasetJson extends DatasetValueEncoder {
+  public readonly value: DatasetJsonValue;
 
-  public constructor(value: DatabaseJsonValue) {
+  public constructor(value: DatasetJsonValue) {
     super();
-    this.value = normalizeDatabaseJsonValue(value);
+    this.value = normalizeDatasetJsonValue(value);
   }
 
-  public toJson(): DatabaseJsonValue {
+  public toJson(): DatasetJsonValue {
     return this.value;
   }
 
-  public encodeDatabaseValue(): Record<string, DatabaseJsonValue> {
+  public encodeDatasetValue(): Record<string, DatasetJsonValue> {
     return {
       json: this.value,
     };
   }
 }
 
-export type DatabaseScalarValue = null | boolean | number | string | Uint8Array | DatabaseUuid | Date;
-export type DatabaseValue =
-  | DatabaseScalarValue
-  | DatabaseValueEncoder
-  | DatabaseValue[];
-export type DatabaseRecord = Record<string, DatabaseValue>;
-export type DatabaseRows = DatabaseRecord[];
-export type DatabaseRowChunks = AsyncIterable<DatabaseRows> | Iterable<DatabaseRows>;
-export type DatabaseWhere = string | Record<string, DatabaseValue>;
+export type DatasetScalarValue = null | boolean | number | string | Uint8Array | DatasetUuid | Date;
+export type DatasetValue =
+  | DatasetScalarValue
+  | DatasetValueEncoder
+  | DatasetValue[];
+export type DatasetRecord = Record<string, DatasetValue>;
+export type DatasetRows = DatasetRecord[];
+export type DatasetRowChunks = AsyncIterable<DatasetRows> | Iterable<DatasetRows>;
+export type DatasetWhere = string | Record<string, DatasetValue>;
 
-type DatabaseRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
+type DatasetRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
 
 type RowChunkJson = {
   kind: "rows";
@@ -188,7 +188,7 @@ function formatUuidHex(value: string): string {
   );
 }
 
-export class DatabaseUuid {
+export class DatasetUuid {
   public readonly value: string;
 
   public constructor(value: string) {
@@ -244,7 +244,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   );
 }
 
-function normalizeDatabaseJsonValue(value: unknown): DatabaseJsonValue {
+function normalizeDatasetJsonValue(value: unknown): DatasetJsonValue {
   if (
     value === null ||
     typeof value === "boolean" ||
@@ -254,14 +254,14 @@ function normalizeDatabaseJsonValue(value: unknown): DatabaseJsonValue {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => normalizeDatabaseJsonValue(item));
+    return value.map((item) => normalizeDatasetJsonValue(item));
   }
   if (isPlainRecord(value)) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, normalizeDatabaseJsonValue(item)]),
+      Object.entries(value).map(([key, item]) => [key, normalizeDatasetJsonValue(item)]),
     );
   }
-  throw new TypeError("database json values must be valid JSON");
+  throw new TypeError("dataset json values must be valid JSON");
 }
 
 function metadataEntries(metadata?: Record<string, unknown>): Array<{ key: string; value: string }> | null {
@@ -287,11 +287,11 @@ function toolkitDataTypeJson(dataType: DataType): Record<string, unknown> {
   } else if (json.type === "struct") {
     const fields = json.fields;
     if (!Array.isArray(fields)) {
-      throw new RoomServerException("unexpected return type from database.inspect");
+      throw new RoomServerException("unexpected return type from datasets.inspect");
     }
     payload.fields = fields.map((field) => {
       if (!isRecord(field) || typeof field.name !== "string" || !isRecord(field.data_type)) {
-        throw new RoomServerException("unexpected return type from database.inspect");
+        throw new RoomServerException("unexpected return type from datasets.inspect");
       }
       return {
         name: field.name,
@@ -318,24 +318,24 @@ function schemaEntries(schema?: Record<string, DataType>): Array<Record<string, 
 
 function publicDataTypeJson(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
-    throw new RoomServerException("unexpected return type from database.inspect");
+    throw new RoomServerException("unexpected return type from datasets.inspect");
   }
 
   const type = value.type;
   if (typeof type !== "string") {
-    throw new RoomServerException("unexpected return type from database.inspect");
+    throw new RoomServerException("unexpected return type from datasets.inspect");
   }
 
   const metadataList = value.metadata;
   let metadata: Record<string, string> | undefined;
   if (metadataList != null) {
     if (!Array.isArray(metadataList)) {
-      throw new RoomServerException("unexpected return type from database.inspect");
+      throw new RoomServerException("unexpected return type from datasets.inspect");
     }
     metadata = {};
     for (const entry of metadataList) {
       if (!isRecord(entry) || typeof entry.key !== "string" || typeof entry.value !== "string") {
-        throw new RoomServerException("unexpected return type from database.inspect");
+        throw new RoomServerException("unexpected return type from datasets.inspect");
       }
       metadata[entry.key] = entry.value;
     }
@@ -355,11 +355,11 @@ function publicDataTypeJson(value: unknown): Record<string, unknown> {
   } else if (type === "struct") {
     const rawFields = value.fields;
     if (!Array.isArray(rawFields)) {
-      throw new RoomServerException("unexpected return type from database.inspect");
+      throw new RoomServerException("unexpected return type from datasets.inspect");
     }
     payload.fields = Object.fromEntries(rawFields.map((field) => {
       if (!isRecord(field) || typeof field.name !== "string") {
-        throw new RoomServerException("unexpected return type from database.inspect");
+        throw new RoomServerException("unexpected return type from datasets.inspect");
       }
       return [field.name, publicDataTypeJson(field.data_type)];
     }));
@@ -369,10 +369,10 @@ function publicDataTypeJson(value: unknown): Record<string, unknown> {
 }
 
 function encodeRecordValue(value: unknown): unknown {
-  if (value instanceof DatabaseValueEncoder) {
-    return value.encodeDatabaseValue();
+  if (value instanceof DatasetValueEncoder) {
+    return value.encodeDatasetValue();
   }
-  if (value instanceof DatabaseUuid) {
+  if (value instanceof DatasetUuid) {
     return {
       uuid: value.toString(),
     };
@@ -393,107 +393,107 @@ function encodeRecordValue(value: unknown): unknown {
     };
   }
   if (isRecord(value)) {
-    throw new RoomServerException("database object values must use DatabaseStruct or DatabaseJson");
+    throw new RoomServerException("dataset object values must use DatasetStruct or DatasetJson");
   }
   return value;
 }
 
-function databaseSqlLiteral(value: unknown): string {
-  if (value instanceof DatabaseUuid) {
+function datasetSqlLiteral(value: unknown): string {
+  if (value instanceof DatasetUuid) {
     return `X'${normalizeUuidHex(value.toString())}'`;
   }
-  if (value instanceof DatabaseDate) {
+  if (value instanceof DatasetDate) {
     return JSON.stringify(value.toString());
   }
   if (value instanceof Date) {
     return JSON.stringify(value.toISOString().replace("+00:00", "Z"));
   }
-  if (value instanceof DatabaseJson) {
+  if (value instanceof DatasetJson) {
     return JSON.stringify(JSON.stringify(value.toJson()));
   }
-  if (value instanceof DatabaseStruct) {
+  if (value instanceof DatasetStruct) {
     const fields = Object.entries(value.fields).map(([key, fieldValue]) => (
-      `${JSON.stringify(key)}, ${databaseSqlLiteral(fieldValue)}`
+      `${JSON.stringify(key)}, ${datasetSqlLiteral(fieldValue)}`
     ));
     return `named_struct(${fields.join(", ")})`;
   }
   return JSON.stringify(encodeRecordValue(value));
 }
 
-function decodeRecordValue(value: unknown): DatabaseValue {
+function decodeRecordValue(value: unknown): DatasetValue {
   if (Array.isArray(value)) {
-    throw new RoomServerException("database list values must use a {'list': [...]} wrapper");
+    throw new RoomServerException("dataset list values must use a {'list': [...]} wrapper");
   }
   if (!isRecord(value)) {
-    return value as DatabaseScalarValue;
+    return value as DatasetScalarValue;
   }
 
   const entries = Object.entries(value);
   if (entries.length !== 1) {
-    throw new RoomServerException("database object values must use a single-key type wrapper");
+    throw new RoomServerException("dataset object values must use a single-key type wrapper");
   }
 
   const [wrapper, payload] = entries[0];
   switch (wrapper) {
     case "binary":
       if (typeof payload !== "string") {
-        throw new RoomServerException("database binary values must be base64 strings");
+        throw new RoomServerException("dataset binary values must be base64 strings");
       }
       return base64ToBytes(payload);
     case "uuid":
       if (typeof payload !== "string") {
-        throw new RoomServerException("database uuid values must be strings");
+        throw new RoomServerException("dataset uuid values must be strings");
       }
-      return new DatabaseUuid(payload);
+      return new DatasetUuid(payload);
     case "expression":
       if (typeof payload !== "string") {
-        throw new RoomServerException("database expression values must be strings");
+        throw new RoomServerException("dataset expression values must be strings");
       }
-      return new DatabaseExpression(payload);
+      return new DatasetExpression(payload);
     case "date":
       if (typeof payload !== "string") {
-        throw new RoomServerException("database date values must be strings");
+        throw new RoomServerException("dataset date values must be strings");
       }
-      return new DatabaseDate(payload);
+      return new DatasetDate(payload);
     case "timestamp":
       if (typeof payload !== "string") {
-        throw new RoomServerException("database timestamp values must be strings");
+        throw new RoomServerException("dataset timestamp values must be strings");
       }
       {
         const parsed = new Date(payload);
         if (Number.isNaN(parsed.getTime())) {
-          throw new RoomServerException("database timestamp value is not valid");
+          throw new RoomServerException("dataset timestamp value is not valid");
         }
         return parsed;
       }
     case "list":
       if (!Array.isArray(payload)) {
-        throw new RoomServerException("database list values must be arrays");
+        throw new RoomServerException("dataset list values must be arrays");
       }
       return payload.map((item) => decodeRecordValue(item));
     case "struct":
       if (!isRecord(payload)) {
-        throw new RoomServerException("database struct values must be objects");
+        throw new RoomServerException("dataset struct values must be objects");
       }
-      return new DatabaseStruct(
+      return new DatasetStruct(
         Object.fromEntries(
           Object.entries(payload).map(([key, item]) => [key, decodeRecordValue(item)]),
-        ) as DatabaseRecord,
+        ) as DatasetRecord,
       );
     case "json":
-      return new DatabaseJson(normalizeDatabaseJsonValue(payload));
+      return new DatasetJson(normalizeDatasetJsonValue(payload));
     default:
-      throw new RoomServerException(`unsupported database value wrapper '${wrapper}'`);
+      throw new RoomServerException(`unsupported dataset value wrapper '${wrapper}'`);
   }
 }
 
-function encodeDatabaseRecord(record: DatabaseRecord): Record<string, unknown> {
+function encodeDatasetRecord(record: DatasetRecord): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).map(([key, value]) => [key, encodeRecordValue(value)]),
   );
 }
 
-function rowsChunk(records: DatabaseRows): RowChunkJson {
+function rowsChunk(records: DatasetRows): RowChunkJson {
   return {
     kind: "rows",
     rows: records.map((record) => ({
@@ -505,33 +505,33 @@ function rowsChunk(records: DatabaseRows): RowChunkJson {
   };
 }
 
-function recordsFromRowsChunk(payload: unknown, operation: string): DatabaseRows {
+function recordsFromRowsChunk(payload: unknown, operation: string): DatasetRows {
   if (!isRecord(payload) || payload.kind !== "rows" || !Array.isArray(payload.rows)) {
-    throw new RoomServerException(`unexpected return type from database.${operation}`);
+    throw new RoomServerException(`unexpected return type from datasets.${operation}`);
   }
 
   return payload.rows.map((row) => {
     if (!isRecord(row) || !Array.isArray(row.columns)) {
-      throw new RoomServerException(`unexpected return type from database.${operation}`);
+      throw new RoomServerException(`unexpected return type from datasets.${operation}`);
     }
     return Object.fromEntries(row.columns.map((column) => {
       if (!isRecord(column) || typeof column.name !== "string") {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
+        throw new RoomServerException(`unexpected return type from datasets.${operation}`);
       }
       try {
         return [column.name, decodeRecordValue(column.value)];
       } catch {
-        throw new RoomServerException(`unexpected return type from database.${operation}`);
+        throw new RoomServerException(`unexpected return type from datasets.${operation}`);
       }
-    })) as DatabaseRecord;
+    })) as DatasetRecord;
   });
 }
 
-function rowChunkList(records: DatabaseRows, rowsPerChunk = 128): DatabaseRows[] {
+function rowChunkList(records: DatasetRows, rowsPerChunk = 128): DatasetRows[] {
   if (rowsPerChunk <= 0) {
     throw new RoomServerException("rowsPerChunk must be greater than zero");
   }
-  const chunks: DatabaseRows[] = [];
+  const chunks: DatasetRows[] = [];
   for (let index = 0; index < records.length; index += rowsPerChunk) {
     chunks.push(records.slice(index, index + rowsPerChunk));
   }
@@ -550,10 +550,10 @@ async function* toAsyncIterable<T>(chunks: AsyncIterable<T> | Iterable<T>): Asyn
   }
 }
 
-function buildWhereClause(where?: DatabaseWhere): string | null {
+function buildWhereClause(where?: DatasetWhere): string | null {
   if (where != null && typeof where === "object" && !Array.isArray(where)) {
     return Object.entries(where)
-      .map(([key, value]) => `${key} = ${databaseSqlLiteral(value)}`)
+      .map(([key, value]) => `${key} = ${datasetSqlLiteral(value)}`)
       .join(" AND ");
   }
   if (typeof where === "string") {
@@ -568,14 +568,14 @@ function normalizeTableRefs(tables: Array<TableRef | string>): TableRef[] {
 
 function tableIndexFromJson(value: unknown): TableIndex {
   if (!isRecord(value) || typeof value.name !== "string" || typeof value.type !== "string" || !Array.isArray(value.columns)) {
-    throw new RoomServerException("unexpected return type from database.list_indexes");
+    throw new RoomServerException("unexpected return type from datasets.list_indexes");
   }
   return {
     name: value.name,
     type: value.type,
     columns: value.columns.map((column) => {
       if (typeof column !== "string") {
-        throw new RoomServerException("unexpected return type from database.list_indexes");
+        throw new RoomServerException("unexpected return type from datasets.list_indexes");
       }
       return column;
     }),
@@ -584,21 +584,21 @@ function tableIndexFromJson(value: unknown): TableIndex {
 
 function tableVersionFromJson(value: unknown): TableVersion {
   if (!isRecord(value) || typeof value.metadata_json !== "string" || typeof value.timestamp !== "string" || typeof value.version !== "number") {
-    throw new RoomServerException("unexpected return type from database.list_versions");
+    throw new RoomServerException("unexpected return type from datasets.list_versions");
   }
   const timestamp = new Date(value.timestamp);
   if (Number.isNaN(timestamp.getTime())) {
-    throw new RoomServerException("unexpected return type from database.list_versions");
+    throw new RoomServerException("unexpected return type from datasets.list_versions");
   }
 
   let metadata: unknown;
   try {
     metadata = JSON.parse(value.metadata_json);
   } catch (_) {
-    throw new RoomServerException("unexpected return type from database.list_versions");
+    throw new RoomServerException("unexpected return type from datasets.list_versions");
   }
   if (!isRecord(metadata)) {
-    throw new RoomServerException("unexpected return type from database.list_versions");
+    throw new RoomServerException("unexpected return type from datasets.list_versions");
   }
 
   return {
@@ -610,33 +610,33 @@ function tableVersionFromJson(value: unknown): TableVersion {
 
 function tableBranchFromJson(value: unknown): TableBranch {
   if (!isRecord(value) || typeof value.name !== "string") {
-    throw new RoomServerException("unexpected return type from database.list_branches");
+    throw new RoomServerException("unexpected return type from datasets.list_branches");
   }
 
   if (value.parent_branch != null && typeof value.parent_branch !== "string") {
-    throw new RoomServerException("unexpected return type from database.list_branches");
+    throw new RoomServerException("unexpected return type from datasets.list_branches");
   }
   if (
     value.parent_version != null
     && (typeof value.parent_version !== "number" || !Number.isInteger(value.parent_version))
   ) {
-    throw new RoomServerException("unexpected return type from database.list_branches");
+    throw new RoomServerException("unexpected return type from datasets.list_branches");
   }
   if (
     value.manifest_size != null
     && (typeof value.manifest_size !== "number" || !Number.isInteger(value.manifest_size))
   ) {
-    throw new RoomServerException("unexpected return type from database.list_branches");
+    throw new RoomServerException("unexpected return type from datasets.list_branches");
   }
 
   let createdAt: Date | null = null;
   if (value.created_at != null) {
     if (typeof value.created_at !== "string") {
-      throw new RoomServerException("unexpected return type from database.list_branches");
+      throw new RoomServerException("unexpected return type from datasets.list_branches");
     }
     createdAt = new Date(value.created_at);
     if (Number.isNaN(createdAt.getTime())) {
-      throw new RoomServerException("unexpected return type from database.list_branches");
+      throw new RoomServerException("unexpected return type from datasets.list_branches");
     }
   }
 
@@ -649,14 +649,14 @@ function tableBranchFromJson(value: unknown): TableBranch {
   };
 }
 
-class DatabaseWriteInputStream {
-  private readonly source: AsyncIterator<DatabaseRows>;
+class DatasetWriteInputStream {
+  private readonly source: AsyncIterator<DatasetRows>;
   private readonly pulls: Array<() => void> = [];
   private closed = false;
 
   constructor(
     private readonly start: Record<string, unknown>,
-    chunks: DatabaseRowChunks,
+    chunks: DatasetRowChunks,
   ) {
     this.source = toAsyncIterable(chunks)[Symbol.asyncIterator]();
   }
@@ -718,7 +718,7 @@ class DatabaseWriteInputStream {
   }
 }
 
-class DatabaseReadInputStream {
+class DatasetReadInputStream {
   private readonly pulls: Array<() => void> = [];
   private closed = false;
 
@@ -773,19 +773,19 @@ class DatabaseReadInputStream {
   }
 }
 
-export class DatabaseClient {
-  private room: DatabaseRoomInvoker;
+export class DatasetsClient {
+  private room: DatasetRoomInvoker;
 
-  constructor({room}: {room: DatabaseRoomInvoker}) {
+  constructor({room}: {room: DatasetRoomInvoker}) {
     this.room = room;
   }
 
   private _unexpectedResponseError(operation: string): RoomServerException {
-    return new RoomServerException(`unexpected return type from database.${operation}`);
+    return new RoomServerException(`unexpected return type from datasets.${operation}`);
   }
 
   private async invoke(operation: string, input: Record<string, unknown>): Promise<JsonContent | null> {
-    const response = await this.room.invoke({ toolkit: "database", tool: operation, input });
+    const response = await this.room.invoke({ toolkit: "dataset", tool: operation, input });
     if (response instanceof JsonContent) {
       return response;
     }
@@ -796,10 +796,10 @@ export class DatabaseClient {
   }
 
   private async invokeStream(operation: string, input: AsyncIterable<Content>): Promise<AsyncIterable<Content>> {
-    return await this.room.invokeStream({ toolkit: "database", tool: operation, input });
+    return await this.room.invokeStream({ toolkit: "dataset", tool: operation, input });
   }
 
-  private async drainWriteStream(operation: string, input: DatabaseWriteInputStream): Promise<void> {
+  private async drainWriteStream(operation: string, input: DatasetWriteInputStream): Promise<void> {
     const response = await this.invokeStream(operation, input.stream());
     try {
       for await (const chunk of response) {
@@ -822,8 +822,8 @@ export class DatabaseClient {
     }
   }
 
-  private async *streamRows(operation: string, start: Record<string, unknown>): AsyncIterable<DatabaseRows> {
-    const input = new DatabaseReadInputStream(start);
+  private async *streamRows(operation: string, start: Record<string, unknown>): AsyncIterable<DatasetRows> {
+    const input = new DatasetReadInputStream(start);
     const response = await this.invokeStream(operation, input.stream());
     input.requestNext();
     try {
@@ -872,14 +872,14 @@ export class DatabaseClient {
     metadata,
   }: {
     name: string;
-    data?: DatabaseRowChunks;
+    data?: DatasetRowChunks;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    const input = new DatabaseWriteInputStream(
+    const input = new DatasetWriteInputStream(
       {
         kind: "start",
         name,
@@ -897,7 +897,7 @@ export class DatabaseClient {
   public async createTableWithSchema({ name, schema, data, mode = "create", namespace, branch, metadata }: {
     name: string;
     schema?: Record<string, DataType>;
-    data?: DatabaseRows;
+    data?: DatasetRows;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
@@ -916,7 +916,7 @@ export class DatabaseClient {
 
   public async createTableFromData({ name, data, mode = "create", namespace, branch, metadata }: {
     name: string;
-    data?: DatabaseRows;
+    data?: DatasetRows;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
@@ -934,7 +934,7 @@ export class DatabaseClient {
 
   public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, branch, metadata }: {
     name: string;
-    chunks: DatabaseRowChunks;
+    chunks: DatasetRowChunks;
     schema?: Record<string, DataType>;
     mode?: CreateMode;
     namespace?: string[];
@@ -951,7 +951,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "drop_table",
       input: {
         name,
@@ -969,7 +969,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "drop_index",
       input: { table, name, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -982,7 +982,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "add_columns",
       input: {
         table,
@@ -1004,7 +1004,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "drop_columns",
       input: { table, columns, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1012,7 +1012,7 @@ export class DatabaseClient {
 
   public async insert({ table, records, namespace, branch }: {
     table: string;
-    records: DatabaseRows;
+    records: DatasetRows;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
@@ -1021,11 +1021,11 @@ export class DatabaseClient {
 
   public async insertStream({ table, chunks, namespace, branch }: {
     table: string;
-    chunks: DatabaseRowChunks;
+    chunks: DatasetRowChunks;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    const input = new DatabaseWriteInputStream({
+    const input = new DatasetWriteInputStream({
       kind: "start",
       table,
       namespace: namespace ?? null,
@@ -1037,12 +1037,12 @@ export class DatabaseClient {
   public async update({ table, where, values, namespace, branch }: {
     table: string;
     where: string;
-    values: DatabaseRecord;
+    values: DatasetRecord;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "update",
       input: {
         table,
@@ -1061,7 +1061,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "delete",
       input: { table, where, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1070,7 +1070,7 @@ export class DatabaseClient {
   public async merge({ table, on, records, namespace, branch }: {
     table: string;
     on: string;
-    records: DatabaseRows;
+    records: DatasetRows;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
@@ -1080,11 +1080,11 @@ export class DatabaseClient {
   public async mergeStream({ table, on, chunks, namespace, branch }: {
     table: string;
     on: string;
-    chunks: DatabaseRowChunks;
+    chunks: DatasetRowChunks;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    const input = new DatabaseWriteInputStream({
+    const input = new DatasetWriteInputStream({
       kind: "start",
       table,
       on,
@@ -1097,9 +1097,9 @@ export class DatabaseClient {
   public async sql({ query, tables, params }: {
     query: string;
     tables: Array<TableRef | string>;
-    params?: DatabaseRecord;
-  }): Promise<DatabaseRows> {
-    const rows: DatabaseRows = [];
+    params?: DatasetRecord;
+  }): Promise<DatasetRows> {
+    const rows: DatasetRows = [];
     for await (const chunk of this.sqlStream({ query, tables, params })) {
       rows.push(...chunk);
     }
@@ -1109,13 +1109,13 @@ export class DatabaseClient {
   public async *sqlStream({ query, tables, params }: {
     query: string;
     tables: Array<TableRef | string>;
-    params?: DatabaseRecord;
-  }): AsyncIterable<DatabaseRows> {
+    params?: DatasetRecord;
+  }): AsyncIterable<DatasetRows> {
     yield* this.streamRows("sql", {
       kind: "start",
       query,
       tables: normalizeTableRefs(tables),
-      params_json: params == null ? null : JSON.stringify(encodeDatabaseRecord(params)),
+      params_json: params == null ? null : JSON.stringify(encodeDatasetRecord(params)),
     });
   }
 
@@ -1123,15 +1123,15 @@ export class DatabaseClient {
     table: string;
     text?: string;
     vector?: number[];
-    where?: DatabaseWhere;
+    where?: DatasetWhere;
     offset?: number;
     limit?: number;
     select?: string[];
     namespace?: string[];
     branch?: string;
     version?: number;
-  }): Promise<DatabaseRows> {
-    const rows: DatabaseRows = [];
+  }): Promise<DatasetRows> {
+    const rows: DatasetRows = [];
     for await (const chunk of this.searchStream({
       table,
       text,
@@ -1153,14 +1153,14 @@ export class DatabaseClient {
     table: string;
     text?: string;
     vector?: number[];
-    where?: DatabaseWhere;
+    where?: DatasetWhere;
     offset?: number;
     limit?: number;
     select?: string[];
     namespace?: string[];
     branch?: string;
     version?: number;
-  }): AsyncIterable<DatabaseRows> {
+  }): AsyncIterable<DatasetRows> {
     yield* this.streamRows("search", {
       kind: "start",
       table,
@@ -1181,7 +1181,7 @@ export class DatabaseClient {
     table: string;
     text?: string;
     vector?: number[];
-    where?: DatabaseWhere;
+    where?: DatasetWhere;
     namespace?: string[];
     branch?: string;
     version?: number;
@@ -1232,7 +1232,7 @@ export class DatabaseClient {
     const namespace = typeof tableOrParams === "string" ? undefined : tableOrParams.namespace;
     const branch = typeof tableOrParams === "string" ? undefined : tableOrParams.branch;
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "optimize",
       input: { table, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1245,7 +1245,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "restore",
       input: { table, version, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1275,7 +1275,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "create_vector_index",
       input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1289,7 +1289,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "create_scalar_index",
       input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1303,7 +1303,7 @@ export class DatabaseClient {
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "create_full_text_search_index",
       input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
     });
@@ -1345,7 +1345,7 @@ export class DatabaseClient {
     namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "create_branch",
       input: {
         branch,
@@ -1360,7 +1360,7 @@ export class DatabaseClient {
     namespace?: string[];
   }): Promise<void> {
     await this.room.invoke({
-      toolkit: "database",
+      toolkit: "dataset",
       tool: "delete_branch",
       input: { branch, namespace: namespace ?? null },
     });
