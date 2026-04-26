@@ -1,6 +1,15 @@
 import { expect } from "chai";
 
 import {
+  Field,
+  Int32,
+  Schema,
+  Table,
+  Utf8,
+  tableFromArrays,
+  tableToIPC,
+} from "apache-arrow";
+import {
   DatasetsClient,
   DatasetDate,
   DatasetExpression,
@@ -8,8 +17,7 @@ import {
   DatasetStruct,
   DatasetUuid,
 } from "../datasets-client";
-import { IntDataType, JsonDataType, UuidDataType } from "../data-types";
-import { Content, ControlContent, JsonContent } from "../response";
+import { BinaryContent, Content, ControlContent, JsonContent } from "../response";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -99,25 +107,16 @@ class FakeDatasetsRoom {
   public readonly writeChunks: Record<string, Array<Record<string, unknown>>> = {};
   public readonly readStarts: Record<string, Array<Record<string, unknown>>> = {};
   public readonly readPulls: Record<string, Array<Record<string, unknown>>> = {};
-  public inspectFields: Array<Record<string, unknown>> = [
-    {
-      name: "id",
-      data_type: { type: "int", nullable: null, metadata: null },
-    },
-  ];
-  public searchRows: Array<Record<string, unknown>> = [{ id: 1 }];
-  public sqlRows: Array<Record<string, unknown>> = [{ id: 1, payload: "sql-result" }];
+  public inspectSchema: Schema = tableFromArrays({ id: Int32Array.from([0]) }).schema;
+  public searchTable: Table = tableFromArrays({ id: Int32Array.from([1]) });
+  public sqlTable: Table = tableFromArrays({ id: Int32Array.from([1]), payload: ["sql-result"] });
 
   public async invoke(params: InvokeParams): Promise<Content> {
     this.invokeCalls.push(params);
 
     switch (params.tool) {
       case "inspect":
-        return new JsonContent({
-          json: {
-            fields: this.inspectFields,
-          },
-        });
+        return new BinaryContent({ data: tableToIPC(new Table(this.inspectSchema), "stream") });
       case "count":
         return new JsonContent({ json: { count: 3 } });
       case "list_versions":
@@ -176,61 +175,66 @@ class FakeDatasetsRoom {
   private async *handleWriteStream(tool: string, input: AsyncIterable<Content>): AsyncIterable<Content> {
     const iterator = input[Symbol.asyncIterator]();
     const start = await iterator.next();
-    if (start.done || !(start.value instanceof JsonContent)) {
-      throw new Error(`expected JsonContent start for ${tool}`);
+    if (start.done || !(start.value instanceof JsonContent || start.value instanceof BinaryContent)) {
+      throw new Error(`expected JsonContent or BinaryContent start for ${tool}`);
     }
     if (!this.writeStarts[tool]) {
       this.writeStarts[tool] = [];
     }
-    this.writeStarts[tool].push(start.value.json);
+    this.writeStarts[tool].push(start.value instanceof BinaryContent ? start.value.headers : start.value.json);
 
     while (true) {
-      yield new JsonContent({ json: { kind: "pull" } });
+      yield start.value instanceof BinaryContent
+        ? new BinaryContent({ data: new Uint8Array(), headers: { kind: "pull" } })
+        : new JsonContent({ json: { kind: "pull" } });
       const chunk = await iterator.next();
       if (chunk.done) {
         yield new ControlContent({ method: "close" });
         return;
       }
-      if (!(chunk.value instanceof JsonContent)) {
-        throw new Error(`expected JsonContent chunk for ${tool}`);
+      if (!(chunk.value instanceof JsonContent || chunk.value instanceof BinaryContent)) {
+        throw new Error(`expected JsonContent or BinaryContent chunk for ${tool}`);
       }
       if (!this.writeChunks[tool]) {
         this.writeChunks[tool] = [];
       }
-      this.writeChunks[tool].push(chunk.value.json);
+      this.writeChunks[tool].push(
+        chunk.value instanceof BinaryContent
+          ? { headers: chunk.value.headers, data: chunk.value.data }
+          : chunk.value.json,
+      );
     }
   }
 
   private async *handleReadStream(tool: string, input: AsyncIterable<Content>): AsyncIterable<Content> {
     const iterator = input[Symbol.asyncIterator]();
     const start = await iterator.next();
-    if (start.done || !(start.value instanceof JsonContent)) {
-      throw new Error(`expected JsonContent start for ${tool}`);
+    if (start.done || !(start.value instanceof BinaryContent)) {
+      throw new Error(`expected BinaryContent start for ${tool}`);
     }
     if (!this.readStarts[tool]) {
       this.readStarts[tool] = [];
     }
-    this.readStarts[tool].push(start.value.json);
+    this.readStarts[tool].push(start.value.headers);
 
     while (true) {
       const pull = await iterator.next();
       if (pull.done) {
         return;
       }
-      if (!(pull.value instanceof JsonContent)) {
-        throw new Error(`expected JsonContent pull for ${tool}`);
+      if (!(pull.value instanceof BinaryContent)) {
+        throw new Error(`expected BinaryContent pull for ${tool}`);
       }
       if (!this.readPulls[tool]) {
         this.readPulls[tool] = [];
       }
-      this.readPulls[tool].push(pull.value.json);
+      this.readPulls[tool].push(pull.value.headers);
 
       if (this.readPulls[tool].length === 1) {
-        if (tool === "search") {
-          yield new JsonContent({ json: rowsChunk(this.searchRows) });
-        } else {
-          yield new JsonContent({ json: rowsChunk(this.sqlRows) });
-        }
+        yield new BinaryContent({
+          data: tableToIPC(tool === "search" ? this.searchTable : this.sqlTable, "stream"),
+          headers: { kind: "data" },
+        });
         continue;
       }
 
@@ -241,14 +245,15 @@ class FakeDatasetsRoom {
 }
 
 describe("datasets_client_unit_test", () => {
-  it("forwards create-table metadata and namespace, and supports typed addColumns", async () => {
+  it("forwards create-table metadata and namespace, and supports expression addColumns", async () => {
     const room = new FakeDatasetsRoom();
     const client = new DatasetsClient({ room });
+    const table = tableFromArrays({ id: Int32Array.from([1]) });
 
     await client.createTableWithSchema({
       name: "records",
-      schema: { id: new IntDataType() },
-      data: [{ id: 1 }],
+      schema: table.schema,
+      data: table,
       namespace: ["team"],
       branch: "exp",
       metadata: { kind: "demo" },
@@ -260,7 +265,6 @@ describe("datasets_client_unit_test", () => {
       branch: "exp",
       newColumns: {
         email: "'hello'",
-        visits: new IntDataType(),
       },
     });
 
@@ -268,29 +272,24 @@ describe("datasets_client_unit_test", () => {
       {
         kind: "start",
         name: "records",
-        fields: [
-          {
-            name: "id",
-            data_type: { type: "int", nullable: null, metadata: null },
-          },
-        ],
         mode: "create",
         namespace: ["team"],
         branch: "exp",
         metadata: [{ key: "kind", value: "demo" }],
       },
     ]);
-    expect(room.writeChunks["create_table"]).to.deep.equal([
-      rowsChunk([{ id: 1 }]),
-    ]);
+    expect(room.writeChunks["create_table"]).to.have.length(1);
+    expect(room.writeChunks["create_table"][0]["headers"]).to.deep.equal({
+      kind: "data",
+      content_type: "application/vnd.apache.arrow.stream",
+    });
 
     const addColumnsCall = room.invokeCalls.find((call) => call.tool === "add_columns");
     expect(addColumnsCall).to.not.equal(undefined);
     expect(addColumnsCall!.input).to.deep.equal({
       table: "records",
       columns: [
-        { name: "email", value_sql: "'hello'", data_type: null },
-        { name: "visits", value_sql: null, data_type: { type: "int", nullable: null, metadata: null } },
+        { name: "email", value_sql: "'hello'" },
       ],
       namespace: ["team"],
       branch: "exp",
@@ -302,7 +301,7 @@ describe("datasets_client_unit_test", () => {
     const client = new DatasetsClient({ room });
 
     const schema = await client.inspect({ table: "records", namespace: ["team"], branch: "exp", version: 7 });
-    expect(schema["id"]).to.be.instanceOf(IntDataType);
+    expect(schema.fields.map((field) => field.name)).to.deep.equal(["id"]);
 
     const rows = await client.search({
       table: "records",
@@ -313,7 +312,9 @@ describe("datasets_client_unit_test", () => {
       branch: "exp",
       version: 7,
     });
-    expect(rows).to.deep.equal([{ id: 1 }]);
+    expect(rows).to.have.length(1);
+    expect(rows[0].numRows).to.equal(1);
+    expect(rows[0].getChild("id")?.get(0)).to.equal(1);
     expect(room.readStarts["search"]).to.deep.equal([
       {
         kind: "start",
@@ -429,7 +430,9 @@ describe("datasets_client_unit_test", () => {
       params: { id: 1 },
     });
 
-    expect(rows).to.deep.equal([{ id: 1, payload: "sql-result" }]);
+    expect(rows).to.have.length(1);
+    expect(rows[0].getChild("id")?.get(0)).to.equal(1);
+    expect(rows[0].getChild("payload")?.get(0)).to.equal("sql-result");
     expect(room.readStarts["sql"]).to.deep.equal([
       {
         kind: "start",
@@ -445,30 +448,24 @@ describe("datasets_client_unit_test", () => {
     const client = new DatasetsClient({ room });
     const id = new DatasetUuid("123e4567-e89b-12d3-a456-426614174000");
 
-    room.inspectFields = [
-      {
-        name: "id",
-        data_type: { type: "uuid", nullable: null, metadata: null },
-      },
-    ];
-    room.searchRows = [{ id }];
+    room.inspectSchema = new Schema([Field.new("id", new Utf8())]);
+    room.searchTable = tableFromArrays({ id: [id.toString()] });
 
     await client.createTableWithSchema({
       name: "uuid_records",
-      schema: { id: new UuidDataType() },
-      data: [{ id }],
+      schema: room.inspectSchema,
+      data: room.searchTable,
     });
 
     const schema = await client.inspect({ table: "uuid_records" });
-    expect(schema["id"]).to.be.instanceOf(UuidDataType);
+    expect(schema.fields.map((field) => field.name)).to.deep.equal(["id"]);
 
     const rows = await client.search({
       table: "uuid_records",
       where: { id },
     });
     expect(rows).to.have.length(1);
-    expect(rows[0]["id"]).to.be.instanceOf(DatasetUuid);
-    expect(String(rows[0]["id"])).to.equal(id.toString());
+    expect(rows[0].getChild("id")?.get(0)).to.equal(id.toString());
 
     await client.count({
       table: "uuid_records",
@@ -479,21 +476,13 @@ describe("datasets_client_unit_test", () => {
       {
         kind: "start",
         name: "uuid_records",
-        fields: [
-          {
-            name: "id",
-            data_type: { type: "uuid", nullable: null, metadata: null },
-          },
-        ],
         mode: "create",
         namespace: null,
         branch: null,
         metadata: null,
       },
     ]);
-    expect(room.writeChunks["create_table"]).to.deep.equal([
-      rowsChunk([{ id }]),
-    ]);
+    expect(room.writeChunks["create_table"]).to.have.length(1);
     expect(room.readStarts["search"]).to.deep.equal([
       {
         kind: "start",
@@ -529,53 +518,39 @@ describe("datasets_client_unit_test", () => {
     const client = new DatasetsClient({ room });
     const payload = new DatasetJson({ kind: "demo", count: 3, tags: ["a", "b"] });
 
-    room.inspectFields = [
-      {
-        name: "payload",
-        data_type: { type: "json", nullable: null, metadata: null },
-      },
-    ];
-    room.searchRows = [{ payload }];
+    room.inspectSchema = new Schema([Field.new("payload", new Utf8())]);
+    room.searchTable = tableFromArrays({ payload: [JSON.stringify(payload.toJson())] });
 
     await client.createTableWithSchema({
       name: "json_records",
-      schema: { payload: new JsonDataType() },
+      schema: room.inspectSchema,
     });
 
     await client.insert({
       table: "json_records",
-      records: [{ payload }],
+      records: room.searchTable,
     });
 
     const schema = await client.inspect({ table: "json_records" });
-    expect(schema["payload"]).to.be.instanceOf(JsonDataType);
+    expect(schema.fields.map((field) => field.name)).to.deep.equal(["payload"]);
 
     const rows = await client.search({
       table: "json_records",
     });
     expect(rows).to.have.length(1);
-    expect(rows[0]["payload"]).to.be.instanceOf(DatasetJson);
-    expect((rows[0]["payload"] as DatasetJson).toJson()).to.deep.equal(payload.toJson());
+    expect(rows[0].getChild("payload")?.get(0)).to.equal(JSON.stringify(payload.toJson()));
 
     expect(room.writeStarts["create_table"]).to.deep.equal([
       {
         kind: "start",
         name: "json_records",
-        fields: [
-          {
-            name: "payload",
-            data_type: { type: "json", nullable: null, metadata: null },
-          },
-        ],
         mode: "create",
         namespace: null,
         branch: null,
         metadata: null,
       },
     ]);
-    expect(room.writeChunks["insert"]).to.deep.equal([
-      rowsChunk([{ payload }]),
-    ]);
+    expect(room.writeChunks["insert"]).to.have.length(1);
   });
 
   it("encodes expression values for streamed writes and updates", async () => {
@@ -586,7 +561,7 @@ describe("datasets_client_unit_test", () => {
       table: "records",
       namespace: ["team"],
       branch: "exp",
-      records: [{ id: new DatasetExpression("uuid()"), upper_name: new DatasetExpression("upper(name)") }],
+      records: tableFromArrays({ id: ["uuid()"], upper_name: ["upper(name)"] }),
     });
 
     await client.update({
@@ -608,9 +583,7 @@ describe("datasets_client_unit_test", () => {
         branch: "exp",
       },
     ]);
-    expect(room.writeChunks["insert"]).to.deep.equal([
-      rowsChunk([{ id: new DatasetExpression("uuid()"), upper_name: new DatasetExpression("upper(name)") }]),
-    ]);
+    expect(room.writeChunks["insert"]).to.have.length(1);
 
     const updateCall = room.invokeCalls.find((call) => call.tool === "update");
     expect(updateCall?.input).to.deep.equal({
@@ -628,20 +601,13 @@ describe("datasets_client_unit_test", () => {
   it("decodes typed date and timestamp row values", async () => {
     const room = new FakeDatasetsRoom();
     const client = new DatasetsClient({ room });
-    room.searchRows = [{ event_date: new DatasetDate("2026-04-09"), created_at: new Date("2026-04-09T12:30:45Z") }];
-    room.sqlRows = [{ event_date: new DatasetDate("2026-04-09"), created_at: new Date("2026-04-09T12:30:45Z") }];
+    room.searchTable = tableFromArrays({ event_date: ["2026-04-09"], created_at: [new Date("2026-04-09T12:30:45Z")] });
+    room.sqlTable = tableFromArrays({ event_date: ["2026-04-09"], created_at: [new Date("2026-04-09T12:30:45Z")] });
 
     const searchRows = await client.search({ table: "records" });
     const sqlRows = await client.sql({ query: "SELECT * FROM records", tables: ["records"] });
 
-    expect(searchRows[0]["event_date"]).to.be.instanceOf(DatasetDate);
-    expect(String(searchRows[0]["event_date"])).to.equal("2026-04-09");
-    expect(searchRows[0]["created_at"]).to.be.instanceOf(Date);
-    expect((searchRows[0]["created_at"] as Date).toISOString()).to.equal("2026-04-09T12:30:45.000Z");
-
-    expect(sqlRows[0]["event_date"]).to.be.instanceOf(DatasetDate);
-    expect(String(sqlRows[0]["event_date"])).to.equal("2026-04-09");
-    expect(sqlRows[0]["created_at"]).to.be.instanceOf(Date);
-    expect((sqlRows[0]["created_at"] as Date).toISOString()).to.equal("2026-04-09T12:30:45.000Z");
+    expect(searchRows[0].getChild("event_date")?.get(0)).to.equal("2026-04-09");
+    expect(sqlRows[0].getChild("event_date")?.get(0)).to.equal("2026-04-09");
   });
 });

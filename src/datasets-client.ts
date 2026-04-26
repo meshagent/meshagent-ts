@@ -1,9 +1,10 @@
-import { DataType } from "./data-types";
+import { Schema, Table, tableFromIPC, tableToIPC } from "apache-arrow";
 import { RoomClient } from "./room-client";
 import { RoomServerException } from "./room-server-client";
-import { ControlContent, ErrorContent, JsonContent, type Content } from "./response";
+import { BinaryContent, ControlContent, ErrorContent, JsonContent, type Content } from "./response";
 
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
+const ARROW_IPC_STREAM_MIME_TYPE = "application/vnd.apache.arrow.stream";
 
 export interface TableRef {
   name: string;
@@ -272,100 +273,6 @@ function metadataEntries(metadata?: Record<string, unknown>): Array<{ key: strin
     key,
     value: typeof value === "string" ? value : JSON.stringify(value),
   }));
-}
-
-function toolkitDataTypeJson(dataType: DataType): Record<string, unknown> {
-  const json = dataType.toJson() as Record<string, unknown>;
-  const payload: Record<string, unknown> = {
-    type: json.type,
-    nullable: json.nullable ?? null,
-    metadata: metadataEntries(json.metadata as Record<string, unknown> | undefined),
-  };
-
-  if (json.type === "vector" || json.type === "list") {
-    payload.element_type = toolkitDataTypeJson(DataType.fromJson(json.element_type as Record<string, unknown>));
-  } else if (json.type === "struct") {
-    const fields = json.fields;
-    if (!Array.isArray(fields)) {
-      throw new RoomServerException("unexpected return type from datasets.inspect");
-    }
-    payload.fields = fields.map((field) => {
-      if (!isRecord(field) || typeof field.name !== "string" || !isRecord(field.data_type)) {
-        throw new RoomServerException("unexpected return type from datasets.inspect");
-      }
-      return {
-        name: field.name,
-        data_type: toolkitDataTypeJson(DataType.fromJson(field.data_type)),
-      };
-    });
-  }
-  if (json.type === "vector") {
-    payload.size = json.size;
-  }
-
-  return payload;
-}
-
-function schemaEntries(schema?: Record<string, DataType>): Array<Record<string, unknown>> | null {
-  if (schema == null) {
-    return null;
-  }
-  return Object.entries(schema).map(([name, dataType]) => ({
-    name,
-    data_type: toolkitDataTypeJson(dataType),
-  }));
-}
-
-function publicDataTypeJson(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw new RoomServerException("unexpected return type from datasets.inspect");
-  }
-
-  const type = value.type;
-  if (typeof type !== "string") {
-    throw new RoomServerException("unexpected return type from datasets.inspect");
-  }
-
-  const metadataList = value.metadata;
-  let metadata: Record<string, string> | undefined;
-  if (metadataList != null) {
-    if (!Array.isArray(metadataList)) {
-      throw new RoomServerException("unexpected return type from datasets.inspect");
-    }
-    metadata = {};
-    for (const entry of metadataList) {
-      if (!isRecord(entry) || typeof entry.key !== "string" || typeof entry.value !== "string") {
-        throw new RoomServerException("unexpected return type from datasets.inspect");
-      }
-      metadata[entry.key] = entry.value;
-    }
-  }
-
-  const payload: Record<string, unknown> = {
-    type,
-    nullable: value.nullable,
-    metadata,
-  };
-
-  if (type === "vector") {
-    payload.size = value.size;
-    payload.element_type = publicDataTypeJson(value.element_type);
-  } else if (type === "list") {
-    payload.element_type = publicDataTypeJson(value.element_type);
-  } else if (type === "struct") {
-    const rawFields = value.fields;
-    if (!Array.isArray(rawFields)) {
-      throw new RoomServerException("unexpected return type from datasets.inspect");
-    }
-    payload.fields = Object.fromEntries(rawFields.map((field) => {
-      if (!isRecord(field) || typeof field.name !== "string") {
-        throw new RoomServerException("unexpected return type from datasets.inspect");
-      }
-      return [field.name, publicDataTypeJson(field.data_type)];
-    }));
-  }
-
-  return payload;
 }
 
 function encodeRecordValue(value: unknown): unknown {
@@ -718,6 +625,108 @@ class DatasetWriteInputStream {
   }
 }
 
+type ArrowTableChunks = Iterable<Table> | AsyncIterable<Table>;
+
+async function* toAsyncArrowIterable(chunks: ArrowTableChunks): AsyncIterable<Table> {
+  if (Symbol.asyncIterator in chunks) {
+    for await (const chunk of chunks as AsyncIterable<Table>) {
+      yield chunk;
+    }
+    return;
+  }
+  for (const chunk of chunks as Iterable<Table>) {
+    yield chunk;
+  }
+}
+
+function schemaToIPC(schema: Schema): Uint8Array {
+  return tableToIPC(new Table(schema, []), "stream");
+}
+
+function tableFromIPCBytes(data: Uint8Array): Table {
+  const table = tableFromIPC(data);
+  if (table instanceof Promise) {
+    throw new RoomServerException("unexpected async Arrow IPC result");
+  }
+  return table;
+}
+
+class DatasetArrowWriteInputStream {
+  private readonly source: AsyncIterator<Table>;
+  private readonly pulls: Array<() => void> = [];
+  private closed = false;
+
+  constructor(
+    private readonly start: Record<string, unknown>,
+    chunks: ArrowTableChunks,
+    private readonly schema?: Schema,
+  ) {
+    this.source = toAsyncArrowIterable(chunks)[Symbol.asyncIterator]();
+  }
+
+  public requestNext(): void {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    this.pulls.push(() => undefined);
+  }
+
+  public close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    while (this.pulls.length > 0) {
+      const waiter = this.pulls.shift();
+      waiter?.();
+    }
+    void this.source.return?.();
+  }
+
+  private async waitForPull(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      this.pulls.push(resolve);
+    });
+  }
+
+  public async *stream(): AsyncIterable<Content> {
+    yield new BinaryContent({
+      data: this.schema == null ? new Uint8Array() : schemaToIPC(this.schema),
+      headers: this.start,
+    });
+    while (!this.closed) {
+      await this.waitForPull();
+      if (this.closed) {
+        return;
+      }
+      const nextChunk = await this.source.next();
+      if (nextChunk.done) {
+        return;
+      }
+      if (nextChunk.value.numRows === 0) {
+        continue;
+      }
+      yield new BinaryContent({
+        data: tableToIPC(nextChunk.value, "stream"),
+        headers: { kind: "data", content_type: ARROW_IPC_STREAM_MIME_TYPE },
+      });
+    }
+  }
+}
+
 class DatasetReadInputStream {
   private readonly pulls: Array<() => void> = [];
   private closed = false;
@@ -773,6 +782,61 @@ class DatasetReadInputStream {
   }
 }
 
+class DatasetArrowReadInputStream {
+  private readonly pulls: Array<() => void> = [];
+  private closed = false;
+
+  constructor(private readonly start: Record<string, unknown>) {}
+
+  public requestNext(): void {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    this.pulls.push(() => undefined);
+  }
+
+  public close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    while (this.pulls.length > 0) {
+      const waiter = this.pulls.shift();
+      waiter?.();
+    }
+  }
+
+  private async waitForPull(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    const waiter = this.pulls.shift();
+    if (waiter) {
+      waiter();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      this.pulls.push(resolve);
+    });
+  }
+
+  public async *stream(): AsyncIterable<Content> {
+    yield new BinaryContent({ data: new Uint8Array(), headers: this.start });
+    while (!this.closed) {
+      await this.waitForPull();
+      if (this.closed) {
+        return;
+      }
+      yield new BinaryContent({ data: new Uint8Array(), headers: { kind: "pull" } });
+    }
+  }
+}
+
 export class DatasetsClient {
   private room: DatasetRoomInvoker;
 
@@ -795,11 +859,15 @@ export class DatasetsClient {
     return null;
   }
 
+  private async invokeContent(operation: string, input: Content): Promise<Content | null> {
+    return await this.room.invoke({ toolkit: "dataset", tool: operation, input });
+  }
+
   private async invokeStream(operation: string, input: AsyncIterable<Content>): Promise<AsyncIterable<Content>> {
     return await this.room.invokeStream({ toolkit: "dataset", tool: operation, input });
   }
 
-  private async drainWriteStream(operation: string, input: DatasetWriteInputStream): Promise<void> {
+  private async drainWriteStream(operation: string, input: DatasetWriteInputStream | DatasetArrowWriteInputStream): Promise<void> {
     const response = await this.invokeStream(operation, input.stream());
     try {
       for await (const chunk of response) {
@@ -811,6 +879,13 @@ export class DatasetsClient {
             return;
           }
           throw this._unexpectedResponseError(operation);
+        }
+        if (chunk instanceof BinaryContent) {
+          if (chunk.headers.kind !== "pull") {
+            throw this._unexpectedResponseError(operation);
+          }
+          input.requestNext();
+          continue;
         }
         if (!(chunk instanceof JsonContent) || chunk.json.kind !== "pull") {
           throw this._unexpectedResponseError(operation);
@@ -848,6 +923,32 @@ export class DatasetsClient {
     }
   }
 
+  private async *streamArrow(operation: string, start: Record<string, unknown>): AsyncIterable<Table> {
+    const input = new DatasetArrowReadInputStream(start);
+    const response = await this.invokeStream(operation, input.stream());
+    input.requestNext();
+    try {
+      for await (const chunk of response) {
+        if (chunk instanceof ErrorContent) {
+          throw new RoomServerException(chunk.text, chunk.code);
+        }
+        if (chunk instanceof ControlContent) {
+          if (chunk.method === "close") {
+            return;
+          }
+          throw this._unexpectedResponseError(operation);
+        }
+        if (!(chunk instanceof BinaryContent) || chunk.headers.kind !== "data") {
+          throw this._unexpectedResponseError(operation);
+        }
+        yield tableFromIPCBytes(chunk.data);
+        input.requestNext();
+      }
+    } finally {
+      input.close();
+    }
+  }
+
   public async listTables({ namespace, branch }: {
     namespace?: string[];
     branch?: string;
@@ -872,32 +973,32 @@ export class DatasetsClient {
     metadata,
   }: {
     name: string;
-    data?: DatasetRowChunks;
-    schema?: Record<string, DataType>;
+    data?: ArrowTableChunks;
+    schema?: Schema;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    const input = new DatasetWriteInputStream(
+    const input = new DatasetArrowWriteInputStream(
       {
         kind: "start",
         name,
-        fields: schemaEntries(schema),
         mode,
         namespace: namespace ?? null,
         branch: branch ?? null,
         metadata: metadataEntries(metadata),
       },
       data ?? [],
+      schema,
     );
     await this.drainWriteStream("create_table", input);
   }
 
   public async createTableWithSchema({ name, schema, data, mode = "create", namespace, branch, metadata }: {
     name: string;
-    schema?: Record<string, DataType>;
-    data?: DatasetRows;
+    schema?: Schema;
+    data?: Iterable<Table> | Table;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
@@ -906,7 +1007,7 @@ export class DatasetsClient {
     return this.createTable({
       name,
       schema,
-      data: data == null ? undefined : rowChunkList(data),
+      data: data == null ? undefined : data instanceof Table ? [data] : data,
       mode,
       namespace,
       branch,
@@ -916,7 +1017,7 @@ export class DatasetsClient {
 
   public async createTableFromData({ name, data, mode = "create", namespace, branch, metadata }: {
     name: string;
-    data?: DatasetRows;
+    data?: Iterable<Table> | Table;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
@@ -924,7 +1025,7 @@ export class DatasetsClient {
   }): Promise<void> {
     return this.createTable({
       name,
-      data: data == null ? undefined : rowChunkList(data),
+      data: data == null ? undefined : data instanceof Table ? [data] : data,
       mode,
       namespace,
       branch,
@@ -934,14 +1035,36 @@ export class DatasetsClient {
 
   public async createTableFromDataStream({ name, chunks, schema, mode = "create", namespace, branch, metadata }: {
     name: string;
-    chunks: DatasetRowChunks;
-    schema?: Record<string, DataType>;
+    chunks: ArrowTableChunks;
+    schema?: Schema;
     mode?: CreateMode;
     namespace?: string[];
     branch?: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     return this.createTable({ name, data: chunks, schema, mode, namespace, branch, metadata });
+  }
+
+  public async createTableFromJsonData({ name, data, mode = "create", namespace, branch, metadata }: {
+    name: string;
+    data?: DatasetRows;
+    mode?: CreateMode;
+    namespace?: string[];
+    branch?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const input = new DatasetWriteInputStream(
+      {
+        kind: "start",
+        name,
+        mode,
+        namespace: namespace ?? null,
+        branch: branch ?? null,
+        metadata: metadataEntries(metadata),
+      },
+      data == null ? [] : rowChunkList(data),
+    );
+    await this.drainWriteStream("create_table", input);
   }
 
   public async dropTable({ name, ignoreMissing = false, namespace, branch }: {
@@ -977,19 +1100,29 @@ export class DatasetsClient {
 
   public async addColumns({ table, newColumns, namespace, branch }: {
     table: string;
-    newColumns: Record<string, string | DataType>;
+    newColumns: Record<string, string> | Schema;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
+    if (newColumns instanceof Schema) {
+      await this.invokeContent("add_columns", new BinaryContent({
+        data: schemaToIPC(newColumns),
+        headers: {
+          table,
+          namespace: namespace ?? null,
+          branch: branch ?? null,
+          content_type: ARROW_IPC_STREAM_MIME_TYPE,
+        },
+      }));
+      return;
+    }
     await this.room.invoke({
       toolkit: "dataset",
       tool: "add_columns",
       input: {
         table,
         columns: Object.entries(newColumns).map(([name, value]) => (
-          value instanceof DataType
-            ? { name, value_sql: null, data_type: toolkitDataTypeJson(value) }
-            : { name, value_sql: value, data_type: null }
+          { name, value_sql: value }
         )),
         namespace: namespace ?? null,
         branch: branch ?? null,
@@ -1012,20 +1145,20 @@ export class DatasetsClient {
 
   public async insert({ table, records, namespace, branch }: {
     table: string;
-    records: DatasetRows;
+    records: Table;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.insertStream({ table, chunks: rowChunkList(records), namespace, branch });
+    await this.insertStream({ table, chunks: [records], namespace, branch });
   }
 
   public async insertStream({ table, chunks, namespace, branch }: {
     table: string;
-    chunks: DatasetRowChunks;
+    chunks: ArrowTableChunks;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    const input = new DatasetWriteInputStream({
+    const input = new DatasetArrowWriteInputStream({
       kind: "start",
       table,
       namespace: namespace ?? null,
@@ -1070,21 +1203,21 @@ export class DatasetsClient {
   public async merge({ table, on, records, namespace, branch }: {
     table: string;
     on: string;
-    records: DatasetRows;
+    records: Table;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.mergeStream({ table, on, chunks: rowChunkList(records), namespace, branch });
+    await this.mergeStream({ table, on, chunks: [records], namespace, branch });
   }
 
   public async mergeStream({ table, on, chunks, namespace, branch }: {
     table: string;
     on: string;
-    chunks: DatasetRowChunks;
+    chunks: ArrowTableChunks;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    const input = new DatasetWriteInputStream({
+    const input = new DatasetArrowWriteInputStream({
       kind: "start",
       table,
       on,
@@ -1098,20 +1231,20 @@ export class DatasetsClient {
     query: string;
     tables: Array<TableRef | string>;
     params?: DatasetRecord;
-  }): Promise<DatasetRows> {
-    const rows: DatasetRows = [];
+  }): Promise<Table[]> {
+    const results: Table[] = [];
     for await (const chunk of this.sqlStream({ query, tables, params })) {
-      rows.push(...chunk);
+      results.push(chunk);
     }
-    return rows;
+    return results;
   }
 
   public async *sqlStream({ query, tables, params }: {
     query: string;
     tables: Array<TableRef | string>;
     params?: DatasetRecord;
-  }): AsyncIterable<DatasetRows> {
-    yield* this.streamRows("sql", {
+  }): AsyncIterable<Table> {
+    yield* this.streamArrow("sql", {
       kind: "start",
       query,
       tables: normalizeTableRefs(tables),
@@ -1130,8 +1263,8 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
     version?: number;
-  }): Promise<DatasetRows> {
-    const rows: DatasetRows = [];
+  }): Promise<Table[]> {
+    const results: Table[] = [];
     for await (const chunk of this.searchStream({
       table,
       text,
@@ -1144,9 +1277,9 @@ export class DatasetsClient {
       branch,
       version,
     })) {
-      rows.push(...chunk);
+      results.push(chunk);
     }
-    return rows;
+    return results;
   }
 
   public async *searchStream({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {
@@ -1160,8 +1293,8 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
     version?: number;
-  }): AsyncIterable<DatasetRows> {
-    yield* this.streamRows("search", {
+  }): AsyncIterable<Table> {
+    yield* this.streamArrow("search", {
       kind: "start",
       table,
       text: text ?? null,
@@ -1207,22 +1340,21 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
     version?: number;
-  }): Promise<Record<string, DataType>> {
-    const response = await this.invoke("inspect", {
+  }): Promise<Schema> {
+    const response = await this.room.invoke({
+      toolkit: "dataset",
+      tool: "inspect",
+      input: {
       table,
       namespace: namespace ?? null,
       branch: branch ?? null,
       version: version ?? null,
+      },
     });
-    if (!(response instanceof JsonContent) || !Array.isArray(response.json.fields)) {
+    if (!(response instanceof BinaryContent)) {
       throw this._unexpectedResponseError("inspect");
     }
-    return Object.fromEntries(response.json.fields.map((field) => {
-      if (!isRecord(field) || typeof field.name !== "string") {
-        throw this._unexpectedResponseError("inspect");
-      }
-      return [field.name, DataType.fromJson(publicDataTypeJson(field.data_type))];
-    }));
+    return tableFromIPCBytes(response.data).schema;
   }
 
   public async optimize(table: string): Promise<void>;

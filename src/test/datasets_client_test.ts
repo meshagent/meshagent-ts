@@ -2,20 +2,44 @@
 
 // import { describe, it, before, after } from "mocha";
 import { expect } from "chai";
+import { Table, tableFromArrays } from "apache-arrow";
 
 // Example placeholder type definitions and imports.
 // Replace with the real imports from your project.
 import {
-    DatasetRows,
     RoomClient,
-    IntDataType,
-    TextDataType,
-    FloatDataType,
-    VectorDataType,
     websocketProtocol,
 } from "../index";
 
 import { room, getConfig } from "./utils";
+
+function tableForRows(rows: Array<Record<string, unknown>>): Table {
+    const columns: Record<string, unknown[]> = {};
+    for (const row of rows) {
+        for (const [name, value] of Object.entries(row)) {
+            if (!columns[name]) {
+                columns[name] = [];
+            }
+            columns[name].push(value);
+        }
+    }
+    return tableFromArrays(columns);
+}
+
+function tablesContainValue(tables: Table[], column: string, value: unknown): boolean {
+    return tables.some((table) => {
+        const vector = table.getChild(column);
+        if (vector == null) {
+            return false;
+        }
+        for (let index = 0; index < table.numRows; index += 1) {
+            if (vector.get(index) === value) {
+                return true;
+            }
+        }
+        return false;
+    });
+}
 
 describe("datasets_client_test", function (this: Mocha.Suite) {
     // Increase timeout if needed for async operations (DB indexing, WebSocket connections, etc.)
@@ -53,9 +77,10 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         const tableName = "test_table_schema";
 
         // Create a table with a schema defining a single 'id' column.
+        const table = tableForRows([{ id: 0 }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: { id: new IntDataType() },
+            schema: table.schema,
         });
 
         const tables = await client1.datasets.listTables();
@@ -67,9 +92,10 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         const tableName = "test_drop_table";
 
         // Create table from data
+        const table = tableForRows([{ test: 0 }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: { test: new IntDataType() },
+            schema: table.schema,
         });
 
         let tables = await client1.datasets.listTables();
@@ -86,16 +112,16 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         const tableName = "test_insert_search";
 
         // Create table with initial empty data.
+        const schemaTable = tableForRows([{ id: 0, name: "" }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: { id: new IntDataType(), name: new TextDataType() },
+            schema: schemaTable.schema,
         });
 
         // Insert a record.
-        const record = { id: 1, name: "Alice" };
         await client1.datasets.insert({
             table: tableName,
-            records: [record],
+            records: tableForRows([{ id: 1, name: "Alice" }]),
         });
 
         // Search for the record.
@@ -105,23 +131,23 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         });
 
         // Expect results to include the record we inserted.
-        const found = results.some((r: any) => r.name === "Alice");
+        const found = tablesContainValue(results, "name", "Alice");
         expect(found).to.be.true;
     });
 
     it("test_update_and_delete", async () => {
         const tableName = "test_update_delete";
 
+        const schemaTable = tableForRows([{ id: 0, name: "" }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: { id: new IntDataType(), name: new TextDataType() },
+            schema: schemaTable.schema,
         });
 
         // Insert a record.
-        const record = { id: 2, name: "Bob" };
         await client1.datasets.insert({
             table: tableName,
-            records: [record],
+            records: tableForRows([{ id: 2, name: "Bob" }]),
         });
 
         // Update Bob's name to Robert.
@@ -137,7 +163,7 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
             where: { id: 2 },
         });
 
-        const updated = results.some((r: any) => r.name === "Robert");
+        const updated = tablesContainValue(results, "name", "Robert");
         expect(updated).to.be.true;
 
         // Delete the record.
@@ -157,42 +183,39 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
     it("test_merge", async () => {
         const tableName = "test_merge";
 
+        const schemaTable = tableForRows([{ id: 0, name: "" }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: { id: new IntDataType(), name: new TextDataType() },
+            schema: schemaTable.schema,
         });
 
-        const record1 = { id: 3, name: "Carol" };
         await client1.datasets.insert({
             table: tableName,
-            records: [record1],
+            records: tableForRows([{ id: 3, name: "Carol" }]),
         });
 
         // Merge a record with the same 'id' but a different name.
-        const recordMerge = { id: 3, name: "Caroline" };
         await client1.datasets.merge({
             table: tableName,
             on: "id",
-            records: [recordMerge],
+            records: tableForRows([{ id: 3, name: "Caroline" }]),
         });
 
         const results = await client1.datasets.search({
             table: tableName,
             where: { id: 3 },
         });
-        const merged = results.some((r: any) => r.name === "Caroline");
+        const merged = tablesContainValue(results, "name", "Caroline");
         expect(merged).to.be.true;
     });
 
     it("test_optimize", async () => {
         const tableName = "test_optimize";
 
+        const schemaTable = tableForRows([{ id: 0, name: "" }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: {
-                id: new IntDataType(),
-                name: new TextDataType(),
-            },
+            schema: schemaTable.schema,
         });
 
         // Example "optimize" call. You might want to check some stats or status after.
@@ -203,20 +226,14 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
     it("test_create_indexes", async () => {
         const tableName = "test_indexes";
 
+        const schemaTable = tableForRows([{ id: 0, name: "test", embedding: Array.from({ length: 128 }, () => 0) }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
-            schema: {
-                id: new IntDataType(),
-                name: new TextDataType(),
-                embedding: new VectorDataType({
-                    size: 128,
-                    elementType: new FloatDataType()
-                }),
-            },
+            schema: schemaTable.schema,
         });
 
         // Insert 1000 rows with random vector data
-        const data: DatasetRows = [];
+        const data: Array<Record<string, unknown>> = [];
 
         for (let i = 0; i < 1000; i++) {
             const vector: number[] = [];
@@ -234,7 +251,7 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
 
         await client1.datasets.insert({
             table: tableName,
-            records: data,
+            records: tableForRows(data),
         });
 
         // Create a scalar index
@@ -271,7 +288,7 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         // Create a table with one record.
         await client1.datasets.createTableFromData({
             name: tableName,
-            data: [{ id: 1, name: "Dave" }],
+            data: tableForRows([{ id: 1, name: "Dave" }]),
         });
 
         // Add a new column 'email'.
@@ -299,9 +316,7 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         });
 
         if (resultsAfter.length > 0) {
-            const record = resultsAfter[0];
-            // Ensure the 'email' column was removed
-            expect("email" in record).to.be.false;
+            expect(resultsAfter[0].getChild("email")).to.equal(null);
         }
     });
 });
