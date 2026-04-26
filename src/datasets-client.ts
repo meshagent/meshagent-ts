@@ -1,7 +1,7 @@
 import { Schema, Table, tableFromIPC, tableToIPC } from "apache-arrow";
 import { RoomClient } from "./room-client";
 import { RoomServerException } from "./room-server-client";
-import { BinaryContent, ControlContent, ErrorContent, JsonContent, type Content } from "./response";
+import { BinaryContent, ControlContent, EmptyContent, ErrorContent, JsonContent, type Content } from "./response";
 
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
 const ARROW_IPC_STREAM_MIME_TYPE = "application/vnd.apache.arrow.stream";
@@ -32,6 +32,25 @@ export interface TableBranch {
   parentVersion: number | null;
   createdAt: Date | null;
   manifestSize: number | null;
+}
+
+export interface DatasetSqlQuery {
+  kind: "query";
+  schema: Schema;
+  queryId: string;
+}
+
+export interface DatasetSqlStatement {
+  kind: "statement";
+  rowsAffected: number;
+}
+
+export type DatasetSqlExecution = DatasetSqlQuery | DatasetSqlStatement;
+
+export type DatasetSqlCancelStatus = "cancelled" | "cancelling" | "not_cancellable";
+
+export interface DatasetSqlCancelResult {
+  status: DatasetSqlCancelStatus;
 }
 
 export abstract class DatasetValueEncoder {
@@ -651,6 +670,10 @@ function tableFromIPCBytes(data: Uint8Array): Table {
   return table;
 }
 
+function schemaFromIPCBytes(data: Uint8Array): Schema {
+  return tableFromIPCBytes(data).schema;
+}
+
 class DatasetArrowWriteInputStream {
   private readonly source: AsyncIterator<Table>;
   private readonly pulls: Array<() => void> = [];
@@ -1227,29 +1250,158 @@ export class DatasetsClient {
     await this.drainWriteStream("merge", input);
   }
 
-  public async sql({ query, tables, params }: {
+  public async sql({ query, tables, params, namespace, branch }: {
     query: string;
-    tables: Array<TableRef | string>;
-    params?: DatasetRecord;
+    tables?: Array<TableRef | string>;
+    params?: Table;
+    namespace?: string[];
+    branch?: string;
   }): Promise<Table[]> {
     const results: Table[] = [];
-    for await (const chunk of this.sqlStream({ query, tables, params })) {
+    for await (const chunk of this.sqlStream({ query, tables, params, namespace, branch })) {
       results.push(chunk);
     }
     return results;
   }
 
-  public async *sqlStream({ query, tables, params }: {
+  public async openSqlQuery({ query, tables, params, namespace, branch }: {
     query: string;
-    tables: Array<TableRef | string>;
-    params?: DatasetRecord;
+    tables?: Array<TableRef | string>;
+    params?: Table;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<DatasetSqlQuery> {
+    const response = await this.invokeContent("open_sql_query", new BinaryContent({
+      data: params == null ? new Uint8Array() : tableToIPC(params, "stream"),
+      headers: {
+        query,
+        tables: normalizeTableRefs(tables ?? []),
+        namespace: namespace ?? null,
+        branch: branch ?? null,
+      },
+    }));
+    if (!(response instanceof BinaryContent)) {
+      throw this._unexpectedResponseError("open_sql_query");
+    }
+    const queryId = response.headers.query_id;
+    if (typeof queryId !== "string" || queryId === "") {
+      throw this._unexpectedResponseError("open_sql_query");
+    }
+    return {
+      schema: schemaFromIPCBytes(response.data),
+      kind: "query",
+      queryId,
+    };
+  }
+
+  public async executeSql({ query, tables, params, namespace, branch }: {
+    query: string;
+    tables?: Array<TableRef | string>;
+    params?: Table;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<DatasetSqlExecution> {
+    const response = await this.invokeContent("execute_sql", new BinaryContent({
+      data: params == null ? new Uint8Array() : tableToIPC(params, "stream"),
+      headers: {
+        query,
+        tables: normalizeTableRefs(tables ?? []),
+        namespace: namespace ?? null,
+        branch: branch ?? null,
+      },
+    }));
+    if (response instanceof BinaryContent) {
+      if (response.headers.kind !== "query") {
+        throw this._unexpectedResponseError("execute_sql");
+      }
+      const queryId = response.headers.query_id;
+      if (typeof queryId !== "string" || queryId === "") {
+        throw this._unexpectedResponseError("execute_sql");
+      }
+      return {
+        kind: "query",
+        schema: schemaFromIPCBytes(response.data),
+        queryId,
+      };
+    }
+    if (response instanceof JsonContent) {
+      if (response.json.kind !== "statement"
+        || typeof response.json.rows_affected !== "number"
+        || !Number.isInteger(response.json.rows_affected)) {
+        throw this._unexpectedResponseError("execute_sql");
+      }
+      return {
+        kind: "statement",
+        rowsAffected: response.json.rows_affected,
+      };
+    }
+    throw this._unexpectedResponseError("execute_sql");
+  }
+
+  public async *sqlStream({ query, tables, params, namespace, branch }: {
+    query: string;
+    tables?: Array<TableRef | string>;
+    params?: Table;
+    namespace?: string[];
+    branch?: string;
   }): AsyncIterable<Table> {
-    yield* this.streamArrow("sql", {
+    const result = await this.executeSql({ query, tables, params, namespace, branch });
+    if (result.kind === "statement") {
+      throw new RoomServerException(`SQL statement did not return rows; rows_affected=${result.rowsAffected}`);
+    }
+    const opened = result;
+    try {
+      yield* this.readSqlQuery({ queryId: opened.queryId });
+    } finally {
+      await this.closeSqlQuery({ queryId: opened.queryId });
+    }
+  }
+
+  public async *readSqlQuery({ queryId }: { queryId: string }): AsyncIterable<Table> {
+    yield* this.streamArrow("read_sql_query", {
       kind: "start",
-      query,
-      tables: normalizeTableRefs(tables),
-      params_json: params == null ? null : JSON.stringify(encodeDatasetRecord(params)),
+      query_id: queryId,
     });
+  }
+
+  public async closeSqlQuery({ queryId }: { queryId: string }): Promise<void> {
+    const response = await this.room.invoke({ toolkit: "dataset", tool: "close_sql_query", input: { query_id: queryId } });
+    if (!(response instanceof EmptyContent)) {
+      throw this._unexpectedResponseError("close_sql_query");
+    }
+  }
+
+  public async cancelSqlQuery({ queryId }: { queryId: string }): Promise<DatasetSqlCancelResult> {
+    const response = await this.room.invoke({ toolkit: "dataset", tool: "cancel_sql_query", input: { query_id: queryId } });
+    if (!(response instanceof JsonContent)
+      || !["cancelled", "cancelling", "not_cancellable"].includes(response.json.status as string)) {
+      throw this._unexpectedResponseError("cancel_sql_query");
+    }
+    return { status: response.json.status as DatasetSqlCancelStatus };
+  }
+
+  public async executeSqlStatement({ query, tables, params, namespace, branch }: {
+    query: string;
+    tables?: Array<TableRef | string>;
+    params?: Table;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<number> {
+    const response = await this.invokeContent("execute_sql_statement", new BinaryContent({
+      data: params == null ? new Uint8Array() : tableToIPC(params, "stream"),
+      headers: {
+        query,
+        tables: normalizeTableRefs(tables ?? []),
+        namespace: namespace ?? null,
+        branch: branch ?? null,
+      },
+    }));
+    if (!(response instanceof JsonContent)
+      || typeof response.json.rows_affected !== "number"
+      || !Number.isInteger(response.json.rows_affected)) {
+      throw this._unexpectedResponseError("execute_sql_statement");
+    }
+    return response.json.rows_affected;
   }
 
   public async search({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {

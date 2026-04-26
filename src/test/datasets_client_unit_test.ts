@@ -17,7 +17,7 @@ import {
   DatasetStruct,
   DatasetUuid,
 } from "../datasets-client";
-import { BinaryContent, Content, ControlContent, JsonContent } from "../response";
+import { BinaryContent, Content, ControlContent, EmptyContent, JsonContent } from "../response";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -117,6 +117,24 @@ class FakeDatasetsRoom {
     switch (params.tool) {
       case "inspect":
         return new BinaryContent({ data: tableToIPC(new Table(this.inspectSchema), "stream") });
+      case "open_sql_query":
+      case "execute_sql":
+        if (!(params.input instanceof BinaryContent)) {
+          throw new Error(`expected BinaryContent input for ${params.tool}`);
+        }
+        return new BinaryContent({
+          data: tableToIPC(new Table(this.sqlTable.schema), "stream"),
+          headers: { kind: "query", query_id: "sql-query-1" },
+        });
+      case "execute_sql_statement":
+        if (!(params.input instanceof BinaryContent)) {
+          throw new Error("expected BinaryContent input for execute_sql_statement");
+        }
+        return new JsonContent({ json: { rows_affected: 3 } });
+      case "close_sql_query":
+        return new EmptyContent();
+      case "cancel_sql_query":
+        return new JsonContent({ json: { status: "cancelling" } });
       case "count":
         return new JsonContent({ json: { count: 3 } });
       case "list_versions":
@@ -166,7 +184,7 @@ class FakeDatasetsRoom {
     if (params.tool === "create_table" || params.tool === "insert" || params.tool === "merge") {
       return this.handleWriteStream(params.tool, params.input);
     }
-    if (params.tool === "search" || params.tool === "sql") {
+    if (params.tool === "search" || params.tool === "read_sql_query") {
       return this.handleReadStream(params.tool, params.input);
     }
     throw new Error(`unsupported streamed datasets operation: ${params.tool}`);
@@ -427,20 +445,42 @@ describe("datasets_client_unit_test", () => {
     const rows = await client.sql({
       query: "SELECT * FROM records",
       tables: ["records"],
-      params: { id: 1 },
+      params: tableFromArrays({ id: Int32Array.from([1]) }),
     });
 
     expect(rows).to.have.length(1);
     expect(rows[0].getChild("id")?.get(0)).to.equal(1);
     expect(rows[0].getChild("payload")?.get(0)).to.equal("sql-result");
-    expect(room.readStarts["sql"]).to.deep.equal([
+    expect(room.readStarts["read_sql_query"]).to.deep.equal([
       {
         kind: "start",
-        query: "SELECT * FROM records",
-        tables: [{ name: "records" }],
-        params_json: '{"id":1}',
+        query_id: "sql-query-1",
       },
     ]);
+    const openCall = room.invokeCalls.find((call) => call.tool === "execute_sql");
+    expect(openCall?.input).to.be.instanceOf(BinaryContent);
+    expect((openCall?.input as BinaryContent).headers).to.deep.equal({
+      query: "SELECT * FROM records",
+      tables: [{ name: "records" }],
+      namespace: null,
+      branch: null,
+    });
+    const closeCall = room.invokeCalls.find((call) => call.tool === "close_sql_query");
+    expect(closeCall?.input).to.deep.equal({ query_id: "sql-query-1" });
+
+    const cancelResult = await client.cancelSqlQuery({ queryId: "sql-query-1" });
+    expect(cancelResult.status).to.equal("cancelling");
+    const cancelCall = room.invokeCalls.find((call) => call.tool === "cancel_sql_query");
+    expect(cancelCall?.input).to.deep.equal({ query_id: "sql-query-1" });
+
+    const rowsAffected = await client.executeSqlStatement({
+      query: "DELETE FROM records WHERE id = $id",
+      tables: ["records"],
+      params: tableFromArrays({ id: Int32Array.from([1]) }),
+    });
+    expect(rowsAffected).to.equal(3);
+    const statementCall = room.invokeCalls.find((call) => call.tool === "execute_sql_statement");
+    expect(statementCall?.input).to.be.instanceOf(BinaryContent);
   });
 
   it("supports uuid schemas, values, and where filters", async () => {
