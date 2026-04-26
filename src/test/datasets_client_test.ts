@@ -2,7 +2,17 @@
 
 // import { describe, it, before, after } from "mocha";
 import { expect } from "chai";
-import { Table, tableFromArrays } from "apache-arrow";
+import {
+    Field,
+    FixedSizeList,
+    Float64,
+    Int32,
+    Schema,
+    Table,
+    tableFromArrays,
+    Utf8,
+    vectorFromArray,
+} from "apache-arrow";
 
 // Example placeholder type definitions and imports.
 // Replace with the real imports from your project.
@@ -24,6 +34,20 @@ function tableForRows(rows: Array<Record<string, unknown>>): Table {
         }
     }
     return tableFromArrays(columns);
+}
+
+function tableForIndexedRows(rows: Array<{ id: number; name: string; embedding: number[] }>): Table {
+    const embeddingType = new FixedSizeList(128, new Field("item", new Float64(), false));
+    const schema = new Schema([
+        new Field("id", new Int32(), false),
+        new Field("name", new Utf8(), false),
+        new Field("embedding", embeddingType, false),
+    ]);
+    return new Table(schema, {
+        id: vectorFromArray(rows.map((row) => row.id), new Int32()),
+        name: vectorFromArray(rows.map((row) => row.name), new Utf8()),
+        embedding: vectorFromArray(rows.map((row) => row.embedding), embeddingType),
+    });
 }
 
 function tablesContainValue(tables: Table[], column: string, value: unknown): boolean {
@@ -226,14 +250,14 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
     it("test_create_indexes", async () => {
         const tableName = "test_indexes";
 
-        const schemaTable = tableForRows([{ id: 0, name: "test", embedding: Array.from({ length: 128 }, () => 0) }]);
+        const schemaTable = tableForIndexedRows([{ id: 0, name: "test", embedding: Array.from({ length: 128 }, () => 0) }]);
         await client1.datasets.createTableWithSchema({
             name: tableName,
             schema: schemaTable.schema,
         });
 
         // Insert 1000 rows with random vector data
-        const data: Array<Record<string, unknown>> = [];
+        const data: Array<{ id: number; name: string; embedding: number[] }> = [];
 
         for (let i = 0; i < 1000; i++) {
             const vector: number[] = [];
@@ -251,7 +275,7 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
 
         await client1.datasets.insert({
             table: tableName,
-            records: tableForRows(data),
+            records: tableForIndexedRows(data),
         });
 
         // Create a scalar index
