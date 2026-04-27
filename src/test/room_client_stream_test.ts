@@ -1,6 +1,7 @@
 import { expect } from "chai";
 
 import { RoomClient } from "../room-client";
+import { RoomStatusEvent } from "../room-event";
 import { Protocol, ProtocolMessageStream, StreamProtocolChannel } from "../protocol";
 import {
   BinaryContent,
@@ -323,6 +324,61 @@ describe("room_client_stream_test", () => {
       expect((requestChunks[1] as BinaryContent).headers["kind"]).to.equal("data");
       expect(requestChunks[2]).to.be.instanceOf(ControlContent);
       expect((requestChunks[2] as ControlContent).method).to.equal("close");
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("rejects listen iteration when the signal is already aborted", async () => {
+    const pair = new ProtocolPair();
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const controller = new AbortController();
+    controller.abort(new Error("stop listening"));
+
+    try {
+      const iterator = room.listen({abortSignal: controller.signal})[Symbol.asyncIterator]();
+
+      try {
+        await iterator.next();
+        throw new Error("expected listen iterator to reject");
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.equal("stop listening");
+      }
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("rejects pending listen iteration when the signal aborts", async () => {
+    const pair = new ProtocolPair();
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const controller = new AbortController();
+
+    try {
+      const iterator = room.listen({abortSignal: controller.signal})[Symbol.asyncIterator]();
+      const next = iterator.next();
+      controller.abort(new Error("stop listening"));
+
+      try {
+        await next;
+        throw new Error("expected listen iterator to reject");
+      } catch (error) {
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.equal("stop listening");
+      }
+
+      room.emit(new RoomStatusEvent({ status: "ready", message: "ready" }));
+      const plainIterator = room.listen()[Symbol.asyncIterator]();
+      const plainNext = plainIterator.next();
+      room.emit(new RoomStatusEvent({ status: "still-ready", message: "still ready" }));
+      const result = await plainNext;
+
+      expect(result.done).to.equal(false);
+      expect(result.value.name).to.equal("still-ready");
+      await plainIterator.return?.();
     } finally {
       room.dispose();
       pair.dispose();
