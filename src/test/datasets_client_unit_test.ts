@@ -374,6 +374,12 @@ describe("datasets_client_unit_test", () => {
     });
 
     await client.createBranch({ branch: "exp", fromBranch: "main", namespace: ["team"] });
+    await client.createIndex({
+      table: "records",
+      config: { column: "embedding", index_type: "IVF_PQ", num_partitions: 32, num_sub_vectors: 8 },
+      namespace: ["team"],
+      branch: "exp",
+    });
     await client.dropIndex({ table: "records", name: "idx_records_id", namespace: ["team"], branch: "exp" });
     await client.restore({ table: "records", version: 2, namespace: ["team"], branch: "exp" });
     await client.optimize({ table: "records", namespace: ["team"], branch: "exp" });
@@ -429,6 +435,14 @@ describe("datasets_client_unit_test", () => {
       branch: "exp",
       from_branch: "main",
       namespace: ["team"],
+    });
+
+    const createIndexCall = room.invokeCalls.find((call) => call.tool === "create_index");
+    expect(createIndexCall?.input).to.deep.equal({
+      table: "records",
+      config: { column: "embedding", index_type: "IVF_PQ", num_partitions: 32, num_sub_vectors: 8 },
+      namespace: ["team"],
+      branch: "exp",
     });
 
     const deleteBranchCall = room.invokeCalls.find((call) => call.tool === "delete_branch");

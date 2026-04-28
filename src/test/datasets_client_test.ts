@@ -279,21 +279,21 @@ describe("datasets_client_test", function (this: Mocha.Suite) {
         });
 
         // Create a scalar index
-        await client1.datasets.createScalarIndex({
+        await client1.datasets.createIndex({
             table: tableName,
-            column: "id",
+            config: { column: "id", index_type: "BTREE" },
         });
 
         // Create a vector index
-        await client1.datasets.createVectorIndex({
+        await client1.datasets.createIndex({
             table: tableName,
-            column: "embedding",
+            config: { column: "embedding", index_type: "IVF_PQ", num_partitions: 32, num_sub_vectors: 8 },
         });
 
         // Create a full-text search index
-        await client1.datasets.createFullTextSearchIndex({
+        await client1.datasets.createIndex({
             table: tableName,
-            column: "name",
+            config: { column: "name", index_type: "INVERTED" },
         });
 
         const indexes = await client1.datasets.listIndexes({ table: tableName });

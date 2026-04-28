@@ -24,6 +24,102 @@ export interface TableIndex {
   name: string;
   columns: string[];
   type: string;
+  fields: number[];
+  typeUrl: string | null;
+  numRowsIndexed: number | null;
+  numSegments: number | null;
+  totalSizeBytes: number | null;
+  details: Record<string, unknown>;
+  statistics: Record<string, unknown>;
+}
+
+export type DatasetVectorIndexType = "IVF_PQ" | "IVF_HNSW_PQ" | "IVF_HNSW_SQ" | "IVF_RQ";
+export type DatasetScalarIndexType =
+  | "BTREE"
+  | "BITMAP"
+  | "LABEL_LIST"
+  | "NGRAM"
+  | "ZONEMAP"
+  | "INVERTED"
+  | "FTS"
+  | "BLOOMFILTER"
+  | "RTREE";
+export type DatasetIndexType = DatasetVectorIndexType | DatasetScalarIndexType;
+
+export interface DatasetIndexConfig {
+  column: string | string[];
+  index_type: DatasetIndexType;
+  name?: string;
+  metric?: string;
+  replace?: boolean;
+  num_partitions?: number;
+  ivf_centroids?: number[][];
+  pq_codebook?: number[][];
+  num_sub_vectors?: number;
+  accelerator?: string;
+  index_cache_size?: number;
+  shuffle_partition_batches?: number;
+  shuffle_partition_concurrency?: number;
+  ivf_centroids_file?: string;
+  precomputed_partition_dataset?: string;
+  filter_nan?: boolean;
+  train?: boolean;
+  fragment_ids?: number[];
+  index_uuid?: string;
+  target_partition_size?: number;
+  skip_transpose?: boolean;
+  num_bits?: number;
+  index_file_version?: string;
+  max_level?: number;
+  m?: number;
+  ef_construction?: number;
+  with_position?: boolean;
+  memory_limit?: number;
+  num_workers?: number;
+  skip_merge?: boolean;
+  base_tokenizer?: string;
+  language?: string;
+  max_token_length?: number;
+  lower_case?: boolean;
+  stem?: boolean;
+  remove_stop_words?: boolean;
+  custom_stop_words?: string[];
+  ascii_folding?: boolean;
+}
+
+export interface DatasetOptimizeConfig {
+  compact_files?: boolean;
+  optimize_indices?: boolean;
+  cleanup_old_versions?: boolean;
+  target_rows_per_fragment?: number;
+  max_rows_per_group?: number;
+  max_bytes_per_file?: number;
+  materialize_deletions?: boolean;
+  materialize_deletions_threshold?: number;
+  defer_index_remap?: boolean;
+  num_threads?: number;
+  batch_size?: number;
+  compaction_mode?: "reencode" | "try_binary_copy" | "force_binary_copy";
+  binary_copy_read_batch_bytes?: number;
+  num_indices_to_merge?: number;
+  index_names?: string[];
+  retrain?: boolean;
+  older_than_seconds?: number;
+  retain_versions?: number;
+  delete_unverified?: boolean;
+  error_if_tagged_old_versions?: boolean;
+  delete_rate_limit?: number;
+}
+
+export interface DatasetOptimizeResult {
+  compaction: Record<string, unknown> | null;
+  optimizedIndices: boolean;
+  cleanup: Record<string, unknown> | null;
+}
+
+export interface DatasetTableStats {
+  dataset: Record<string, unknown>;
+  data: Record<string, unknown>;
 }
 
 export interface TableBranch {
@@ -505,7 +601,37 @@ function tableIndexFromJson(value: unknown): TableIndex {
       }
       return column;
     }),
+    fields: Array.isArray(value.fields) ? value.fields.map((field) => Number(field)) : [],
+    typeUrl: typeof value.type_url === "string" ? value.type_url : null,
+    numRowsIndexed: typeof value.num_rows_indexed === "number" ? value.num_rows_indexed : null,
+    numSegments: typeof value.num_segments === "number" ? value.num_segments : null,
+    totalSizeBytes: typeof value.total_size_bytes === "number" ? value.total_size_bytes : null,
+    details: typeof value.details_json === "string" ? JSON.parse(value.details_json) : isRecord(value.details) ? value.details : {},
+    statistics: typeof value.statistics_json === "string" ? JSON.parse(value.statistics_json) : isRecord(value.statistics) ? value.statistics : {},
   };
+}
+
+function optimizeResultFromJson(value: unknown): DatasetOptimizeResult {
+  if (!isRecord(value)) {
+    throw new RoomServerException("unexpected return type from datasets.optimize");
+  }
+  return {
+    compaction: typeof value.compaction_json === "string" ? JSON.parse(value.compaction_json) : isRecord(value.compaction) ? value.compaction : null,
+    optimizedIndices: value.optimized_indices === true,
+    cleanup: typeof value.cleanup_json === "string" ? JSON.parse(value.cleanup_json) : isRecord(value.cleanup) ? value.cleanup : null,
+  };
+}
+
+function tableStatsFromJson(value: unknown): DatasetTableStats {
+  if (!isRecord(value)) {
+    throw new RoomServerException("unexpected return type from datasets.stats");
+  }
+  const dataset = typeof value.dataset_json === "string" ? JSON.parse(value.dataset_json) : value.dataset;
+  const data = typeof value.data_json === "string" ? JSON.parse(value.data_json) : value.data;
+  if (!isRecord(dataset) || !isRecord(data)) {
+    throw new RoomServerException("unexpected return type from datasets.stats");
+  }
+  return { dataset, data };
 }
 
 function tableVersionFromJson(value: unknown): TableVersion {
@@ -1509,17 +1635,43 @@ export class DatasetsClient {
     return tableFromIPCBytes(response.data).schema;
   }
 
-  public async optimize(table: string): Promise<void>;
-  public async optimize(params: { table: string; namespace?: string[]; branch?: string }): Promise<void>;
-  public async optimize(tableOrParams: string | { table: string; namespace?: string[]; branch?: string }): Promise<void> {
+  public async optimize(table: string): Promise<DatasetOptimizeResult>;
+  public async optimize(params: { table: string; namespace?: string[]; branch?: string; config?: DatasetOptimizeConfig }): Promise<DatasetOptimizeResult>;
+  public async optimize(tableOrParams: string | { table: string; namespace?: string[]; branch?: string; config?: DatasetOptimizeConfig }): Promise<DatasetOptimizeResult> {
     const table = typeof tableOrParams === "string" ? tableOrParams : tableOrParams.table;
     const namespace = typeof tableOrParams === "string" ? undefined : tableOrParams.namespace;
     const branch = typeof tableOrParams === "string" ? undefined : tableOrParams.branch;
-    await this.room.invoke({
-      toolkit: "dataset",
-      tool: "optimize",
-      input: { table, namespace: namespace ?? null, branch: branch ?? null },
+    const config = typeof tableOrParams === "string" ? undefined : tableOrParams.config;
+    const response = await this.invoke("optimize", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      config: config ?? null,
     });
+    if (!(response instanceof JsonContent)) {
+      throw this._unexpectedResponseError("optimize");
+    }
+    return optimizeResultFromJson(response.json);
+  }
+
+  public async stats({ table, namespace, branch, version, maxRowsPerGroup }: {
+    table: string;
+    namespace?: string[];
+    branch?: string;
+    version?: number;
+    maxRowsPerGroup?: number;
+  }): Promise<DatasetTableStats> {
+    const response = await this.invoke("stats", {
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
+      max_rows_per_group: maxRowsPerGroup ?? null,
+    });
+    if (!(response instanceof JsonContent)) {
+      throw this._unexpectedResponseError("stats");
+    }
+    return tableStatsFromJson(response.json);
   }
 
   public async restore({ table, version, namespace, branch }: {
@@ -1551,45 +1703,16 @@ export class DatasetsClient {
     return response.json.versions.map((version) => tableVersionFromJson(version));
   }
 
-  public async createVectorIndex({ table, column, replace = false, namespace, branch }: {
+  public async createIndex({ table, config, namespace, branch }: {
     table: string;
-    column: string;
-    replace?: boolean;
+    config: DatasetIndexConfig;
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
     await this.room.invoke({
       toolkit: "dataset",
-      tool: "create_vector_index",
-      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
-    });
-  }
-
-  public async createScalarIndex({ table, column, replace = false, namespace, branch }: {
-    table: string;
-    column: string;
-    replace?: boolean;
-    namespace?: string[];
-    branch?: string;
-  }): Promise<void> {
-    await this.room.invoke({
-      toolkit: "dataset",
-      tool: "create_scalar_index",
-      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
-    });
-  }
-
-  public async createFullTextSearchIndex({ table, column, replace = false, namespace, branch }: {
-    table: string;
-    column: string;
-    replace?: boolean;
-    namespace?: string[];
-    branch?: string;
-  }): Promise<void> {
-    await this.room.invoke({
-      toolkit: "dataset",
-      tool: "create_full_text_search_index",
-      input: { table, column, replace, namespace: namespace ?? null, branch: branch ?? null },
+      tool: "create_index",
+      input: { table, config, namespace: namespace ?? null, branch: branch ?? null },
     });
   }
 
