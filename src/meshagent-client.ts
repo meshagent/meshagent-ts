@@ -53,6 +53,16 @@ export interface ProjectUserGrantCount {
     email: string;
 }
 
+export interface ProjectMembersPage {
+    users: Record<string, unknown>[];
+    total: number;
+}
+
+export interface ProjectUserGrantCountsPage {
+    users: ProjectUserGrantCount[];
+    total: number;
+}
+
 export interface EnvironmentVariable {
     name: string;
     value: string;
@@ -291,6 +301,11 @@ export interface Mailbox {
     queue: string;
 }
 
+export interface MailboxesPage {
+    mailboxes: Mailbox[];
+    total: number;
+}
+
 export type FeedVisibility = "public" | "project" | "private";
 
 export interface Feed {
@@ -303,6 +318,11 @@ export interface Feed {
     paused: boolean;
     annotations: Record<string, string>;
     messageSchema?: Record<string, unknown> | boolean | null;
+}
+
+export interface FeedsPage {
+    feeds: Feed[];
+    total: number;
 }
 
 export interface FeedSubscription {
@@ -363,6 +383,11 @@ export interface OAuthClient {
     scope: string;
     projectId: string;
     metadata: Record<string, string>;
+}
+
+export interface OAuthClientsPage {
+    clients: OAuthClient[];
+    total: number;
 }
 
 export interface BaseSecret {
@@ -1332,10 +1357,19 @@ export class Meshagent {
         });
     }
 
-    async getUsersInProject(projectId: string): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/users`, {
+    async getUsersInProjectPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<ProjectMembersPage> {
+        const { count = 100, offset = 0, filter } = options;
+        const data = await this.request<{ users?: any[]; total?: number }>(`/accounts/projects/${projectId}/users`, {
+            query: { count, offset, filter },
             action: "fetch project users",
         });
+        const users = Array.isArray(data?.users) ? data.users : [];
+        return { users, total: typeof data?.total === "number" ? data.total : users.length };
+    }
+
+    async getUsersInProject(projectId: string): Promise<Record<string, unknown>> {
+        const page = await this.getUsersInProjectPage(projectId);
+        return { users: page.users, total: page.total };
     }
 
     async getUserProfile(userId: string): Promise<Record<string, unknown>> {
@@ -1615,24 +1649,34 @@ export class Meshagent {
         });
     }
 
-    async listMailboxes(projectId: string): Promise<Mailbox[]> {
-        const data = await this.request<{ mailboxes?: any[] }>(`/accounts/projects/${projectId}/mailboxes`, {
+    private parseMailbox(item: unknown): Mailbox {
+        if (!item || typeof item !== "object") {
+            throw new RoomException("Invalid mailbox payload");
+        }
+        const { address, room, room_id, queue } = item as any;
+        if (typeof address !== "string" || typeof room !== "string" || typeof queue !== "string") {
+            throw new RoomException("Invalid mailbox payload: missing fields");
+        }
+        if (room_id !== undefined && typeof room_id !== "string") {
+            throw new RoomException("Invalid mailbox payload: invalid room_id");
+        }
+        return { address, room, roomId: room_id, queue };
+    }
+
+    async listMailboxesPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<MailboxesPage> {
+        const { count = 100, offset = 0, filter } = options;
+        const data = await this.request<{ mailboxes?: any[]; total?: number }>(`/accounts/projects/${projectId}/mailboxes`, {
+            query: { count, offset, filter },
             action: "list mailboxes",
         });
         const mailboxes = Array.isArray(data?.mailboxes) ? data.mailboxes : [];
-        return mailboxes.map((item) => {
-            if (!item || typeof item !== "object") {
-                throw new RoomException("Invalid mailbox payload");
-            }
-            const { address, room, room_id, queue } = item as any;
-            if (typeof address !== "string" || typeof room !== "string" || typeof queue !== "string") {
-                throw new RoomException("Invalid mailbox payload: missing fields");
-            }
-            if (room_id !== undefined && typeof room_id !== "string") {
-                throw new RoomException("Invalid mailbox payload: invalid room_id");
-            }
-            return { address, room, roomId: room_id, queue };
-        });
+        const parsed = mailboxes.map((item) => this.parseMailbox(item));
+        return { mailboxes: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+    }
+
+    async listMailboxes(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Mailbox[]> {
+        const page = await this.listMailboxesPage(projectId, options);
+        return page.mailboxes;
     }
 
     async deleteMailbox(projectId: string, address: string): Promise<void> {
@@ -1717,20 +1761,36 @@ export class Meshagent {
         return this.parseFeed((data as any).feed);
     }
 
-    async listFeeds(projectId: string): Promise<Feed[]> {
-        const data = await this.request<{ feeds?: any[] }>(`/accounts/projects/${projectId}/feeds`, {
+    async listFeedsPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<FeedsPage> {
+        const { count = 100, offset = 0, filter } = options;
+        const data = await this.request<{ feeds?: any[]; total?: number }>(`/accounts/projects/${projectId}/feeds`, {
+            query: { count, offset, filter },
             action: "list feeds",
         });
         const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
-        return feeds.map((item) => this.parseFeed(item));
+        const parsed = feeds.map((item) => this.parseFeed(item));
+        return { feeds: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
     }
 
-    async listRoomFeeds(projectId: string, roomName: string): Promise<Feed[]> {
-        const data = await this.request<{ feeds?: any[] }>(`/accounts/projects/${projectId}/rooms/${roomName}/feeds`, {
+    async listFeeds(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Feed[]> {
+        const page = await this.listFeedsPage(projectId, options);
+        return page.feeds;
+    }
+
+    async listRoomFeedsPage(projectId: string, roomName: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<FeedsPage> {
+        const { count = 100, offset = 0, filter } = options;
+        const data = await this.request<{ feeds?: any[]; total?: number }>(`/accounts/projects/${projectId}/rooms/${roomName}/feeds`, {
+            query: { count, offset, filter },
             action: "list room feeds",
         });
         const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
-        return feeds.map((item) => this.parseFeed(item));
+        const parsed = feeds.map((item) => this.parseFeed(item));
+        return { feeds: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+    }
+
+    async listRoomFeeds(projectId: string, roomName: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Feed[]> {
+        const page = await this.listRoomFeedsPage(projectId, roomName, options);
+        return page.feeds;
     }
 
     async deleteFeed(projectId: string, feedId: string): Promise<void> {
@@ -2633,14 +2693,20 @@ export class Meshagent {
         return rooms.map((item) => this.parseProjectRoomGrantCount(item));
     }
 
-    async listUniqueUsersWithGrants(projectId: string, options: { limit?: number; offset?: number } = {}): Promise<ProjectUserGrantCount[]> {
-        const { limit = 50, offset = 0 } = options;
-        const data = await this.request<{ users?: any[] }>(`/accounts/projects/${projectId}/room-grants/by-user`, {
-            query: { limit, offset },
+    async listUniqueUsersWithGrantsPage(projectId: string, options: { limit?: number; offset?: number; filter?: string } = {}): Promise<ProjectUserGrantCountsPage> {
+        const { limit = 100, offset = 0, filter } = options;
+        const data = await this.request<{ users?: any[]; total?: number }>(`/accounts/projects/${projectId}/room-grants/by-user`, {
+            query: { limit, offset, filter },
             action: "list unique users with grants",
         });
         const users = Array.isArray(data?.users) ? data.users : [];
-        return users.map((item) => this.parseProjectUserGrantCount(item));
+        const parsed = users.map((item) => this.parseProjectUserGrantCount(item));
+        return { users: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+    }
+
+    async listUniqueUsersWithGrants(projectId: string, options: { limit?: number; offset?: number; filter?: string } = {}): Promise<ProjectUserGrantCount[]> {
+        const page = await this.listUniqueUsersWithGrantsPage(projectId, options);
+        return page.users;
     }
 
     // OAuth Clients -----------------------------------------------------------
@@ -2669,12 +2735,20 @@ export class Meshagent {
         });
     }
 
-    async listOAuthClients(projectId: string): Promise<OAuthClient[]> {
-        const data = await this.request<{ clients?: any[] }>(`/accounts/projects/${projectId}/oauth/clients`, {
+    async listOAuthClientsPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<OAuthClientsPage> {
+        const { count = 100, offset = 0, filter } = options;
+        const data = await this.request<{ clients?: any[]; total?: number }>(`/accounts/projects/${projectId}/oauth/clients`, {
+            query: { count, offset, filter },
             action: "list oauth clients",
         });
         const clients = Array.isArray(data?.clients) ? data.clients : [];
-        return clients.map((item) => this.parseOAuthClient(item));
+        const parsed = clients.map((item) => this.parseOAuthClient(item));
+        return { clients: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+    }
+
+    async listOAuthClients(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<OAuthClient[]> {
+        const page = await this.listOAuthClientsPage(projectId, options);
+        return page.clients;
     }
 
     async getOAuthClient(projectId: string, clientId: string): Promise<OAuthClient> {
