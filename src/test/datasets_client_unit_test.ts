@@ -392,7 +392,18 @@ describe("datasets_client_unit_test", () => {
       version: 7,
     });
     expect(indexes).to.deep.equal([
-      { name: "idx_records_id", columns: ["id"], type: "btree" },
+      {
+        name: "idx_records_id",
+        columns: ["id"],
+        type: "btree",
+        fields: [],
+        typeUrl: null,
+        numRowsIndexed: null,
+        numSegments: null,
+        totalSizeBytes: null,
+        details: {},
+        statistics: {},
+      },
     ]);
 
     const inspectCall = room.invokeCalls.find((call) => call.tool === "inspect");
