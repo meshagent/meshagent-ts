@@ -104,7 +104,7 @@ async function main() {
         await room.start();
 
         const toolkit = new Toolkit({
-            name: "hosted-example",
+            name: "simple-echo",
             title: "Simple Echo Toolkit",
             description: "A minimal toolkit hosted from a Node process.",
             tools: [new EchoTool()],
