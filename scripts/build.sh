@@ -30,5 +30,9 @@ do
     tsc -p tsconfig.${target}.json
 done
 
+echo '{"type":"module"}' > "$DIST_DIR/esm/package.json"
+echo '{"type":"commonjs"}' > "$DIST_DIR/node/package.json"
+echo '{"type":"commonjs"}' > "$DIST_DIR/browser/package.json"
+
 cd "$ROOT/../meshagent-entrypoint"
 npm run build-ts-browser
