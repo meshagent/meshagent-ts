@@ -294,6 +294,12 @@ function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
     }) as Record<string, unknown>;
 }
 
+function serializeCreateServiceSpec(service: ServiceSpec): Record<string, unknown> {
+    const payload = serializeServiceSpec(service);
+    delete payload.id;
+    return payload;
+}
+
 export interface Mailbox {
     address: string;
     room: string;
@@ -2029,7 +2035,7 @@ export class Meshagent {
     async createService(projectId: string, service: ServiceSpec): Promise<string> {
         const data = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/services`, {
             method: "POST",
-            json: serializeServiceSpec(service),
+            json: serializeCreateServiceSpec(service),
             action: "create service",
         });
         if (!data || typeof data !== "object" || typeof data.id !== "string") {
@@ -2043,7 +2049,7 @@ export class Meshagent {
             `/accounts/projects/${projectId}/rooms/${roomName}/services`,
             {
                 method: "POST",
-                json: serializeServiceSpec(service),
+                json: serializeCreateServiceSpec(service),
                 action: "create room service",
             },
         );
