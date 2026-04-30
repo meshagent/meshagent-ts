@@ -6,7 +6,6 @@ MeshAgent is your platform to create, deploy, and manage AI agents collaborative
 
 MeshAgent removes the infrastructure headaches of building and shipping AI Agents. It spins up secure, real-time "Rooms" that connect humans, agents, and shared context -- letting you launch, share, and refine agents in hours instead of weeks.
 
-
 ---
 
 **Documentation**: [docs.meshagent.com](https://docs.meshagent.com/)
@@ -23,6 +22,31 @@ Install the MeshAgent CLI, connect it to your account, then run a minimal toolki
 
 ### 1. Install the MeshAgent CLI
 
+If you are using a Python-based install path, MeshAgent currently requires **Python 3.13**. Python 3.14 is not supported yet, and earlier versions are not tested.
+
+If you do not already have Python 3.13, the simplest setup is:
+
+#### Install uv on Linux or macOS
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+#### or Install uv on windows (PowerShell):
+```bash
+powershelliwr -useb https://astral.sh/uv/install.ps1 | iex
+```
+
+
+#### Download and manage Python 3.13
+```bash
+uv python install 3.13
+```
+
+#### Verify the version
+```bash
+uv run --python 3.13 python --version
+```
+
 Use the install path that matches your environment:
 
 ```bash
@@ -34,8 +58,7 @@ brew install meshagent
 choco install meshagent
 
 # Other platforms
-pipx install "meshagent[cli]" --include-deps
-pipx ensurepath
+uv tool install --python 3.13 "meshagent[cli]"
 ```
 
 Then sign in and activate a project:
@@ -144,10 +167,67 @@ main().catch((error) => {
 ### 4. Run the example
 
 ```bash
-meshagent room connect --project-id <project-id> --room <room-name> -- node example.js
+meshagent room connect --room <your-room-name> -- node example.js
 ```
 
 `meshagent room connect` starts the local Node process with the MeshAgent room environment already configured, so `RoomClient()` can connect without any extra setup in your code. If you already activated a project with `meshagent setup`, you can omit `--project-id`.
+
+## Deploy With a Dockerfile
+
+For deployment, package your toolkit as a long-running Node process. Use the same `RoomClient` and `startHostedToolkit` setup from the local example, but do not invoke the tool and exit; keep the process alive until it receives `SIGTERM` or `SIGINT`.
+
+Create a `Dockerfile` for your toolkit service:
+
+```dockerfile
+FROM node:22-slim
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY . .
+
+CMD ["node", "service.js"]
+```
+
+Build and push the image to a registry that MeshAgent can pull:
+
+```bash
+docker buildx build . \
+  -t "<REGISTRY>/<NAMESPACE>/simple-echo-toolkit:<TAG>" \
+  --platform linux/amd64 \
+  --push
+```
+
+Then create a `meshagent.yaml` service manifest that runs the image and injects a room token:
+
+```yaml
+kind: Service
+version: v1
+metadata:
+  name: simple-echo-toolkit
+  description: "Simple Echo Toolkit hosted from a Node container"
+  annotations:
+    meshagent.service.id: simple-echo-toolkit
+agents:
+  - name: simple-echo-toolkit
+    description: "Hosts the Simple Echo Toolkit"
+container:
+  image: "<REGISTRY>/<NAMESPACE>/simple-echo-toolkit:<TAG>"
+  command: node service.js
+  environment:
+    - name: MESHAGENT_TOKEN
+      token:
+        identity: simple-echo-toolkit
+```
+
+Validate and deploy it to a room:
+
+```bash
+meshagent service validate --file meshagent.yaml
+meshagent service create --file meshagent.yaml --room <your-room-name>
+```
+
+After the service starts, the toolkit name you passed to `new Toolkit({ name: ... })` is available in that room.
 
 ## Next Steps and Examples
 
