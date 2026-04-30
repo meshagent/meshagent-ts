@@ -56,6 +56,19 @@ interface ProtocolRetryResult {
   closeReason?: string | null;
 }
 
+function isRetryableStartupClose({
+  kind,
+  reason,
+}: {
+  kind: ProtocolCloseKind;
+  reason: string | null;
+}): boolean {
+  if (kind === ProtocolCloseKind.ERROR) {
+    return true;
+  }
+  return (reason ?? "").toLowerCase().includes("1013");
+}
+
 class RoomClientTerminalState {
   public readonly requestMessage: string;
   public readonly toolCallMessage: string;
@@ -338,7 +351,8 @@ export class RoomClient {
   private _roomUrl: string | null = null;
   private _sessionId: string | null = null;
 
-  private static readonly RECONNECT_RETRY_INTERVAL_MS = 1000;
+  private static readonly RECONNECT_RETRY_BASE_DELAY_MS = 500;
+  private static readonly RECONNECT_RETRY_MAX_DELAY_MS = 30000;
 
   private readonly _handleRoomReadyBound = this._handleRoomReady.bind(this);
   private readonly _handleRoomStatusBound = this._handleRoomStatus.bind(this);
@@ -906,7 +920,10 @@ export class RoomClient {
         await this._openProtocol({ initial: true });
       } catch (error) {
         if (error instanceof ProtocolStartupFailure) {
-          if (error.kind !== ProtocolCloseKind.ERROR || this._reconnectTimeout === 0) {
+          if (
+            !isRetryableStartupClose({ kind: error.kind, reason: error.reason })
+            || this._reconnectTimeout === 0
+          ) {
             this._setStartupTerminalState({
               closeKind: error.kind,
               closeReason: error.reason,
@@ -944,7 +961,10 @@ export class RoomClient {
 
           const closeKind = this._protocolInstance.closeKind;
           const protocolCloseReason = normalizeCloseReason(this._protocolInstance.closeReason);
-          if (closeKind != null && closeKind !== ProtocolCloseKind.ERROR) {
+          if (
+            closeKind != null
+            && !isRetryableStartupClose({ kind: closeKind, reason: protocolCloseReason })
+          ) {
             this._setStartupTerminalState({
               closeKind,
               closeReason: protocolCloseReason,
@@ -1027,6 +1047,13 @@ export class RoomClient {
     }
     const remaining = deadline - Date.now();
     return remaining <= 0 ? 0 : remaining;
+  }
+
+  private _reconnectRetryDelay({ retryCount }: { retryCount: number }): number {
+    return Math.min(
+      RoomClient.RECONNECT_RETRY_MAX_DELAY_MS,
+      RoomClient.RECONNECT_RETRY_BASE_DELAY_MS * (2 ** retryCount),
+    );
   }
 
   private async _attemptInitialProtocolStartup({
@@ -1168,14 +1195,16 @@ export class RoomClient {
     const deadline =
       this._reconnectTimeout == null ? null : Date.now() + this._reconnectTimeout;
     let firstAttempt = true;
+    let retryCount = 0;
 
     while (!this._closing) {
       if (firstAttempt) {
         firstAttempt = false;
         if (this._reconnectTimeout == null) {
           await new Promise((resolve) =>
-            setTimeout(resolve, RoomClient.RECONNECT_RETRY_INTERVAL_MS),
+            setTimeout(resolve, this._reconnectRetryDelay({ retryCount })),
           );
+          retryCount += 1;
         }
       } else {
         const remaining = this._remainingReconnectTimeout(deadline);
@@ -1183,13 +1212,15 @@ export class RoomClient {
           return this._timedOutRetryResult({ disconnectReason: failureReason });
         }
 
+        const backoffDelay = this._reconnectRetryDelay({ retryCount });
         const delay =
           remaining == null
-            ? RoomClient.RECONNECT_RETRY_INTERVAL_MS
-            : Math.min(remaining, RoomClient.RECONNECT_RETRY_INTERVAL_MS);
+            ? backoffDelay
+            : Math.min(remaining, backoffDelay);
         if (delay > 0) {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
+        retryCount += 1;
       }
 
       const remaining = this._remainingReconnectTimeout(deadline);
@@ -1225,7 +1256,7 @@ export class RoomClient {
         if (error instanceof ProtocolStartupFailure) {
           recordFailureReason(error.reason);
           await this._closeProtocol(nextProtocol);
-          if (error.kind !== ProtocolCloseKind.ERROR) {
+          if (!isRetryableStartupClose({ kind: error.kind, reason: error.reason })) {
             return {
               connected: false,
               closeKind: error.kind,

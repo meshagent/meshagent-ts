@@ -395,6 +395,41 @@ describe("room_client_request_lifecycle", () => {
     }
   });
 
+  it("start retries retryable websocket close status", async () => {
+    const pair = new ProtocolPair();
+    let protocolFactoryCalls = 0;
+    const room = new RoomClient({
+      protocolFactory: () => {
+        protocolFactoryCalls += 1;
+        if (protocolFactoryCalls === 1) {
+          return new Protocol({
+            channel: new CloseWithStatusChannel({
+              closeCode: 1013,
+              reason: "try_again_later",
+            }),
+          });
+        }
+        return pair.clientProtocolFactory();
+      },
+      reconnectTimeout: 500,
+    });
+
+    try {
+      pair.serverProtocol.start({ onMessage: async () => {} });
+
+      const start = room.start();
+      await waitUntil(() => protocolFactoryCalls >= 2);
+      await sendRoomReady(pair.serverProtocol);
+      await start;
+
+      expect(protocolFactoryCalls).to.equal(2);
+      expect(room.isConnected).to.equal(true);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
   it("start reconnect timeout closes room after startup failures", async () => {
     let protocolFactoryCalls = 0;
     const room = new RoomClient({
