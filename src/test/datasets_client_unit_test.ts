@@ -463,6 +463,77 @@ describe("datasets_client_unit_test", () => {
     });
   });
 
+  it("sends storage import and export requests with scope and format options", async () => {
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+
+    await client.importFromStorage({
+      table: "records",
+      path: "imports/data.tsv",
+      mode: "merge",
+      format: "tsv",
+      on: "id",
+      sheet: "Sheet1",
+      batchSize: 2048,
+      namespace: ["team"],
+      branch: "exp",
+    });
+    await client.exportToStorage({
+      table: "records",
+      path: "exports/data.parquet",
+      format: "parquet",
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
+
+    expect(room.invokeCalls.map((call) => call.tool)).to.include.members(["import_storage", "export_storage"]);
+    const importCall = room.invokeCalls.find((call) => call.tool === "import_storage");
+    expect(importCall?.input).to.deep.equal({
+      table: "records",
+      path: "imports/data.tsv",
+      mode: "merge",
+      format: "tsv",
+      on: "id",
+      sheet: "Sheet1",
+      batch_size: 2048,
+      namespace: ["team"],
+      branch: "exp",
+    });
+    const exportCall = room.invokeCalls.find((call) => call.tool === "export_storage");
+    expect(exportCall?.input).to.deep.equal({
+      table: "records",
+      path: "exports/data.parquet",
+      format: "parquet",
+      namespace: ["team"],
+      branch: "exp",
+      version: 7,
+    });
+  });
+
+  it("omits storage import batch_size when unset", async () => {
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+
+    await client.importFromStorage({
+      table: "records",
+      path: "imports/data.csv",
+    });
+
+    const importCall = room.invokeCalls.find((call) => call.tool === "import_storage");
+    expect(importCall?.input).to.not.have.property("batch_size");
+    expect(importCall?.input).to.deep.equal({
+      table: "records",
+      path: "imports/data.csv",
+      mode: "create",
+      format: "auto",
+      on: null,
+      sheet: null,
+      namespace: null,
+      branch: null,
+    });
+  });
+
   it("accepts string SQL table references", async () => {
     const room = new FakeDatasetsRoom();
     const client = new DatasetsClient({ room });
