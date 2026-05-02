@@ -251,6 +251,7 @@ class FakeContainersServer {
                 id: "container-1",
                 image: "demo:latest",
                 name: "demo",
+                ports: [8080],
                 started_by: { id: "p1", name: "user" },
                 state: "RUNNING",
                 private: false,
@@ -485,6 +486,7 @@ describe("container_client_test", () => {
       const containers = await harness.room.containers.list();
       expect(containers).to.have.length(1);
       expect(containers[0].id).to.equal("container-1");
+      expect(containers[0].ports).to.deep.equal([8080]);
       expect(await harness.room.containers.waitForExit({ containerId: "container-1" })).to.equal(0);
 
       const exec = harness.room.containers.exec({ containerId: "container-1", command: "echo hi" });

@@ -182,6 +182,7 @@ export interface ServiceMetadata {
 }
 
 export interface ContainerSpec {
+    private?: boolean | null;
     command?: string | null;
     working_dir?: string | null;
     image: string;
@@ -189,6 +190,8 @@ export interface ContainerSpec {
     secrets?: string[];
     pull_secret?: string | null;
     storage?: ContainerMountSpec;
+    on_demand?: boolean | null;
+    writable_root_fs?: boolean | null;
 }
 
 export interface ExternalServiceSpec {
