@@ -4,6 +4,8 @@ import { RoomServerException } from "./room-server-client";
 import { BinaryContent, ControlContent, EmptyContent, ErrorContent, JsonContent, type Content } from "./response";
 
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
+export type DatasetStorageFormat = "auto" | "json" | "arrow" | "csv" | "tsv" | "parquet" | "excel";
+export type DatasetImportMode = "create" | "replace" | "merge";
 const ARROW_IPC_STREAM_MIME_TYPE = "application/vnd.apache.arrow.stream";
 
 export interface TableRef {
@@ -1231,6 +1233,51 @@ export class DatasetsClient {
         namespace: namespace ?? null,
         branch: branch ?? null,
       },
+    });
+  }
+
+  public async importFromStorage({ table, path, mode = "create", format = "auto", on, sheet, batchSize, namespace, branch }: {
+    table: string;
+    path: string;
+    mode?: DatasetImportMode;
+    format?: DatasetStorageFormat;
+    on?: string;
+    sheet?: string;
+    batchSize?: number;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<void> {
+    const input: Record<string, unknown> = {
+      table,
+      path,
+      mode,
+      format,
+      on: on ?? null,
+      sheet: sheet ?? null,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+    };
+    if (batchSize != null) {
+      input.batch_size = batchSize;
+    }
+    await this.invoke("import_storage", input);
+  }
+
+  public async exportToStorage({ table, path, format, namespace, branch, version }: {
+    table: string;
+    path: string;
+    format: DatasetStorageFormat;
+    namespace?: string[];
+    branch?: string;
+    version?: number;
+  }): Promise<void> {
+    await this.invoke("export_storage", {
+      table,
+      path,
+      format,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      version: version ?? null,
     });
   }
 
