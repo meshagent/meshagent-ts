@@ -71,6 +71,7 @@ export interface RoomContainer {
   id: string;
   image: string;
   name?: string;
+  ports: number[];
   startedBy: ContainerParticipantInfo;
   state: string;
   private: boolean;
@@ -1116,11 +1117,16 @@ export class ContainersClient {
         throw this.unexpectedResponseError("list");
       }
       const nameRaw = entry["name"];
+      const portsRaw = entry["ports"];
       const serviceIdRaw = entry["service_id"];
+      if (!Array.isArray(portsRaw) || !portsRaw.every((port) => typeof port === "number" && Number.isInteger(port))) {
+        throw this.unexpectedResponseError("list");
+      }
       items.push({
         id,
         image,
         name: typeof nameRaw === "string" ? nameRaw : undefined,
+        ports: portsRaw,
         startedBy: {
           id: startedById,
           name: startedByName,
