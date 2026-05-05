@@ -184,7 +184,7 @@ class FakeDatasetsRoom {
     if (params.tool === "create_table" || params.tool === "insert" || params.tool === "merge") {
       return this.handleWriteStream(params.tool, params.input);
     }
-    if (params.tool === "search" || params.tool === "read_sql_query") {
+    if (params.tool === "search" || params.tool === "read_sql_query" || params.tool === "watch_table") {
       return this.handleReadStream(params.tool, params.input);
     }
     throw new Error(`unsupported streamed datasets operation: ${params.tool}`);
@@ -247,6 +247,31 @@ class FakeDatasetsRoom {
         this.readPulls[tool] = [];
       }
       this.readPulls[tool].push(pull.value.headers);
+
+      if (tool === "watch_table" && this.readPulls[tool].length === 1) {
+        yield new BinaryContent({
+          data: tableToIPC(tableFromArrays({ id: Int32Array.from([1]) }), "stream"),
+          headers: { kind: "data", phase: "initial", version: "4" },
+        });
+        continue;
+      }
+      if (tool === "watch_table" && this.readPulls[tool].length === 2) {
+        yield new JsonContent({ json: { kind: "ready", phase: "initial", version: 4 } });
+        continue;
+      }
+      if (tool === "watch_table" && this.readPulls[tool].length === 3) {
+        yield new BinaryContent({
+          data: tableToIPC(tableFromArrays({ id: Int32Array.from([2]) }), "stream"),
+          headers: {
+            kind: "data",
+            phase: "delta",
+            change_type: "inserted",
+            begin_version: "4",
+            end_version: "5",
+          },
+        });
+        continue;
+      }
 
       if (this.readPulls[tool].length === 1) {
         yield new BinaryContent({
@@ -347,6 +372,31 @@ describe("datasets_client_unit_test", () => {
         namespace: ["team"],
         branch: "exp",
         version: 7,
+      },
+    ]);
+
+    const watchEvents = [];
+    for await (const event of client.watchTable({ table: "records", namespace: ["team"], branch: "exp" })) {
+      watchEvents.push(event);
+    }
+    expect(watchEvents.map((event) => event.kind)).to.deep.equal(["data", "ready", "data"]);
+    expect(watchEvents[0].phase).to.equal("initial");
+    expect(watchEvents[0].version).to.equal(4);
+    expect(watchEvents[0].table?.getChild("id")?.get(0)).to.equal(1);
+    expect(watchEvents[1].phase).to.equal("initial");
+    expect(watchEvents[1].version).to.equal(4);
+    expect(watchEvents[2].phase).to.equal("delta");
+    expect(watchEvents[2].changeType).to.equal("inserted");
+    expect(watchEvents[2].beginVersion).to.equal(4);
+    expect(watchEvents[2].endVersion).to.equal(5);
+    expect(watchEvents[2].table?.getChild("id")?.get(0)).to.equal(2);
+    expect(room.readStarts["watch_table"]).to.deep.equal([
+      {
+        kind: "start",
+        table: "records",
+        namespace: ["team"],
+        branch: "exp",
+        poll_interval_seconds: 0.5,
       },
     ]);
 

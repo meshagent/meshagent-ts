@@ -151,6 +151,17 @@ export interface DatasetSqlCancelResult {
   status: DatasetSqlCancelStatus;
 }
 
+export interface DatasetWatchEvent {
+  kind: "data" | "ready";
+  phase?: string;
+  table?: Table;
+  version?: number;
+  changeType?: string;
+  beginVersion?: number;
+  endVersion?: number;
+  watchEvent?: string;
+}
+
 export abstract class DatasetValueEncoder {
   public abstract encodeDatasetValue(): unknown;
 }
@@ -701,6 +712,20 @@ function tableBranchFromJson(value: unknown): TableBranch {
     createdAt,
     manifestSize: value.manifest_size ?? null,
   };
+}
+
+function optionalDatasetInt(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value)) {
+    return Number.parseInt(value, 10);
+  }
+  return undefined;
+}
+
+function optionalDatasetString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 class DatasetWriteInputStream {
@@ -1633,6 +1658,68 @@ export class DatasetsClient {
       branch: branch ?? null,
       version: version ?? null,
     });
+  }
+
+  public async *watchTable({ table, namespace, branch, pollIntervalSeconds = 0.5 }: {
+    table: string;
+    namespace?: string[];
+    branch?: string;
+    pollIntervalSeconds?: number;
+  }): AsyncIterable<DatasetWatchEvent> {
+    const input = new DatasetArrowReadInputStream({
+      kind: "start",
+      table,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+      poll_interval_seconds: pollIntervalSeconds,
+    });
+    const response = await this.invokeStream("watch_table", input.stream());
+    input.requestNext();
+    try {
+      for await (const chunk of response) {
+        if (chunk instanceof ErrorContent) {
+          throw new RoomServerException(chunk.text, chunk.code);
+        }
+        if (chunk instanceof ControlContent) {
+          if (chunk.method === "close") {
+            return;
+          }
+          throw this._unexpectedResponseError("watch_table");
+        }
+        if (chunk instanceof BinaryContent) {
+          if (chunk.headers.kind !== "data") {
+            throw this._unexpectedResponseError("watch_table");
+          }
+          yield {
+            kind: "data",
+            phase: optionalDatasetString(chunk.headers.phase),
+            table: tableFromIPCBytes(chunk.data),
+            version: optionalDatasetInt(chunk.headers.version),
+            changeType: optionalDatasetString(chunk.headers.change_type),
+            beginVersion: optionalDatasetInt(chunk.headers.begin_version),
+            endVersion: optionalDatasetInt(chunk.headers.end_version),
+            watchEvent: optionalDatasetString(chunk.headers.watch_event),
+          };
+          input.requestNext();
+          continue;
+        }
+        if (chunk instanceof JsonContent) {
+          if (chunk.json.kind !== "ready") {
+            throw this._unexpectedResponseError("watch_table");
+          }
+          yield {
+            kind: "ready",
+            phase: optionalDatasetString(chunk.json.phase),
+            version: optionalDatasetInt(chunk.json.version),
+          };
+          input.requestNext();
+          continue;
+        }
+        throw this._unexpectedResponseError("watch_table");
+      }
+    } finally {
+      input.close();
+    }
   }
 
   public async count({ table, text, vector, where, namespace, branch, version }: {
