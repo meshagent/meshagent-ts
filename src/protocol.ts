@@ -179,7 +179,9 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
     this._doneHandler = onDone;
     this._errorHandler = onError;
 
-    const socket = new WebSocket(url.toString());
+    const socket = isNodeRuntime()
+      ? new WebSocket(url.toString(), [], { perMessageDeflate: true })
+      : new WebSocket(url.toString());
     this.webSocket = socket;
     if (isNodeRuntime()) {
       socket.on("unexpected-response", this._onUnexpectedResponse);
