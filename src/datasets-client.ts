@@ -152,7 +152,7 @@ export interface DatasetSqlCancelResult {
 }
 
 export interface DatasetWatchEvent {
-  kind: "data" | "ready";
+  kind: string;
   phase?: string;
   table?: Table;
   version?: number;
@@ -160,6 +160,9 @@ export interface DatasetWatchEvent {
   beginVersion?: number;
   endVersion?: number;
   watchEvent?: string;
+  transactions?: Record<string, unknown>[];
+  deletePredicate?: string;
+  transaction?: Record<string, unknown>;
 }
 
 export abstract class DatasetValueEncoder {
@@ -1690,27 +1693,37 @@ export class DatasetsClient {
           if (chunk.headers.kind !== "data") {
             throw this._unexpectedResponseError("watch_table");
           }
+          const watchEvent = optionalDatasetString(chunk.headers.watch_event);
           yield {
-            kind: "data",
+            kind: watchEvent ?? "data",
             phase: optionalDatasetString(chunk.headers.phase),
             table: tableFromIPCBytes(chunk.data),
             version: optionalDatasetInt(chunk.headers.version),
             changeType: optionalDatasetString(chunk.headers.change_type),
             beginVersion: optionalDatasetInt(chunk.headers.begin_version),
             endVersion: optionalDatasetInt(chunk.headers.end_version),
-            watchEvent: optionalDatasetString(chunk.headers.watch_event),
+            watchEvent,
           };
           input.requestNext();
           continue;
         }
         if (chunk instanceof JsonContent) {
-          if (chunk.json.kind !== "ready") {
+          if (!isRecord(chunk.json)) {
             throw this._unexpectedResponseError("watch_table");
           }
+          const rawTransactions = chunk.json.transactions;
+          const rawTransaction = chunk.json.transaction;
           yield {
-            kind: "ready",
+            kind: typeof chunk.json.kind === "string" ? chunk.json.kind : "event",
             phase: optionalDatasetString(chunk.json.phase),
             version: optionalDatasetInt(chunk.json.version),
+            beginVersion: optionalDatasetInt(chunk.json.begin_version),
+            endVersion: optionalDatasetInt(chunk.json.end_version),
+            transactions: Array.isArray(rawTransactions)
+              ? rawTransactions.filter(isRecord)
+              : undefined,
+            deletePredicate: optionalDatasetString(chunk.json.predicate),
+            transaction: isRecord(rawTransaction) ? rawTransaction : undefined,
           };
           input.requestNext();
           continue;

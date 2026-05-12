@@ -78,7 +78,15 @@ export interface RoomContainer {
   serviceId?: string;
 }
 
+export interface LogProgress {
+  layer?: string | null;
+  message: string;
+  current?: number | null;
+  total?: number | null;
+}
+
 export interface ContainerLogsSession {
+  progress: AsyncIterable<LogProgress>;
   stream: AsyncIterable<string>;
   result: Promise<void>;
   cancel(): Promise<void>;
@@ -863,6 +871,7 @@ export class ContainersClient {
   public logs(params: { containerId: string; follow?: boolean }): ContainerLogsSession {
     const requestId = uuidv4();
     const closeInput = new Completer<void>();
+    const progressController = new StreamController<LogProgress>();
     const streamController = new StreamController<string>();
     const result = new Completer<void>();
     let inputClosed = false;
@@ -904,6 +913,7 @@ export class ContainersClient {
           if (chunk instanceof ControlContent) {
             if (chunk.method === "close") {
               closeInputStream();
+              progressController.close();
               streamController.close();
               if (!result.completed) {
                 result.complete();
@@ -925,6 +935,7 @@ export class ContainersClient {
           streamController.add(decodeUtf8(chunk.data, "logs"));
         }
         closeInputStream();
+        progressController.close();
         streamController.close();
         if (!result.completed) {
           result.complete();
@@ -932,6 +943,7 @@ export class ContainersClient {
       })
       .catch((error: unknown) => {
         closeInputStream();
+        progressController.close();
         streamController.close();
         if (!result.completed) {
           result.completeError(error);
@@ -961,6 +973,7 @@ export class ContainersClient {
     };
 
     return {
+      progress: progressController.stream,
       stream: outputStream,
       result: result.fut,
       cancel: async (): Promise<void> => {
