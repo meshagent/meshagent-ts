@@ -366,7 +366,9 @@ function parseBuildJob(data: Record<string, unknown>, operation: string): BuildJ
 }
 
 async function* buildInputStream(params: {
-  tag: string;
+  tags?: string[];
+  /** @deprecated Use tags instead. */
+  tag?: string;
   mountPath: string;
   contextPath: string;
   chunks: AsyncIterable<Uint8Array>;
@@ -377,11 +379,15 @@ async function* buildInputStream(params: {
   builderName?: string;
   size?: number;
 }): AsyncIterable<Content> {
+  const tags = params.tags ?? (params.tag === undefined ? [] : [params.tag]);
+  if (tags.length === 0) {
+    throw new RoomServerException("containers.build requires at least one tag");
+  }
   yield new BinaryContent({
     data: new Uint8Array(0),
     headers: {
       kind: "start",
-      tag: params.tag,
+      tags,
       mount_path: params.mountPath,
       context_path: params.contextPath,
       dockerfile_path: params.dockerfilePath ?? null,
@@ -712,7 +718,9 @@ export class ContainersClient {
   }
 
   public async build(params: {
-    tag: string;
+    tags?: string[];
+    /** @deprecated Use tags instead. */
+    tag?: string;
     mountPath: string;
     contextPath: string;
     chunks: AsyncIterable<Uint8Array>;

@@ -593,7 +593,7 @@ describe("container_client_test", () => {
       }
 
       expect(await harness.room.containers.build({
-        tag: "example:latest",
+        tags: ["example:latest"],
         mountPath: "/context",
         contextPath: "/workspace",
         chunks: buildChunks(),
@@ -649,6 +649,7 @@ describe("container_client_test", () => {
       if (!buildInput) {
         throw new Error("missing build request");
       }
+      expect(buildInput["tags"]).to.deep.equal(["example:latest"]);
       expect(buildInput["mount_path"]).to.equal("/context");
       expect(buildInput["context_path"]).to.equal("/workspace");
       expect(buildInput["dockerfile_path"]).to.equal("/workspace/Dockerfile");
