@@ -14,10 +14,8 @@ export class ToolDescription {
     public inputSpec?: ToolContentSpec;
     public outputSpec?: ToolContentSpec;
     public defs?: Record<string, any>;
-    public thumbnailUrl?: string;
-    public pricing?: string;
 
-    constructor({ title, name, description, inputSchema, inputSpec, outputSpec, outputSchema, thumbnailUrl, defs, pricing }: {
+    constructor({ title, name, description, inputSchema, inputSpec, outputSpec, outputSchema, defs }: {
         title: string;
         name: string;
         description: string;
@@ -25,9 +23,7 @@ export class ToolDescription {
         inputSpec?: ToolContentSpec;
         outputSpec?: ToolContentSpec;
         outputSchema?: Record<string, any>;
-        thumbnailUrl?: string;
         defs?: Record<string, any>;
-        pricing?: string;
     }) {
         this.title = title;
         this.name = name;
@@ -63,9 +59,7 @@ export class ToolDescription {
                 schema: outputSchema,
             });
         }
-        this.thumbnailUrl = thumbnailUrl;
         this.defs = defs;
-        this.pricing = pricing;
     }
 
     public get inputSchema(): Record<string, any> | undefined {
@@ -82,24 +76,21 @@ export class ToolkitDescription {
     public readonly name: string;
     public readonly description: string;
     public readonly tools: ToolDescription[];
-    public readonly thumbnailUrl?: string;
     public readonly participantId?: string;
 
     private _byName: Map<string, ToolDescription>;
 
-    constructor({ title, name, description, tools, thumbnailUrl, participantId }: {
+    constructor({ title, name, description, tools, participantId }: {
         title: string;
         name: string;
         description: string;
         tools: ToolDescription[];
-        thumbnailUrl?: string;
         participantId?: string;
     }) {
         this.title = title;
         this.name = name;
         this.description = description;
         this.tools = tools;
-        this.thumbnailUrl = thumbnailUrl;
         this.participantId = participantId;
 
         // Build the map from tool name -> ToolDescription
@@ -122,7 +113,6 @@ export class ToolkitDescription {
             name: this.name,
             description: this.description,
             title: this.title,
-            thumbnail_url: this.thumbnailUrl,
             ...(this.participantId !== undefined && {
                 participant_id: this.participantId,
             }),
@@ -132,9 +122,7 @@ export class ToolkitDescription {
                 description: tool.description,
                 input_spec: tool.inputSpec?.toJson(),
                 output_spec: tool.outputSpec?.toJson(),
-                thumbnail_url: tool.thumbnailUrl,
                 defs: tool.defs,
-                pricing: tool.pricing,
             })),
         };
     }
@@ -149,7 +137,6 @@ export class ToolkitDescription {
         const title = json["title"] ?? "";
         const finalName = name ?? json["name"] ?? "";
         const description = json["description"] ?? "";
-        const thumbnailUrl = json["thumbnail_url"] ?? undefined;
         const participantId = json["participant_id"] ?? undefined;
 
         // We can have tools as a List or Map in the original structure
@@ -167,9 +154,7 @@ export class ToolkitDescription {
                         inputSpec: ToolContentSpec.fromJson(tool["input_spec"]),
                         outputSchema: tool["output_schema"],
                         outputSpec: ToolContentSpec.fromJson(tool["output_spec"]),
-                        thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
-                        pricing: tool["pricing"],
                     })
                 );
             }
@@ -189,9 +174,7 @@ export class ToolkitDescription {
                         inputSpec: ToolContentSpec.fromJson(tool["input_spec"]),
                         outputSchema: tool["output_schema"],
                         outputSpec: ToolContentSpec.fromJson(tool["output_spec"]),
-                        thumbnailUrl: tool["thumbnail_url"],
                         defs: tool["defs"],
-                        pricing: tool["pricing"],
                     })
                 );
             }
@@ -201,7 +184,6 @@ export class ToolkitDescription {
             title,
             name: finalName,
             description,
-            thumbnailUrl,
             participantId,
             tools: toolsList,
         });

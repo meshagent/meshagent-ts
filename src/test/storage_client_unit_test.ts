@@ -10,14 +10,12 @@ type InvokeParams = {
   toolkit: string;
   tool: string;
   input: Record<string, any> | Content;
-  callerContext?: Record<string, any>;
 };
 
 type InvokeStreamParams = {
   toolkit: string;
   tool: string;
   input: AsyncIterable<Content>;
-  callerContext?: Record<string, any>;
 };
 
 type StorageEventHandler = MessageHandler;

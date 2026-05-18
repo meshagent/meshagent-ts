@@ -89,7 +89,6 @@ type InvokeParams = {
   input?: Record<string, any> | Content;
   participantId?: string;
   onBehalfOfId?: string;
-  callerContext?: Record<string, any>;
 };
 
 type InvokeStreamParams = {
@@ -98,7 +97,6 @@ type InvokeStreamParams = {
   input: AsyncIterable<Content>;
   participantId?: string;
   onBehalfOfId?: string;
-  callerContext?: Record<string, any>;
 };
 
 class FakeDatasetsRoom {

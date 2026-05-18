@@ -189,13 +189,11 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   private async _invoke(
     operation: string,
     input: Record<string, any> | Content,
-    callerContext?: Record<string, any>,
   ): Promise<Content> {
     return await this.client.invoke({
       toolkit: "storage",
       tool: operation,
       input,
-      callerContext,
     });
   }
 

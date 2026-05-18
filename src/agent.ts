@@ -20,9 +20,8 @@ export abstract class Tool {
     public readonly title: string;
     public readonly inputSpec?: ToolContentSpec;
     public readonly outputSpec?: ToolContentSpec;
-    public readonly thumbnailUrl?: string;
 
-    constructor({ name, description, title, inputSchema, inputSpec, outputSpec, outputSchema, thumbnailUrl }: {
+    constructor({ name, description, title, inputSchema, inputSpec, outputSpec, outputSchema }: {
         name: string;
         description: string;
         title: string;
@@ -30,7 +29,6 @@ export abstract class Tool {
         inputSpec?: ToolContentSpec;
         outputSpec?: ToolContentSpec;
         outputSchema?: Record<string, any>;
-        thumbnailUrl?: string;
     }) {
         this.name = name;
         this.description = description;
@@ -66,7 +64,6 @@ export abstract class Tool {
                 schema: outputSchema,
             });
         }
-        this.thumbnailUrl = thumbnailUrl;
     }
 
     public get inputSchema(): Record<string, any> | undefined {
@@ -92,22 +89,19 @@ export class Toolkit {
     readonly name: string;
     readonly title: string;
     readonly description: string;
-    readonly thumbnailUrl?: string;
     readonly tools: Tool[];
     readonly rules: string[];
 
-    constructor({name, title = name, description = "", thumbnailUrl, tools, rules = []}: {
+    constructor({name, title = name, description = "", tools, rules = []}: {
         name: string;
         title?: string;
         description?: string;
-        thumbnailUrl?: string;
         tools: Tool[];
         rules?: string[];
     }) {
         this.name = name;
         this.title = title;
         this.description = description;
-        this.thumbnailUrl = thumbnailUrl;
         this.tools = tools;
         this.rules = rules;
     }
@@ -128,7 +122,6 @@ export class Toolkit {
                 title: tool.title,
                 input_spec: tool.inputSpec?.toJson(),
                 output_spec: tool.outputSpec?.toJson(),
-                thumbnail_url: tool.thumbnailUrl,
             };
         }
         return json;
@@ -221,7 +214,6 @@ class _RemoteToolkitWrapper {
             description: this.toolkit.description,
             tools: this.toolkit.getTools(),
             public: public_,
-            thumbnail_url: this.toolkit.thumbnailUrl,
         }) as JsonContent;
 
         // Assume response is a JsonContent

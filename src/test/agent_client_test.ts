@@ -192,7 +192,6 @@ describe("agent_client_test", function (this: Mocha.Suite) {
             name: "math",
             title: "Math Toolkit",
             description: "Performs mathematical operations",
-            thumbnail_url: "https://example.com/toolkit.png",
             tools: [
                 {
                     name: "adder",
@@ -208,9 +207,7 @@ describe("agent_client_test", function (this: Mocha.Suite) {
                         stream: true,
                         schema: { type: "object", properties: { c: { type: "number" } } },
                     },
-                    thumbnail_url: "https://example.com/tool.png",
                     defs: { NumberInput: { type: "number" } },
-                    pricing: undefined,
                 },
                 {
                     name: "subtractor",
@@ -222,9 +219,7 @@ describe("agent_client_test", function (this: Mocha.Suite) {
                         schema: { type: "object" },
                     },
                     output_spec: undefined,
-                    thumbnail_url: undefined,
                     defs: undefined,
-                    pricing: undefined,
                 },
             ],
         });

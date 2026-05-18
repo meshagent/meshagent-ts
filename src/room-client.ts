@@ -1484,14 +1484,12 @@ export class RoomClient {
     input,
     participantId,
     onBehalfOfId,
-    callerContext,
   }: {
     toolkit: string;
     tool: string;
     input?: Content;
     participantId?: string;
     onBehalfOfId?: string;
-    callerContext?: Record<string, unknown>;
   }): void {
     const resolvedInput = input ?? new EmptyContent();
     const packedInput = unpackMessage(resolvedInput.pack());
@@ -1500,7 +1498,6 @@ export class RoomClient {
       tool,
       participant_id: participantId,
       on_behalf_of_id: onBehalfOfId,
-      caller_context: callerContext,
       tool_call_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       arguments: packedInput[0],
     };
@@ -1607,7 +1604,6 @@ export class RoomClient {
     input?: Record<string, unknown> | Content;
     participantId?: string;
     onBehalfOfId?: string;
-    callerContext?: Record<string, unknown>;
   }): Promise<Content> {
     const input = params.input ?? params.arguments ?? new EmptyContent();
     const request: Record<string, unknown> = {
@@ -1646,10 +1642,6 @@ export class RoomClient {
     if (params.onBehalfOfId != null) {
       request["on_behalf_of_id"] = params.onBehalfOfId;
     }
-    if (params.callerContext != null) {
-      request["caller_context"] = params.callerContext;
-    }
-
     return await this.sendRequest("room.invoke_tool", request, requestData);
   }
 
@@ -1659,7 +1651,6 @@ export class RoomClient {
     input: AsyncIterable<Content>;
     participantId?: string;
     onBehalfOfId?: string;
-    callerContext?: Record<string, unknown>;
   }): Promise<Content> {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const request: Record<string, unknown> = {
@@ -1674,10 +1665,6 @@ export class RoomClient {
     if (params.onBehalfOfId != null) {
       request["on_behalf_of_id"] = params.onBehalfOfId;
     }
-    if (params.callerContext != null) {
-      request["caller_context"] = params.callerContext;
-    }
-
     const requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input);
     try {
       const response = await this.sendRequest("room.invoke_tool", request);
@@ -1698,7 +1685,6 @@ export class RoomClient {
     input: AsyncIterable<Content>;
     participantId?: string;
     onBehalfOfId?: string;
-    callerContext?: Record<string, unknown>;
   }): Promise<AsyncIterable<Content>> {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const controller = new StreamController<Content>();
@@ -1717,10 +1703,6 @@ export class RoomClient {
     if (params.onBehalfOfId != null) {
       request["on_behalf_of_id"] = params.onBehalfOfId;
     }
-    if (params.callerContext != null) {
-      request["caller_context"] = params.callerContext;
-    }
-
     const requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input);
     void requestTask.catch((error: unknown) => {
       const stream = this._toolCallStreams.get(toolCallId);
