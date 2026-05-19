@@ -251,6 +251,45 @@ export interface ServiceSpec {
     external?: ExternalServiceSpec | null;
 }
 
+export interface RouteMetadata {
+    name: string;
+    annotations?: Record<string, string>;
+}
+
+export interface RouteBackendTarget {
+    name: string;
+}
+
+export interface RouteBackend {
+    room?: RouteBackendTarget | null;
+    agent?: RouteBackendTarget | null;
+}
+
+export interface RoutePathSpec {
+    path?: string;
+    pathType?: "prefix" | "exact";
+    targetPort: string | number;
+}
+
+export interface RouteSpec {
+    version: "v1";
+    kind: "Route";
+    metadata: RouteMetadata;
+    domain: string;
+    backend: RouteBackend;
+    paths?: RoutePathSpec[];
+}
+
+export interface Route {
+    domain: string;
+    spec: RouteSpec;
+}
+
+export interface RoutesPage {
+    routes: Route[];
+    total: number;
+}
+
 function pruneUndefinedValues(value: unknown): unknown {
     if (Array.isArray(value)) {
         const prunedItems = value
@@ -668,6 +707,29 @@ export class Meshagent {
             metadata: metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : {},
             annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
         };
+    }
+
+    private parseRoute(data: any): Route {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid route payload: expected object");
+        }
+        if (data.spec && typeof data.spec === "object") {
+            return { domain: String(data.domain ?? data.spec.domain), spec: data.spec as RouteSpec };
+        }
+        if (typeof data.domain === "string" && typeof data.room_name === "string") {
+            return {
+                domain: data.domain,
+                spec: {
+                    version: "v1",
+                    kind: "Route",
+                    metadata: { name: data.domain, annotations: data.annotations ?? {} },
+                    domain: data.domain,
+                    backend: { room: { name: data.room_name } },
+                    paths: [{ path: "/", pathType: "prefix", targetPort: data.port }],
+                },
+            };
+        }
+        throw new RoomException("Invalid route payload: missing spec");
     }
 
     private parseFeed(data: any): Feed {
@@ -2658,6 +2720,86 @@ export class Meshagent {
         });
         const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
         return rooms.map((item) => this.parseRoom(item));
+    }
+
+    async createRoute(params: { projectId: string; spec: RouteSpec }): Promise<void> {
+        await this.request(`/accounts/projects/${params.projectId}/routes`, {
+            method: "POST",
+            json: { spec: params.spec },
+            action: "create route",
+            responseType: "void",
+        });
+    }
+
+    async updateRoute(params: { projectId: string; domain: string; spec: RouteSpec }): Promise<void> {
+        const domain = this.encodePathComponent(params.domain);
+        await this.request(`/accounts/projects/${params.projectId}/routes/${domain}`, {
+            method: "PUT",
+            json: { spec: params.spec },
+            action: "update route",
+            responseType: "void",
+        });
+    }
+
+    async getRoute(params: { projectId: string; domain: string }): Promise<Route> {
+        const domain = this.encodePathComponent(params.domain);
+        const data = await this.request<{ route?: any }>(`/accounts/projects/${params.projectId}/routes/${domain}`, {
+            action: "get route",
+        });
+        return this.parseRoute(data.route);
+    }
+
+    async listRoutesPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<RoutesPage> {
+        const { count = 100, offset = 0, filter } = options;
+        const data = await this.request<{ routes?: any[]; total?: number }>(`/accounts/projects/${projectId}/routes`, {
+            query: { count, offset, filter },
+            action: "list routes",
+        });
+        const routes = Array.isArray(data.routes) ? data.routes.map((item) => this.parseRoute(item)) : [];
+        return { routes, total: Number(data.total ?? routes.length) };
+    }
+
+    async listRoutes(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Route[]> {
+        return (await this.listRoutesPage(projectId, options)).routes;
+    }
+
+    async listRoomRoutesPage(params: { projectId: string; roomName: string; count?: number; offset?: number; filter?: string }): Promise<RoutesPage> {
+        const { projectId, roomName, count = 100, offset = 0, filter } = params;
+        const room = this.encodePathComponent(roomName);
+        const data = await this.request<{ routes?: any[]; total?: number }>(`/accounts/projects/${projectId}/rooms/${room}/routes`, {
+            query: { count, offset, filter },
+            action: "list room routes",
+        });
+        const routes = Array.isArray(data.routes) ? data.routes.map((item) => this.parseRoute(item)) : [];
+        return { routes, total: Number(data.total ?? routes.length) };
+    }
+
+    async listRoomRoutes(params: { projectId: string; roomName: string; count?: number; offset?: number; filter?: string }): Promise<Route[]> {
+        return (await this.listRoomRoutesPage(params)).routes;
+    }
+
+    async listAgentRoutesPage(params: { projectId: string; agentName: string; count?: number; offset?: number; filter?: string }): Promise<RoutesPage> {
+        const { projectId, agentName, count = 100, offset = 0, filter } = params;
+        const agent = this.encodePathComponent(agentName);
+        const data = await this.request<{ routes?: any[]; total?: number }>(`/accounts/projects/${projectId}/agents/${agent}/routes`, {
+            query: { count, offset, filter },
+            action: "list agent routes",
+        });
+        const routes = Array.isArray(data.routes) ? data.routes.map((item) => this.parseRoute(item)) : [];
+        return { routes, total: Number(data.total ?? routes.length) };
+    }
+
+    async listAgentRoutes(params: { projectId: string; agentName: string; count?: number; offset?: number; filter?: string }): Promise<Route[]> {
+        return (await this.listAgentRoutesPage(params)).routes;
+    }
+
+    async deleteRoute(params: { projectId: string; domain: string }): Promise<void> {
+        const domain = this.encodePathComponent(params.domain);
+        await this.request(`/accounts/projects/${params.projectId}/routes/${domain}`, {
+            method: "DELETE",
+            action: "delete route",
+            responseType: "void",
+        });
     }
 
     async listRoomGrants(projectId: string, options: { limit?: number; offset?: number; orderBy?: string } = {}): Promise<ProjectRoomGrant[]> {
