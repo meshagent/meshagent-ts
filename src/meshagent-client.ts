@@ -380,6 +380,7 @@ export interface FeedSubscription {
     room: string;
     roomId?: string | null;
     path: string;
+    filenameDatetimeFormat?: string | null;
     createdAt: Date;
     annotations: Record<string, string>;
 }
@@ -812,6 +813,8 @@ export class Meshagent {
             room_id: roomIdRaw,
             roomId,
             path,
+            filename_datetime_format: filenameDatetimeFormatRaw,
+            filenameDatetimeFormat,
             created_at: createdAtRaw,
             createdAt,
             annotations,
@@ -820,6 +823,12 @@ export class Meshagent {
         const projectIdValue = typeof projectId === "string" ? projectId : projectIdRaw;
         const createdAtValue = typeof createdAt === "string" ? createdAt : createdAtRaw;
         const roomIdValue = typeof roomId === "string" ? roomId : roomIdRaw;
+        const filenameDatetimeFormatValue =
+            typeof filenameDatetimeFormat === "string"
+                ? filenameDatetimeFormat
+                : typeof filenameDatetimeFormatRaw === "string"
+                  ? filenameDatetimeFormatRaw
+                  : undefined;
 
         if (
             typeof id !== "string" ||
@@ -839,6 +848,7 @@ export class Meshagent {
             room,
             roomId: typeof roomIdValue === "string" ? roomIdValue : undefined,
             path,
+            filenameDatetimeFormat: filenameDatetimeFormatValue,
             createdAt: new Date(createdAtValue),
             annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
         };
@@ -1897,14 +1907,20 @@ export class Meshagent {
         feedId: string;
         room: string;
         path: string;
+        filenameDatetimeFormat?: string | null;
         annotations?: Record<string, string>;
     }): Promise<FeedSubscription> {
-        const { projectId, feedId, room, path, annotations = {} } = params;
+        const { projectId, feedId, room, path, filenameDatetimeFormat, annotations = {} } = params;
         const data = await this.request<Record<string, unknown>>(
             `/accounts/projects/${projectId}/feeds/${feedId}/subscriptions`,
             {
                 method: "POST",
-                json: { room, path, annotations },
+                json: {
+                    room,
+                    path,
+                    ...(filenameDatetimeFormat !== undefined ? { filename_datetime_format: filenameDatetimeFormat } : {}),
+                    annotations,
+                },
                 action: "create feed subscription",
             },
         );
@@ -1915,12 +1931,16 @@ export class Meshagent {
         projectId: string;
         feedId: string;
         subscriptionId: string;
+        filenameDatetimeFormat?: string | null;
         annotations?: Record<string, string>;
     }): Promise<void> {
-        const { projectId, feedId, subscriptionId, annotations = {} } = params;
+        const { projectId, feedId, subscriptionId, filenameDatetimeFormat, annotations = {} } = params;
         await this.request(`/accounts/projects/${projectId}/feeds/${feedId}/subscriptions/${subscriptionId}`, {
             method: "PUT",
-            json: { annotations },
+            json: {
+                ...(filenameDatetimeFormat !== undefined ? { filename_datetime_format: filenameDatetimeFormat } : {}),
+                annotations,
+            },
             action: "update feed subscription",
             responseType: "void",
         });
