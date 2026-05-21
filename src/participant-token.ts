@@ -1353,7 +1353,7 @@ export class ApiScope {
         this.services = services;
     }
 
-    static agentDefault({ tunnels = false }: { tunnels?: boolean } = {}): ApiScope {
+    static agentDefault(): ApiScope {
         return new ApiScope({
             livekit: new LivekitGrant(),
             queues: new QueuesGrant(),
@@ -1366,9 +1366,7 @@ export class ApiScope {
             developer: new DeveloperGrant(),
             agents: new AgentsGrant(),
             llm: new LLMGrant(),
-            secrets: new SecretsGrant(),
             services: new ServicesGrant(),
-            tunnels: tunnels ? new TunnelsGrant() : undefined,
         });
     }
 
@@ -1384,6 +1382,7 @@ export class ApiScope {
             containers: new ContainersGrant(),
             developer: new DeveloperGrant(),
             agents: new AgentsGrant(),
+            llm: new LLMGrant(),
             secrets: new SecretsGrant(),
             services: new ServicesGrant(),
         });

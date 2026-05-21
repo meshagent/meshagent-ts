@@ -14,3 +14,4 @@ import "./storage_client_test";
 import "./keys_test";
 import "./container_client_test";
 import "./toolkit_config_test";
+import "./tool_content_type_test";

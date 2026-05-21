@@ -337,6 +337,95 @@ describe("datasets_client_unit_test", () => {
     });
   });
 
+  it("exposes Dart-compatible table convenience methods", async () => {
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+    const table = tableFromArrays({ id: Int32Array.from([1]) });
+
+    await client.createTableWithArrowSchema({
+      name: "schema_only",
+      schema: table.schema,
+      namespace: ["team"],
+      branch: "exp",
+      metadata: { owner: "ts" },
+    });
+    await client.createTableFromArrowBatches({
+      name: "batch_records",
+      batches: [table],
+      mode: "overwrite",
+    });
+    await client.createTableFromArrowTable({
+      name: "table_records",
+      table,
+      mode: "create_if_not_exists",
+    });
+    await client.renameTable({ name: "old_records", newName: "records", namespace: ["team"], branch: "exp" });
+    await client.updateColumnMetadata({
+      table: "records",
+      column: "id",
+      metadata: { label: "Identifier" },
+      namespace: ["team"],
+      branch: "exp",
+    });
+    await client.insertTable({ table: "records", records: table, namespace: ["team"], branch: "exp" });
+    await client.mergeTable({ table: "records", on: "id", records: table, namespace: ["team"], branch: "exp" });
+
+    const searchResult = await client.searchTable({ table: "records", namespace: ["team"], branch: "exp" });
+    const sqlResult = await client.sqlTable({ query: "SELECT * FROM records", tables: ["records"] });
+
+    expect(searchResult.getChild("id")?.get(0)).to.equal(1);
+    expect(sqlResult.getChild("payload")?.get(0)).to.equal("sql-result");
+    expect(room.writeStarts["create_table"]).to.deep.equal([
+      {
+        kind: "start",
+        name: "schema_only",
+        mode: "create",
+        namespace: ["team"],
+        branch: "exp",
+        metadata: [{ key: "owner", value: "ts" }],
+      },
+      {
+        kind: "start",
+        name: "batch_records",
+        mode: "overwrite",
+        namespace: null,
+        branch: null,
+        metadata: null,
+      },
+      {
+        kind: "start",
+        name: "table_records",
+        mode: "create_if_not_exists",
+        namespace: null,
+        branch: null,
+        metadata: null,
+      },
+    ]);
+    expect(room.writeChunks["create_table"]).to.have.length(2);
+    expect(room.writeStarts["insert"]).to.deep.equal([
+      { kind: "start", table: "records", namespace: ["team"], branch: "exp" },
+    ]);
+    expect(room.writeStarts["merge"]).to.deep.equal([
+      { kind: "start", table: "records", on: "id", namespace: ["team"], branch: "exp" },
+    ]);
+
+    const renameCall = room.invokeCalls.find((call) => call.tool === "rename_table");
+    expect(renameCall?.input).to.deep.equal({
+      name: "old_records",
+      new_name: "records",
+      namespace: ["team"],
+      branch: "exp",
+    });
+    const metadataCall = room.invokeCalls.find((call) => call.tool === "update_column_metadata");
+    expect(metadataCall?.input).to.deep.equal({
+      table: "records",
+      column: "id",
+      metadata: [{ key: "label", value: "Identifier" }],
+      namespace: ["team"],
+      branch: "exp",
+    });
+  });
+
   it("supports branch-aware inspect, search, counts, versions, and lifecycle operations", async () => {
     const room = new FakeDatasetsRoom();
     const client = new DatasetsClient({ room });

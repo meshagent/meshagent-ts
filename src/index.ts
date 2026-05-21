@@ -10,6 +10,7 @@ export * from './document';
 export * from './meshagent-client';
 export * from './messaging-client';
 export * from './memory-client';
+export * from './oauth-scopes';
 export * from './participant-token';
 export * from './participant';
 export * from './protocol';

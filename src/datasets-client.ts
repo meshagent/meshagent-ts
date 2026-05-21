@@ -826,6 +826,14 @@ function tableFromIPCBytes(data: Uint8Array): Table {
   return table;
 }
 
+function tableFromChunks(chunks: Table[]): Table {
+  if (chunks.length === 0) {
+    return new Table(new Schema([]), []);
+  }
+  const [first, ...rest] = chunks;
+  return first.concat(...rest);
+}
+
 function schemaFromIPCBytes(data: Uint8Array): Schema {
   return tableFromIPCBytes(data).schema;
 }
@@ -1194,6 +1202,63 @@ export class DatasetsClient {
     });
   }
 
+  public async createTableWithArrowSchema({ name, schema, batches, mode = "create", namespace, branch, metadata }: {
+    name: string;
+    schema: Schema;
+    batches?: ArrowTableChunks;
+    mode?: CreateMode;
+    namespace?: string[];
+    branch?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    return this.createTable({
+      name,
+      schema,
+      data: batches,
+      mode,
+      namespace,
+      branch,
+      metadata,
+    });
+  }
+
+  public async createTableFromArrowBatches({ name, batches, mode = "create", namespace, branch, metadata }: {
+    name: string;
+    batches: ArrowTableChunks;
+    mode?: CreateMode;
+    namespace?: string[];
+    branch?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    return this.createTable({
+      name,
+      data: batches,
+      mode,
+      namespace,
+      branch,
+      metadata,
+    });
+  }
+
+  public async createTableFromArrowTable({ name, table, mode = "create", namespace, branch, metadata }: {
+    name: string;
+    table: Table;
+    mode?: CreateMode;
+    namespace?: string[];
+    branch?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    return this.createTableWithArrowSchema({
+      name,
+      schema: table.schema,
+      batches: [table],
+      mode,
+      namespace,
+      branch,
+      metadata,
+    });
+  }
+
   public async createTableFromData({ name, data, mode = "create", namespace, branch, metadata }: {
     name: string;
     data?: Iterable<Table> | Table;
@@ -1264,6 +1329,20 @@ export class DatasetsClient {
     });
   }
 
+  public async renameTable({ name, newName, namespace, branch }: {
+    name: string;
+    newName: string;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<void> {
+    await this.invoke("rename_table", {
+      name,
+      new_name: newName,
+      namespace: namespace ?? null,
+      branch: branch ?? null,
+    });
+  }
+
   public async importFromStorage({ table, path, mode = "create", format = "auto", on, sheet, batchSize, namespace, branch }: {
     table: string;
     path: string;
@@ -1306,6 +1385,22 @@ export class DatasetsClient {
       namespace: namespace ?? null,
       branch: branch ?? null,
       version: version ?? null,
+    });
+  }
+
+  public async updateColumnMetadata({ table, column, metadata, namespace, branch }: {
+    table: string;
+    column: string;
+    metadata: Record<string, string>;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<void> {
+    await this.invoke("update_column_metadata", {
+      table,
+      column,
+      metadata: metadataEntries(metadata),
+      namespace: namespace ?? null,
+      branch: branch ?? null,
     });
   }
 
@@ -1376,6 +1471,15 @@ export class DatasetsClient {
     await this.insertStream({ table, chunks: [records], namespace, branch });
   }
 
+  public async insertTable({ table, records, namespace, branch }: {
+    table: string;
+    records: Table;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<void> {
+    await this.insertStream({ table, chunks: [records], namespace, branch });
+  }
+
   public async insertStream({ table, chunks, namespace, branch }: {
     table: string;
     chunks: ArrowTableChunks;
@@ -1434,6 +1538,16 @@ export class DatasetsClient {
     await this.mergeStream({ table, on, chunks: [records], namespace, branch });
   }
 
+  public async mergeTable({ table, on, records, namespace, branch }: {
+    table: string;
+    on: string;
+    records: Table;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<void> {
+    await this.mergeStream({ table, on, chunks: [records], namespace, branch });
+  }
+
   public async mergeStream({ table, on, chunks, namespace, branch }: {
     table: string;
     on: string;
@@ -1463,6 +1577,16 @@ export class DatasetsClient {
       results.push(chunk);
     }
     return results;
+  }
+
+  public async sqlTable({ query, tables, params, namespace, branch }: {
+    query: string;
+    tables?: Array<TableRef | string>;
+    params?: Table;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<Table> {
+    return tableFromChunks(await this.sql({ query, tables, params, namespace, branch }));
   }
 
   public async openSqlQuery({ query, tables, params, namespace, branch }: {
@@ -1633,6 +1757,32 @@ export class DatasetsClient {
       results.push(chunk);
     }
     return results;
+  }
+
+  public async searchTable({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {
+    table: string;
+    text?: string;
+    vector?: number[];
+    where?: DatasetWhere;
+    offset?: number;
+    limit?: number;
+    select?: string[];
+    namespace?: string[];
+    branch?: string;
+    version?: number;
+  }): Promise<Table> {
+    return tableFromChunks(await this.search({
+      table,
+      text,
+      vector,
+      where,
+      offset,
+      limit,
+      select,
+      namespace,
+      branch,
+      version,
+    }));
   }
 
   public async *searchStream({ table, text, vector, where, offset, limit, select, namespace, branch, version }: {

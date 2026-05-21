@@ -1,6 +1,7 @@
-export type ToolContentType = "json" | "text" | "file" | "link" | "empty";
+export type ToolContentType = "binary" | "json" | "text" | "file" | "link" | "empty";
 
 const SUPPORTED_TOOL_CONTENT_TYPES = new Set<ToolContentType>([
+    "binary",
     "json",
     "text",
     "file",
@@ -77,10 +78,10 @@ export class ToolContentSpec {
         const rawStream = value["stream"];
         const stream = typeof rawStream === "boolean" ? rawStream : false;
         const rawSchema = value["schema"];
-        if (rawSchema !== undefined && !isRecord(rawSchema)) {
+        if (rawSchema !== undefined && rawSchema !== null && !isRecord(rawSchema)) {
             throw new Error("ToolContentSpec.schema must be an object when provided");
         }
-        const schema = rawSchema as Record<string, unknown> | undefined;
+        const schema = rawSchema == null ? undefined : (rawSchema as Record<string, unknown>);
         return new ToolContentSpec({ types, stream, schema });
     }
 }
