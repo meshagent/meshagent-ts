@@ -1645,6 +1645,83 @@ export class RoomClient {
     return await this.sendRequest("room.invoke_tool", request, requestData);
   }
 
+  public async invokeToolCall(params: {
+    toolkit: string;
+    tool: string;
+    input: Content | AsyncIterable<Content>;
+    streamInput?: boolean;
+    participantId?: string;
+    onBehalfOfId?: string;
+  }): Promise<{ kind: "content"; content: Content; inputClosed?: Promise<void> } | { kind: "stream"; stream: AsyncIterable<Content>; inputClosed?: Promise<void> }> {
+    const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const controller = new StreamController<Content>();
+    const responseIterator = controller.stream[Symbol.asyncIterator]();
+    this._toolCallStreams.set(toolCallId, controller);
+
+    const request: Record<string, unknown> = {
+      toolkit: params.toolkit,
+      tool: params.tool,
+      tool_call_id: toolCallId,
+    };
+    let requestData: Uint8Array | undefined;
+    let requestTask: Promise<void> | undefined;
+    if (params.streamInput === true) {
+      request["arguments"] = { type: "control", method: "open" };
+      requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input as AsyncIterable<Content>);
+    } else {
+      const input = params.input as Content;
+      const packed = input.pack();
+      request["arguments"] = JSON.parse(splitMessageHeader(packed));
+      const payload = splitMessagePayload(packed);
+      if (payload.length > 0) {
+        requestData = payload;
+      }
+    }
+    if (params.participantId != null) {
+      request["participant_id"] = params.participantId;
+    }
+    if (params.onBehalfOfId != null) {
+      request["on_behalf_of_id"] = params.onBehalfOfId;
+    }
+
+    try {
+      const response = await this.sendRequest("room.invoke_tool", request, requestData);
+      if (response instanceof ControlContent && response.method === "open") {
+        if (requestTask != null) {
+          void requestTask.catch((error: unknown) => {
+            const stream = this._toolCallStreams.get(toolCallId);
+            if (stream == null) {
+              return;
+            }
+            stream.add(new ErrorContent({ text: `request stream failed: ${String(error)}` }));
+            stream.close();
+            this._toolCallStreams.delete(toolCallId);
+          });
+        }
+        return {
+          kind: "stream",
+          stream: {
+            [Symbol.asyncIterator](): AsyncIterator<Content> {
+              return responseIterator;
+            },
+          },
+          inputClosed: requestTask,
+        };
+      }
+      if (requestTask != null) {
+        await requestTask;
+      }
+      this._toolCallStreams.delete(toolCallId);
+      controller.close();
+      return { kind: "content", content: response, inputClosed: requestTask };
+    } catch (error) {
+      await Promise.resolve(requestTask).catch(() => undefined);
+      this._toolCallStreams.delete(toolCallId);
+      controller.close();
+      throw error;
+    }
+  }
+
   public async invokeWithStreamInput(params: {
     toolkit: string;
     tool: string;

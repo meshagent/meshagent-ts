@@ -2,6 +2,14 @@
 
 import { RoomClient } from "./room-client";
 import type { Content } from "./response";
+import {
+    ToolContentInput,
+    ToolContentOutput,
+    ToolInput,
+    ToolStreamInput,
+    ToolStreamOutput,
+    type ToolCallOutput,
+} from "./agent";
 import { ToolContentSpec } from "./tool-content-type";
 
 /**
@@ -222,13 +230,67 @@ export class AgentsClient {
         return await this.client.listToolkits(params);
     }
     /**
-     * Invokes a tool on a specified toolkit with arguments, returning a Content.
+     * Invokes a tool on a specified toolkit.
      */
     public async invokeTool(params: {
         toolkit: string;
         tool: string;
+        input: ToolInput;
+        participantId?: string;
+        onBehalfOfId?: string;
+    }): Promise<ToolCallOutput>;
+    public async invokeTool(params: {
+        toolkit: string;
+        tool: string;
         arguments: Record<string, any>;
-    }): Promise<Content> {
-        return await this.client.invoke(params);
+        participantId?: string;
+        onBehalfOfId?: string;
+    }): Promise<Content>;
+    public async invokeTool(params: {
+        toolkit: string;
+        tool: string;
+        input?: ToolInput;
+        arguments?: Record<string, any>;
+        participantId?: string;
+        onBehalfOfId?: string;
+    }): Promise<ToolCallOutput | Content> {
+        if (params.input === undefined) {
+            return await this.client.invoke({
+                toolkit: params.toolkit,
+                tool: params.tool,
+                arguments: params.arguments ?? {},
+                participantId: params.participantId,
+                onBehalfOfId: params.onBehalfOfId,
+            });
+        }
+
+        if (params.input instanceof ToolContentInput) {
+            const output = await this.client.invokeToolCall({
+                toolkit: params.toolkit,
+                tool: params.tool,
+                input: params.input.content,
+                participantId: params.participantId,
+                onBehalfOfId: params.onBehalfOfId,
+            });
+            return output.kind === "content"
+                ? new ToolContentOutput(output.content)
+                : new ToolStreamOutput(output.stream, { inputClosed: output.inputClosed });
+        }
+
+        if (params.input instanceof ToolStreamInput) {
+            const output = await this.client.invokeToolCall({
+                toolkit: params.toolkit,
+                tool: params.tool,
+                input: params.input.stream,
+                streamInput: true,
+                participantId: params.participantId,
+                onBehalfOfId: params.onBehalfOfId,
+            });
+            return output.kind === "content"
+                ? new ToolContentOutput(output.content)
+                : new ToolStreamOutput(output.stream, { inputClosed: output.inputClosed });
+        }
+
+        throw new Error("invokeTool input must be ToolContentInput or ToolStreamInput");
     }
 }
