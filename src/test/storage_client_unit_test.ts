@@ -52,6 +52,7 @@ class FakeStorageRoom {
         overwrite: boolean;
       }
     | null = null;
+  public lastDownloadUrlRequest: Record<string, any> | null = null;
 
   public emit(event: RoomEvent): void {
     this.emittedEvents.push(event);
@@ -115,7 +116,9 @@ class FakeStorageRoom {
         return new JsonContent({ json: {} });
       }
       case "download_url": {
-        const path = (params.input as Record<string, any>)["path"];
+        const input = params.input as Record<string, any>;
+        const path = input["path"];
+        this.lastDownloadUrlRequest = input;
         return new JsonContent({ json: { url: `https://example.test/download/${path}` } });
       }
       default:
@@ -303,6 +306,25 @@ describe("storage_client_unit_test", () => {
     });
     expect(room.files.has("folder/source.txt")).to.equal(false);
     expect(room.files.has("folder/destination.txt")).to.equal(true);
+  });
+
+  it("forwards download URL disposition preference", async () => {
+    const room = new FakeStorageRoom();
+    const client = new StorageClient({ room });
+
+    const inlineUrl = await client.downloadUrl("folder/report.pdf");
+    expect(inlineUrl).to.equal("https://example.test/download/folder/report.pdf");
+    expect(room.lastDownloadUrlRequest).to.deep.equal({
+      path: "folder/report.pdf",
+      download: false,
+    });
+
+    const downloadUrl = await client.downloadUrl("folder/report.pdf", { download: true });
+    expect(downloadUrl).to.equal("https://example.test/download/folder/report.pdf");
+    expect(room.lastDownloadUrlRequest).to.deep.equal({
+      path: "folder/report.pdf",
+      download: true,
+    });
   });
 
   it("defaults upload name and mime type", async () => {
