@@ -10,12 +10,18 @@ for arg in "$@"; do
 done
 
 if $SETUP_SERVER; then
-    VIRTUAL_ENV=`pwd`/venv
-    python3 -m venv $VIRTUAL_ENV
-    PATH="$VIRTUAL_ENV/bin:$PATH"
-
     if ! command -v uv >/dev/null 2>&1; then
         echo "uv must already be installed when running meshagent-ts tests with server setup enabled." >&2
+        exit 1
+    fi
+
+    VIRTUAL_ENV=`pwd`/venv
+    uv venv --clear --python 3.13 --managed-python $VIRTUAL_ENV
+    PATH="$VIRTUAL_ENV/bin:$PATH"
+
+    if ! python -c "import sqlite3" >/dev/null 2>&1; then
+        echo "Python must include sqlite3 support when running meshagent-ts tests with server setup enabled." >&2
+        echo "Use a Python 3.13+ build with sqlite3 support, or run with --skip-server-setup against an existing server." >&2
         exit 1
     fi
 
@@ -27,6 +33,7 @@ if $SETUP_SERVER; then
                 ../meshagent-anthropic \
                 ../meshagent-llm-proxy \
                 ../meshagent-otel \
+                ../../meshagent-otel-proxy \
                 ../../meshagent-cloud \
                 ../../meshagent-server 
 
