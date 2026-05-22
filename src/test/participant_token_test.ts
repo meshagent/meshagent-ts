@@ -217,21 +217,21 @@ describe("Grants", () => {
         expect(grant.canUseModel("anthropic", "claude-sonnet-4-5")).to.equal(true);
     });
 
-    it("api scope agent default includes secrets without admin or tunnels", () => {
+    it("api scope agent default excludes secrets, admin, and tunnels", () => {
         const scope = ApiScope.agentDefault();
         expect(scope.livekit).to.be.instanceOf(LivekitGrant);
         expect(scope.llm).to.be.instanceOf(LLMGrant);
         expect(scope.memory).to.be.instanceOf(MemoryGrant);
         expect(scope.services).to.be.instanceOf(ServicesGrant);
-        expect(scope.secrets).to.exist;
+        expect(scope.secrets).to.equal(undefined);
         expect(scope.admin).to.equal(undefined);
         expect(scope.tunnels).to.equal(undefined);
     });
 
-    it("api scope user default includes secrets without admin or tunnels", () => {
+    it("api scope user default includes llm and secrets without admin or tunnels", () => {
         const scope = ApiScope.userDefault();
         expect(scope.livekit).to.be.instanceOf(LivekitGrant);
-        expect(scope.llm).to.equal(undefined);
+        expect(scope.llm).to.be.instanceOf(LLMGrant);
         expect(scope.memory).to.be.instanceOf(MemoryGrant);
         expect(scope.services).to.be.instanceOf(ServicesGrant);
         expect(scope.secrets).to.exist;
