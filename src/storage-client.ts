@@ -521,8 +521,14 @@ export class StorageClient extends EventEmitter<RoomEvent> {
   /**
    * Returns a download URL for the file at path.
    */
-  public async downloadUrl(path: string): Promise<string> {
-    const response = await this._invoke("download_url", { path });
+  public async downloadUrl(
+    path: string,
+    options: { download?: boolean } = {},
+  ): Promise<string> {
+    const response = await this._invoke("download_url", {
+      path,
+      download: options.download ?? false,
+    });
     if (!(response instanceof JsonContent)) {
       throw this._unexpectedResponseError("download_url");
     }
