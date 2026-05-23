@@ -1479,6 +1479,12 @@ export class Meshagent {
         });
     }
 
+    async getProjectByKey(projectKey: string): Promise<Record<string, unknown>> {
+        return await this.request(`/accounts/projects/by-key/${encodeURIComponent(projectKey)}`, {
+            action: "get project by key",
+        });
+    }
+
     // API keys ----------------------------------------------------------------
 
     async createApiKey(projectId: string, name: string, description: string): Promise<Record<string, unknown>> {

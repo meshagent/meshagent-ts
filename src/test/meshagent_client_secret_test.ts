@@ -1,6 +1,7 @@
 import { expect } from "chai";
 
 import {
+    ApiScope,
     ConnectorRef,
     Meshagent,
     OAuthClientConfig,
@@ -17,6 +18,83 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("meshagent_client_secret_test", () => {
+    it("getProjectByKey requests the project key endpoint", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{ method: string; url: string }> = [];
+
+        globalThis.fetch = (async (url, init) => {
+            if (typeof url !== "string") {
+                throw new Error("expected string url");
+            }
+
+            calls.push({
+                method: init?.method ?? "GET",
+                url,
+            });
+
+            return jsonResponse({ id: "proj_123", project_key: "team/app" });
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+
+            const project = await client.getProjectByKey("team/app");
+
+            expect(project).to.deep.equal({ id: "proj_123", project_key: "team/app" });
+            expect(calls).to.deep.equal([
+                {
+                    method: "GET",
+                    url: "http://example.test/accounts/projects/by-key/team%2Fapp",
+                },
+            ]);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    it("createRoom serializes ApiScope permissions", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
+
+        globalThis.fetch = (async (url, init) => {
+            if (typeof url !== "string") {
+                throw new Error("expected string url");
+            }
+
+            calls.push({
+                method: init?.method ?? "GET",
+                url,
+                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
+            });
+
+            return jsonResponse({ id: "room-1", name: "demo", metadata: {}, annotations: {} });
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+
+            await client.createRoom({
+                projectId: "proj_123",
+                name: "demo",
+                permissions: { "user-1": ApiScope.full() },
+            });
+
+            expect(calls).to.have.length(1);
+            expect(calls[0].method).to.equal("POST");
+            expect(calls[0].url).to.equal("http://example.test/accounts/projects/proj_123/rooms");
+            expect(calls[0].body).to.include({
+                name: "demo",
+                if_not_exists: false,
+            });
+            expect(calls[0].body?.permissions).to.be.an("object");
+            expect((calls[0].body?.permissions as Record<string, unknown>)["user-1"]).to.deep.include({
+                admin: {},
+            });
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it("addUserToProject omits unset permission fields but keeps explicit false", async () => {
         const originalFetch = globalThis.fetch;
         const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
