@@ -330,7 +330,7 @@ function roomServiceMcpServerUrl({
     endpoint: EndpointSpec;
 }): string | null {
     const endpointPath = normalizeEndpointPath(endpoint.path);
-    const portValue = typeof port.num === "number" ? port.num : null;
+    const portValue = port.host_port ?? (typeof port.num === "number" ? port.num : null);
 
     if (service.external == null) {
         if (portValue == null) {

@@ -67,11 +67,16 @@ export interface ContainerParticipantInfo {
   name: string;
 }
 
+export interface RoomContainerPort {
+  containerPort: number;
+  hostPort: number;
+}
+
 export interface RoomContainer {
   id: string;
   image: string;
   name?: string;
-  ports: number[];
+  ports: RoomContainerPort[];
   startedBy: ContainerParticipantInfo;
   state: string;
   private: boolean;
@@ -700,6 +705,7 @@ export class ContainersClient {
     credentials?: DockerSecret[];
     name?: string;
     mounts?: ContainerMountSpec;
+    template?: "agent" | "none";
     writableRootFs?: boolean;
     private?: boolean;
   }): Promise<string> {
@@ -716,6 +722,7 @@ export class ContainersClient {
       credentials: toCredentials(params.credentials ?? []),
       name: params.name,
       mounts: params.mounts,
+      template: params.template,
       writable_root_fs: params.writableRootFs,
       private: params.private,
     });
@@ -1140,14 +1147,31 @@ export class ContainersClient {
       const nameRaw = entry["name"];
       const portsRaw = entry["ports"];
       const serviceIdRaw = entry["service_id"];
-      if (!Array.isArray(portsRaw) || !portsRaw.every((port) => typeof port === "number" && Number.isInteger(port))) {
+      if (
+        !Array.isArray(portsRaw) ||
+        !portsRaw.every((port) => {
+          if (!isRecord(port)) {
+            return false;
+          }
+          return (
+            typeof port["container_port"] === "number" &&
+            Number.isInteger(port["container_port"]) &&
+            typeof port["host_port"] === "number" &&
+            Number.isInteger(port["host_port"])
+          );
+        })
+      ) {
         throw this.unexpectedResponseError("list");
       }
+      const ports = portsRaw.map((port) => ({
+        containerPort: (port as Record<string, unknown>)["container_port"] as number,
+        hostPort: (port as Record<string, unknown>)["host_port"] as number,
+      }));
       items.push({
         id,
         image,
         name: typeof nameRaw === "string" ? nameRaw : undefined,
-        ports: portsRaw,
+        ports,
         startedBy: {
           id: startedById,
           name: startedByName,

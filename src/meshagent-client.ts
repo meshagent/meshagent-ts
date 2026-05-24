@@ -183,6 +183,7 @@ export interface ServiceMetadata {
 
 export interface ContainerSpec {
     private?: boolean | null;
+    template?: "agent" | "none" | null;
     command?: string | null;
     working_dir?: string | null;
     image: string;
@@ -235,9 +236,13 @@ export interface EndpointSpec {
 
 export interface PortSpec {
     num: "*" | number;
+    host_port?: number | null;
     type?: "http" | "tcp" | null;
+    published?: boolean | null;
+    public?: boolean | null;
     endpoints?: EndpointSpec[];
     liveness?: string | null;
+    annotations?: Record<string, string>;
 }
 
 export interface ServiceSpec {

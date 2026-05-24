@@ -251,7 +251,7 @@ class FakeContainersServer {
                 id: "container-1",
                 image: "demo:latest",
                 name: "demo",
-                ports: [8080],
+                ports: [{ container_port: 80, host_port: 8080 }],
                 started_by: { id: "p1", name: "user" },
                 state: "RUNNING",
                 private: false,
@@ -466,7 +466,7 @@ describe("container_client_test", () => {
         tag: "demo:latest",
         credentials: [{ username: "u", password: "p", registry: "https://example.com", email: "u@example.com" }],
       });
-      expect(await harness.room.containers.run({ image: "demo:latest", env: { KEY: "VALUE" }, ports: { 8080: 80 } })).to.equal("run-ctr");
+      expect(await harness.room.containers.run({ image: "demo:latest", env: { KEY: "VALUE" }, ports: { 8080: 80 }, template: "agent" })).to.equal("run-ctr");
       expect(await harness.room.containers.runService({ serviceId: "svc-1", env: { A: "1" } })).to.equal("run_service-ctr");
 
       const images = await harness.room.containers.listImages();
@@ -486,7 +486,7 @@ describe("container_client_test", () => {
       const containers = await harness.room.containers.list();
       expect(containers).to.have.length(1);
       expect(containers[0].id).to.equal("container-1");
-      expect(containers[0].ports).to.deep.equal([8080]);
+      expect(containers[0].ports).to.deep.equal([{ containerPort: 80, hostPort: 8080 }]);
       expect(await harness.room.containers.waitForExit({ containerId: "container-1" })).to.equal(0);
 
       const exec = harness.room.containers.exec({ containerId: "container-1", command: "echo hi" });
@@ -523,6 +523,7 @@ describe("container_client_test", () => {
       const runInput = harness.server.requests[1].input;
       expect(runInput["env"]).to.deep.equal([{ key: "KEY", value: "VALUE" }]);
       expect(runInput["ports"]).to.deep.equal([{ container_port: 8080, host_port: 80 }]);
+      expect(runInput["template"]).to.equal("agent");
       const runServiceInput = harness.server.requests[2].input;
       expect(runServiceInput["env"]).to.deep.equal([{ key: "A", value: "1" }]);
 
