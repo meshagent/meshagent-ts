@@ -268,6 +268,7 @@ export interface RouteBackend {
 export interface RoutePathSpec {
     path?: string;
     pathType?: "prefix" | "exact";
+    stripPrefix?: boolean;
     targetPort: string | number;
 }
 
