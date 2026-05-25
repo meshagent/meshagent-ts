@@ -250,18 +250,38 @@ class FakeContainersServer {
               containers: [{
                 id: "container-1",
                 image: "demo:latest",
+                image_id: "sha256:demo",
                 name: "demo",
                 ports: [{ container_port: 80, host_port: 8080 }],
                 started_by: { id: "p1", name: "user" },
                 state: "RUNNING",
                 private: false,
                 service_id: null,
+                stats: {
+                  cpu_usage_nano_cores: 125000000,
+                  memory_usage_bytes: 67108864,
+                  memory_working_set_bytes: 33554432,
+                  timestamp_ns: 1700000000,
+                },
+                exit_status: {
+                  exit_code: 0,
+                  reason: "Completed",
+                  message: "container exited",
+                  oom_killed: false,
+                },
               }],
             },
           }).pack(), messageId);
           return;
         case "wait_for_exit":
-          await protocol.send("__response__", new JsonContent({ json: { exit_code: 0 } }).pack(), messageId);
+          await protocol.send("__response__", new JsonContent({
+            json: {
+              exit_code: 0,
+              reason: "Completed",
+              message: "container exited",
+              oom_killed: false,
+            },
+          }).pack(), messageId);
           return;
         default:
           throw new Error(`unsupported containers operation: ${tool}`);
@@ -486,8 +506,27 @@ describe("container_client_test", () => {
       const containers = await harness.room.containers.list();
       expect(containers).to.have.length(1);
       expect(containers[0].id).to.equal("container-1");
+      expect(containers[0].imageId).to.equal("sha256:demo");
       expect(containers[0].ports).to.deep.equal([{ containerPort: 80, hostPort: 8080 }]);
+      expect(containers[0].stats).to.deep.equal({
+        cpuUsageNanoCores: 125000000,
+        memoryUsageBytes: 67108864,
+        memoryWorkingSetBytes: 33554432,
+        timestampNs: 1700000000,
+      });
+      expect(containers[0].exitStatus).to.deep.equal({
+        exitCode: 0,
+        reason: "Completed",
+        message: "container exited",
+        oomKilled: false,
+      });
       expect(await harness.room.containers.waitForExit({ containerId: "container-1" })).to.equal(0);
+      expect(await harness.room.containers.waitForExitStatus({ containerId: "container-1" })).to.deep.equal({
+        exitCode: 0,
+        reason: "Completed",
+        message: "container exited",
+        oomKilled: false,
+      });
 
       const exec = harness.room.containers.exec({ containerId: "container-1", command: "echo hi" });
       await exec.write(new TextEncoder().encode("ping"));
@@ -517,6 +556,7 @@ describe("container_client_test", () => {
         "inspect_image",
         "list_containers",
         "wait_for_exit",
+        "wait_for_exit",
         "logs",
       ]);
 
@@ -527,7 +567,7 @@ describe("container_client_test", () => {
       const runServiceInput = harness.server.requests[2].input;
       expect(runServiceInput["env"]).to.deep.equal([{ key: "A", value: "1" }]);
 
-      const logsInput = harness.server.requests[7].input;
+      const logsInput = harness.server.requests[8].input;
       expect(logsInput["kind"]).to.equal("start");
       expect(logsInput["container_id"]).to.equal("container-1");
       expect(logsInput["follow"]).to.equal(false);

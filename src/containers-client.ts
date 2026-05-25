@@ -72,15 +72,32 @@ export interface RoomContainerPort {
   hostPort: number;
 }
 
+export interface RoomContainerStats {
+  cpuUsageNanoCores?: number;
+  memoryUsageBytes?: number;
+  memoryWorkingSetBytes?: number;
+  timestampNs?: number;
+}
+
 export interface RoomContainer {
   id: string;
   image: string;
+  imageId?: string;
   name?: string;
   ports: RoomContainerPort[];
   startedBy: ContainerParticipantInfo;
   state: string;
   private: boolean;
   serviceId?: string;
+  stats?: RoomContainerStats;
+  exitStatus?: ContainerExitStatus;
+}
+
+export interface ContainerExitStatus {
+  exitCode: number;
+  reason?: string;
+  message?: string;
+  oomKilled?: boolean;
 }
 
 export interface LogProgress {
@@ -859,14 +876,28 @@ export class ContainersClient {
     });
   }
 
-  public async waitForExit(params: { containerId: string }): Promise<number> {
+  public async waitForExitStatus(params: { containerId: string }): Promise<ContainerExitStatus> {
     const output = await this.invoke("wait_for_exit", {
       container_id: params.containerId,
     });
     if (!(output instanceof JsonContent) || !isRecord(output.json)) {
       throw this.unexpectedResponseError("wait_for_exit");
     }
-    return readIntegerField(output.json, "exit_code", "wait_for_exit");
+    const exitCode = readIntegerField(output.json, "exit_code", "wait_for_exit");
+    const reason = output.json["reason"];
+    const message = output.json["message"];
+    const oomKilled = output.json["oom_killed"];
+    return {
+      exitCode,
+      reason: typeof reason === "string" ? reason : undefined,
+      message: typeof message === "string" ? message : undefined,
+      oomKilled: typeof oomKilled === "boolean" ? oomKilled : undefined,
+    };
+  }
+
+  public async waitForExit(params: { containerId: string }): Promise<number> {
+    const status = await this.waitForExitStatus(params);
+    return status.exitCode;
   }
 
   public async deleteContainer(params: { containerId: string }): Promise<void> {
@@ -1145,8 +1176,11 @@ export class ContainersClient {
         throw this.unexpectedResponseError("list");
       }
       const nameRaw = entry["name"];
+      const imageIdRaw = entry["image_id"];
       const portsRaw = entry["ports"];
       const serviceIdRaw = entry["service_id"];
+      const statsRaw = entry["stats"];
+      const exitStatusRaw = entry["exit_status"];
       if (
         !Array.isArray(portsRaw) ||
         !portsRaw.every((port) => {
@@ -1167,9 +1201,41 @@ export class ContainersClient {
         containerPort: (port as Record<string, unknown>)["container_port"] as number,
         hostPort: (port as Record<string, unknown>)["host_port"] as number,
       }));
+      let stats: RoomContainerStats | undefined;
+      if (isRecord(statsRaw)) {
+        const cpuUsageNanoCores = statsRaw["cpu_usage_nano_cores"];
+        const memoryUsageBytes = statsRaw["memory_usage_bytes"];
+        const memoryWorkingSetBytes = statsRaw["memory_working_set_bytes"];
+        const timestampNs = statsRaw["timestamp_ns"];
+        stats = {
+          cpuUsageNanoCores: typeof cpuUsageNanoCores === "number" ? cpuUsageNanoCores : undefined,
+          memoryUsageBytes: typeof memoryUsageBytes === "number" ? memoryUsageBytes : undefined,
+          memoryWorkingSetBytes: typeof memoryWorkingSetBytes === "number" ? memoryWorkingSetBytes : undefined,
+          timestampNs: typeof timestampNs === "number" ? timestampNs : undefined,
+        };
+      }
+      let exitStatus: ContainerExitStatus | undefined;
+      if (isRecord(exitStatusRaw)) {
+        const exitCode = exitStatusRaw["exit_code"];
+        if (
+          typeof exitCode === "number" &&
+          Number.isInteger(exitCode)
+        ) {
+          const reason = exitStatusRaw["reason"];
+          const message = exitStatusRaw["message"];
+          const oomKilled = exitStatusRaw["oom_killed"];
+          exitStatus = {
+            exitCode,
+            reason: typeof reason === "string" ? reason : undefined,
+            message: typeof message === "string" ? message : undefined,
+            oomKilled: typeof oomKilled === "boolean" ? oomKilled : undefined,
+          };
+        }
+      }
       items.push({
         id,
         image,
+        imageId: typeof imageIdRaw === "string" ? imageIdRaw : undefined,
         name: typeof nameRaw === "string" ? nameRaw : undefined,
         ports,
         startedBy: {
@@ -1179,6 +1245,8 @@ export class ContainersClient {
         state,
         private: privateFlag,
         serviceId: typeof serviceIdRaw === "string" ? serviceIdRaw : undefined,
+        stats,
+        exitStatus,
       });
     }
     return items;
