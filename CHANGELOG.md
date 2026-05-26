@@ -1,4 +1,5 @@
 ## [0.42.2]
+- Moved TypeScript LiveKit helpers into the new `@meshagent/meshagent-livekit` package so the core TypeScript SDK no longer depends on `livekit-client`.
 - Added `ContainerExitStatus`, `RoomContainerStats`, and published build image metadata to the TypeScript container client models.
 - Added `waitForExitStatus` while keeping `waitForExit` as the exit-code convenience wrapper.
 - Container list parsing now preserves image IDs, runtime stats, and exit-status metadata from API responses.
