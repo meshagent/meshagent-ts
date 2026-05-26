@@ -1,7 +1,7 @@
 import { Schema, Table, tableFromIPC, tableToIPC } from "apache-arrow";
-import { RoomClient } from "./room-client";
-import { RoomServerException } from "./room-server-client";
-import { BinaryContent, ControlContent, EmptyContent, ErrorContent, JsonContent, type Content } from "./response";
+import { RoomClient } from "./room-client.js";
+import { RoomServerException } from "./room-server-client.js";
+import { BinaryContent, ControlContent, EmptyContent, ErrorContent, JsonContent, type Content } from "./response.js";
 
 export type CreateMode = "create" | "overwrite" | "create_if_not_exists";
 export type DatasetStorageFormat = "auto" | "json" | "arrow" | "csv" | "tsv" | "parquet" | "excel";

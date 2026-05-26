@@ -1,6 +1,6 @@
-import { RoomClient } from './room-client';
-import { JsonContent } from './response';
-import { RoomServerException } from './room-server-client';
+import { RoomClient } from './room-client.js';
+import { JsonContent } from './response.js';
+import { RoomServerException } from './room-server-client.js';
 
 export class LivekitConnectionInfo {
     public url: string;

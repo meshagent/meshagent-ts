@@ -24,7 +24,7 @@ import {
     SyncPathGrant,
     TableGrant,
     __version__,
-} from "../index";
+} from "../index.js";
 
 type AgentsGrantKey = keyof AgentsGrant;
 

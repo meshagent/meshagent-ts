@@ -1,7 +1,7 @@
-import { meshagentBaseUrl } from "./helpers";
-import { RoomException } from "./requirement";
-import { ApiScope } from "./participant-token";
-import { decoder, encoder } from "./utils";
+import { meshagentBaseUrl } from "./helpers.js";
+import { RoomException } from "./requirement.js";
+import { ApiScope } from "./participant-token.js";
+import { decoder, encoder } from "./utils.js";
 
 export type ProjectRole = "member" | "admin" | "developer";
 

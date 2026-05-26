@@ -1,4 +1,6 @@
-import { encode as base64Encode, decode as base64Decode } from "base-64";
+import base64 from "base-64";
+
+const { encode: base64Encode, decode: base64Decode } = base64;
 
 const BASE36_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const BASE36 = 36n;

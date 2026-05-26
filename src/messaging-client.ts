@@ -1,12 +1,12 @@
-import { Completer } from "./completer";
-import { EventEmitter } from "./event-emitter";
-import { Participant, RemoteParticipant } from "./participant";
-import { Protocol } from "./protocol";
-import { BinaryContent, JsonContent } from "./response";
-import { RoomClient } from "./room-client";
-import { RoomMessage, RoomMessageEvent } from "./room-event";
-import { RoomServerException } from "./room-server-client";
-import { splitMessageHeader, splitMessagePayload } from "./utils";
+import { Completer } from "./completer.js";
+import { EventEmitter } from "./event-emitter.js";
+import { Participant, RemoteParticipant } from "./participant.js";
+import { Protocol } from "./protocol.js";
+import { BinaryContent, JsonContent } from "./response.js";
+import { RoomClient } from "./room-client.js";
+import { RoomMessage, RoomMessageEvent } from "./room-event.js";
+import { RoomServerException } from "./room-server-client.js";
+import { splitMessageHeader, splitMessagePayload } from "./utils.js";
 
 const globalScope = globalThis as typeof globalThis & {
   Buffer?: {

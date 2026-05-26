@@ -1,8 +1,8 @@
 import { decodeJwt, jwtVerify, SignJWT } from "jose";
 import type { JWTPayload } from "jose";
-import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client";
-import { parseApiKey } from "./api_keys";
-import { __version__ } from "./version";
+import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client.js";
+import { parseApiKey } from "./api_keys.js";
+import { __version__ } from "./version.js";
 
 export type StringList = string[];
 

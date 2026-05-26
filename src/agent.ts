@@ -1,8 +1,8 @@
 // agent.ts
 
-import { Protocol } from "./protocol";
-import { RoomClient } from "./room-client";
-import { RequiredToolkit } from "./requirement";
+import { Protocol } from "./protocol.js";
+import { RoomClient } from "./room-client.js";
+import { RequiredToolkit } from "./requirement.js";
 import {
     BinaryContent,
     ControlCloseStatus,
@@ -15,13 +15,13 @@ import {
     TextContent,
     type Content,
     unpackContent,
-} from "./response";
-import { RoomServerException } from "./room-server-client";
-import { ToolContentSpec, type ToolContentType } from "./tool-content-type";
-import { packMessage, unpackMessage } from "./utils";
-import { RoomEvent, RoomStatusEvent } from "./room-event";
-import { Participant, RemoteParticipant } from "./participant";
-import { StreamController } from "./stream-controller";
+} from "./response.js";
+import { RoomServerException } from "./room-server-client.js";
+import { ToolContentSpec, type ToolContentType } from "./tool-content-type.js";
+import { packMessage, unpackMessage } from "./utils.js";
+import { RoomEvent, RoomStatusEvent } from "./room-event.js";
+import { Participant, RemoteParticipant } from "./participant.js";
+import { StreamController } from "./stream-controller.js";
 
 export type ValidationMode = "full" | "contentTypes" | "none";
 

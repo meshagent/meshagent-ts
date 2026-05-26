@@ -1,16 +1,16 @@
 import { expect } from "chai";
 
-import { RoomClient } from "../room-client";
-import { RoomStatusEvent } from "../room-event";
-import { Protocol, ProtocolMessageStream, StreamProtocolChannel } from "../protocol";
+import { RoomClient } from "../room-client.js";
+import { RoomStatusEvent } from "../room-event.js";
+import { Protocol, ProtocolMessageStream, StreamProtocolChannel } from "../protocol.js";
 import {
   BinaryContent,
   Content,
   ControlContent,
   EmptyContent,
   unpackContent,
-} from "../response";
-import { packMessage, unpackMessage } from "../utils";
+} from "../response.js";
+import { packMessage, unpackMessage } from "../utils.js";
 
 class ProtocolPair {
   public readonly serverProtocol: Protocol;

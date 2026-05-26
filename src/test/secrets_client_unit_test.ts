@@ -1,14 +1,14 @@
 import { expect } from "chai";
 
-import type { ConnectorRef, OAuthClientConfig } from "../meshagent-client";
-import { Protocol } from "../protocol";
-import { BinaryContent, Content, EmptyContent, FileContent, JsonContent } from "../response";
+import type { ConnectorRef, OAuthClientConfig } from "../meshagent-client.js";
+import { Protocol } from "../protocol.js";
+import { BinaryContent, Content, EmptyContent, FileContent, JsonContent } from "../response.js";
 import {
   OAuthTokenRequest,
   SecretRequest,
   SecretsClient,
-} from "../secrets-client";
-import { packMessage } from "../utils";
+} from "../secrets-client.js";
+import { packMessage } from "../utils.js";
 
 type InvokeParams = {
   toolkit: string;

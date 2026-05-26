@@ -1,7 +1,7 @@
 // agents_client.ts
 
-import { RoomClient } from "./room-client";
-import type { Content } from "./response";
+import { RoomClient } from "./room-client.js";
+import type { Content } from "./response.js";
 import {
     ToolContentInput,
     ToolContentOutput,
@@ -9,8 +9,8 @@ import {
     ToolStreamInput,
     ToolStreamOutput,
     type ToolCallOutput,
-} from "./agent";
-import { ToolContentSpec } from "./tool-content-type";
+} from "./agent.js";
+import { ToolContentSpec } from "./tool-content-type.js";
 
 /**
  * Example of a "ToolDescription" / "ToolkitDescription" class

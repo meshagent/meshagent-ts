@@ -1,6 +1,6 @@
-import { EmptyContent, JsonContent } from "./response";
-import { RoomClient } from "./room-client";
-import { RoomServerException } from "./room-server-client";
+import { EmptyContent, JsonContent } from "./response.js";
+import { RoomClient } from "./room-client.js";
+import { RoomServerException } from "./room-server-client.js";
 
 export type MemoryIngestStrategy = "heuristic" | "llm";
 

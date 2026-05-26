@@ -4,9 +4,9 @@ import type {
     ServiceSpec,
     PortSpec,
     EndpointSpec,
-} from "./meshagent-client";
-import type { RemoteParticipant } from "./participant";
-import type { RoomClient } from "./room-client";
+} from "./meshagent-client.js";
+import type { RemoteParticipant } from "./participant.js";
+import type { RoomClient } from "./room-client.js";
 
 export class MCPHeader {
     public readonly name: string;

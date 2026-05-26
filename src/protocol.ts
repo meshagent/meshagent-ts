@@ -1,8 +1,8 @@
 import type { ClientRequest, IncomingMessage } from "http";
 import WebSocket, { type MessageEvent } from "isomorphic-ws";
 
-import { Completer } from "./completer";
-import { decoder, encoder, mergeUint8Arrays, unpackMessage } from "./utils";
+import { Completer } from "./completer.js";
+import { decoder, encoder, mergeUint8Arrays, unpackMessage } from "./utils.js";
 
 class ProtocolMessage {
   public readonly id: number;
@@ -62,6 +62,17 @@ export class ProtocolHandshakeException extends Error {
 
 function isNodeRuntime(): boolean {
   return typeof process !== "undefined" && process.release?.name === "node";
+}
+
+function resolveWebSocketUrl(url: string): URL {
+  const baseUrl = (globalThis as { location?: { href: string } }).location?.href;
+  const resolved = baseUrl == null ? new URL(url) : new URL(url, baseUrl);
+  if (resolved.protocol === "https:") {
+    resolved.protocol = "wss:";
+  } else if (resolved.protocol === "http:") {
+    resolved.protocol = "ws:";
+  }
+  return resolved;
 }
 
 export interface ProtocolChannel {
@@ -135,7 +146,7 @@ export class StreamProtocolChannel implements ProtocolChannel {
 
 export class WebSocketProtocolChannel implements ProtocolChannel {
   public readonly url: string;
-  public readonly jwt: string;
+  public readonly jwt: string | null;
   public webSocket: WebSocket | null = null;
 
   private _opened = new Completer<void>();
@@ -161,7 +172,7 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
     );
   };
 
-  constructor({ url, jwt }: { url: string; jwt: string }) {
+  constructor({ url, jwt }: { url: string; jwt: string | null }) {
     this.url = url;
     this.jwt = jwt;
   }
@@ -170,8 +181,7 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
     onDataReceived: (data: Uint8Array) => void,
     { onDone, onError }: { onDone?: () => void; onError?: (error: unknown) => void },
   ): void {
-    const url = new URL(this.url);
-    url.searchParams.set("token", this.jwt);
+    const url = resolveWebSocketUrl(this.url);
 
     this._opened = new Completer<void>();
     this._finished = false;
@@ -180,8 +190,11 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
     this._errorHandler = onError;
 
     const socket = isNodeRuntime()
-      ? new WebSocket(url.toString(), [], { perMessageDeflate: true })
-      : new WebSocket(url.toString());
+      ? new WebSocket(url.toString(), [], {
+          headers: this.jwt == null ? undefined : { Authorization: `Bearer ${this.jwt}` },
+          perMessageDeflate: true,
+        })
+      : new WebSocket(url.toString(), this.jwt == null ? [] : [`meshagent-room.${this.jwt}`]);
     this.webSocket = socket;
     if (isNodeRuntime()) {
       socket.on("unexpected-response", this._onUnexpectedResponse);
@@ -684,9 +697,9 @@ export class Protocol<T extends ProtocolChannel = ProtocolChannel> {
 
 export class WebSocketClientProtocol extends Protocol<WebSocketProtocolChannel> {
   private readonly _url: string;
-  private readonly _token: string;
+  private readonly _token: string | null;
 
-  constructor({ url, token }: { url: string; token: string }) {
+  constructor({ url, token }: { url: string; token: string | null }) {
     super({
       channel: new WebSocketProtocolChannel({ url, jwt: token }),
     });
@@ -694,11 +707,15 @@ export class WebSocketClientProtocol extends Protocol<WebSocketProtocolChannel> 
     this._token = token;
   }
 
+  public static withIAP({ url = "./.well-known/meshagent/room/connect" }: { url?: string } = {}): WebSocketClientProtocol {
+    return new WebSocketClientProtocol({ url, token: null });
+  }
+
   public override get url(): string {
     return this._url;
   }
 
-  public override get token(): string {
+  public override get token(): string | null {
     return this._token;
   }
 }

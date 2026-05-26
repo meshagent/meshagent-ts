@@ -1,13 +1,13 @@
 // storage_client.ts
 
-import { RoomClient } from "./room-client";
-import { Protocol } from "./protocol";
-import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "./room-event";
-import { BinaryContent, ControlContent, ErrorContent, JsonContent, FileContent } from "./response";
-import type { Content } from "./response";
-import { unpackMessage } from "./utils";
-import { EventEmitter } from "./event-emitter";
-import { RoomServerException } from "./room-server-client";
+import { RoomClient } from "./room-client.js";
+import { Protocol } from "./protocol.js";
+import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "./room-event.js";
+import { BinaryContent, ControlContent, ErrorContent, JsonContent, FileContent } from "./response.js";
+import type { Content } from "./response.js";
+import { unpackMessage } from "./utils.js";
+import { EventEmitter } from "./event-emitter.js";
+import { RoomServerException } from "./room-server-client.js";
 
 
 const _DEFAULT_UPLOAD_MIME_TYPE = "application/octet-stream";

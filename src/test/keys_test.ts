@@ -10,7 +10,7 @@ import {
     decompressUuid,
     encodeApiKey,
     parseApiKey,
-} from "../api_keys";
+} from "../api_keys.js";
 
 describe("keys helpers", () => {
     describe("base36", () => {

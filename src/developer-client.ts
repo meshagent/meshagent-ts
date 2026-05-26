@@ -1,10 +1,10 @@
 // developer_client.ts
-import { EventEmitter } from "./event-emitter";
-import { RoomClient } from "./room-client";
-import { Protocol } from "./protocol";
-import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response";
-import { unpackMessage } from "./utils";
-import { RoomLogEvent } from "./room-event";
+import { EventEmitter } from "./event-emitter.js";
+import { RoomClient } from "./room-client.js";
+import { Protocol } from "./protocol.js";
+import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response.js";
+import { unpackMessage } from "./utils.js";
+import { RoomLogEvent } from "./room-event.js";
 
 /**
  * DeveloperClient emits developer logs and streams them from the room.

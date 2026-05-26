@@ -1,10 +1,10 @@
 import { expect } from "chai";
 
-import { MessagingClient } from "../messaging-client";
-import { RemoteParticipant } from "../participant";
-import { RoomMessage } from "../room-event";
-import { JsonContent } from "../response";
-import { RoomServerException } from "../room-server-client";
+import { MessagingClient } from "../messaging-client.js";
+import { RemoteParticipant } from "../participant.js";
+import { RoomMessage } from "../room-event.js";
+import { JsonContent } from "../response.js";
+import { RoomServerException } from "../room-server-client.js";
 
 class FakeProtocol {
   public handlers = new Map<string, unknown>();

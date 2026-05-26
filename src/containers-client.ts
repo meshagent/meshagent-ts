@@ -1,11 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 
-import { Completer } from "./completer";
-import type { ContainerMountSpec } from "./meshagent-client";
-import { BinaryContent, ControlContent, ErrorContent, JsonContent, type Content } from "./response";
-import { RoomClient } from "./room-client";
-import { RoomServerException } from "./room-server-client";
-import { StreamController } from "./stream-controller";
+import { Completer } from "./completer.js";
+import type { ContainerMountSpec } from "./meshagent-client.js";
+import { BinaryContent, ControlContent, ErrorContent, JsonContent, type Content } from "./response.js";
+import { RoomClient } from "./room-client.js";
+import { RoomServerException } from "./room-server-client.js";
+import { StreamController } from "./stream-controller.js";
 
 export interface DockerSecret {
   username: string;

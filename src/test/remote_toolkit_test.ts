@@ -1,8 +1,8 @@
 import { expect } from "chai";
 
-import { RoomClient } from "../room-client";
-import { Protocol, ProtocolChannel } from "../protocol";
-import { ControlContent, EmptyContent, ErrorContent, JsonContent, TextContent, type Content, unpackContent } from "../response";
+import { RoomClient } from "../room-client.js";
+import { Protocol, ProtocolChannel } from "../protocol.js";
+import { ControlContent, EmptyContent, ErrorContent, JsonContent, TextContent, type Content, unpackContent } from "../response.js";
 import {
   ContentTool,
   FunctionTool,
@@ -14,9 +14,9 @@ import {
   ToolStreamInput,
   ToolStreamOutput,
   type ToolContext,
-} from "../agent";
-import { ToolContentSpec } from "../tool-content-type";
-import { packMessage, unpackMessage } from "../utils";
+} from "../agent.js";
+import { ToolContentSpec } from "../tool-content-type.js";
+import { packMessage, unpackMessage } from "../utils.js";
 
 class LinkedProtocolChannel implements ProtocolChannel {
   private _peer: LinkedProtocolChannel | null = null;

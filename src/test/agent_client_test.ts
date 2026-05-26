@@ -13,11 +13,11 @@ import {
     ToolkitDescription,
     Toolkit,
     websocketProtocol,
-} from "../index";
+} from "../index.js";
 
-import { encoder, decoder } from "../utils";
+import { encoder, decoder } from "../utils.js";
 
-import { room, getConfig } from "./utils";
+import { room, getConfig } from "./utils.js";
 
 // A sample schema
 const addSchema = {

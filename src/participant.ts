@@ -1,5 +1,5 @@
 // participant.ts
-import { RoomClient } from "./room-client";
+import { RoomClient } from "./room-client.js";
 
 /**
  * An abstract base class for participants.

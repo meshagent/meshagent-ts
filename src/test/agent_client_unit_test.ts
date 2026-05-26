@@ -1,9 +1,9 @@
 import { expect } from "chai";
 
-import { AgentsClient } from "../agent-client";
-import { ToolContentInput, ToolContentOutput, ToolStreamInput, ToolStreamOutput } from "../agent";
-import { JsonContent, TextContent, type Content } from "../response";
-import type { RoomClient } from "../room-client";
+import { AgentsClient } from "../agent-client.js";
+import { ToolContentInput, ToolContentOutput, ToolStreamInput, ToolStreamOutput } from "../agent.js";
+import { JsonContent, TextContent, type Content } from "../response.js";
+import type { RoomClient } from "../room-client.js";
 
 type InvokeParams = {
   toolkit: string;

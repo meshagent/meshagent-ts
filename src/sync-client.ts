@@ -1,11 +1,11 @@
-import { Completer } from "./completer";
-import { EventEmitter } from "./event-emitter";
-import { MeshSchema } from "./schema";
-import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response";
-import { RoomClient } from "./room-client";
-import { MeshDocument, RoomServerException } from "./room-server-client";
-import { applyBackendChanges, unregisterDocument } from "./runtime";
-import { decoder, encoder, RefCount } from "./utils";
+import { Completer } from "./completer.js";
+import { EventEmitter } from "./event-emitter.js";
+import { MeshSchema } from "./schema.js";
+import { BinaryContent, ControlContent, ErrorContent, type Content } from "./response.js";
+import { RoomClient } from "./room-client.js";
+import { MeshDocument, RoomServerException } from "./room-server-client.js";
+import { applyBackendChanges, unregisterDocument } from "./runtime.js";
+import { decoder, encoder, RefCount } from "./utils.js";
 
 function normalizeSyncPath(path: string): string {
   let normalized = path;

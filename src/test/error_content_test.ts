@@ -1,9 +1,9 @@
 import { expect } from "chai";
 
-import { ErrorContent, unpackContent } from "../response";
-import { RoomClient } from "../room-client";
-import { RoomServerException } from "../room-server-client";
-import { Protocol, ProtocolChannel } from "../protocol";
+import { ErrorContent, unpackContent } from "../response.js";
+import { RoomClient } from "../room-client.js";
+import { RoomServerException } from "../room-server-client.js";
+import { Protocol, ProtocolChannel } from "../protocol.js";
 
 class NoopChannel implements ProtocolChannel {
   start(

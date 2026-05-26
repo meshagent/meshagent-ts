@@ -1,4 +1,4 @@
-import { packMessage, splitMessageHeader, splitMessagePayload } from "./utils";
+import { packMessage, splitMessageHeader, splitMessagePayload } from "./utils.js";
 
 /** Represents protocol-level response content with a method to pack into bytes. */
 export interface Content {

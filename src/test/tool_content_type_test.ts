@@ -1,6 +1,6 @@
 import { expect } from "chai";
 
-import { ToolContentSpec } from "../tool-content-type";
+import { ToolContentSpec } from "../tool-content-type.js";
 
 describe("tool_content_type_test", () => {
     it("accepts binary content specs", () => {

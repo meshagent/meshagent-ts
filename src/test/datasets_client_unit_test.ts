@@ -16,8 +16,8 @@ import {
   DatasetJson,
   DatasetStruct,
   DatasetUuid,
-} from "../datasets-client";
-import { BinaryContent, Content, ControlContent, EmptyContent, JsonContent } from "../response";
+} from "../datasets-client.js";
+import { BinaryContent, Content, ControlContent, EmptyContent, JsonContent } from "../response.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

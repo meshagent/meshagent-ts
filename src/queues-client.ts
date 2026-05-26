@@ -1,6 +1,6 @@
-import { RoomClient } from "./room-client";
-import { EmptyContent, JsonContent, type Content } from "./response";
-import { RoomServerException } from "./room-server-client";
+import { RoomClient } from "./room-client.js";
+import { EmptyContent, JsonContent, type Content } from "./response.js";
+import { RoomServerException } from "./room-server-client.js";
 
 
 export class Queue {

@@ -1,9 +1,9 @@
 import { expect } from "chai";
 
-import { RoomClient } from "../room-client";
-import { Protocol, ProtocolMessageStream, StreamProtocolChannel } from "../protocol";
-import { EmptyContent, JsonContent, unpackContent } from "../response";
-import { packMessage, unpackMessage } from "../utils";
+import { RoomClient } from "../room-client.js";
+import { Protocol, ProtocolMessageStream, StreamProtocolChannel } from "../protocol.js";
+import { EmptyContent, JsonContent, unpackContent } from "../response.js";
+import { packMessage, unpackMessage } from "../utils.js";
 
 class ProtocolPair {
   public readonly serverProtocol: Protocol;

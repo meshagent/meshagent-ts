@@ -5,7 +5,7 @@ import {
     ConnectorRef,
     Meshagent,
     OAuthClientConfig,
-} from "../index";
+} from "../index.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
     return {

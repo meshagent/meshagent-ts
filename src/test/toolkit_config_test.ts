@@ -6,7 +6,7 @@ import {
     MCPServer,
     mcpConnectorsFromRoomServices,
     ServiceSpec,
-} from "../index";
+} from "../index.js";
 
 describe("toolkit config", () => {
     describe("Connector.buildConnectorRef", () => {

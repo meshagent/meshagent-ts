@@ -1,6 +1,6 @@
 import { expect } from "chai";
 
-import { Meshagent, ServiceSpec } from "../index";
+import { Meshagent, ServiceSpec } from "../index.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
     return {

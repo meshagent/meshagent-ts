@@ -19,9 +19,9 @@ import {
 import {
     RoomClient,
     websocketProtocol,
-} from "../index";
+} from "../index.js";
 
-import { room, getConfig } from "./utils";
+import { room, getConfig } from "./utils.js";
 
 function tableForRows(rows: Array<Record<string, unknown>>): Table {
     const columns: Record<string, unknown[]> = {};

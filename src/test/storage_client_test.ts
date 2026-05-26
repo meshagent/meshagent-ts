@@ -15,11 +15,11 @@ import {
     SimpleValue,
     ValueProperty,
     websocketProtocol,
-} from "../index";
+} from "../index.js";
 
-import { encoder } from "../utils";
+import { encoder } from "../utils.js";
 
-import { room, subscribe, getConfig } from "./utils";
+import { room, subscribe, getConfig } from "./utils.js";
 
 const schema = new MeshSchema({
     rootTagName: "sample",

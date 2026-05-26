@@ -2,9 +2,9 @@
 
 import { expect } from "chai"; // or any other Chai interface you prefer
 
-import { RoomClient, websocketProtocol } from "../index";
+import { RoomClient, websocketProtocol } from "../index.js";
 
-import { getConfig, room } from "./utils";
+import { getConfig, room } from "./utils.js";
 
 describe("test_queues_client", function (this: Mocha.Suite) {
     // Increase timeout if necessary to accommodate WebSocket round trips.

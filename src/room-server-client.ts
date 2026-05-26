@@ -2,9 +2,9 @@
 
 import { v4 as uuidv4 } from "uuid";
 
-import { RuntimeDocument } from "./document";
-import { MeshSchema } from "./schema";
-import { Completer } from "./completer";
+import { RuntimeDocument } from "./document.js";
+import { MeshSchema } from "./schema.js";
+import { Completer } from "./completer.js";
 
 import {
     registerDocument,
@@ -12,8 +12,8 @@ import {
     applyChanges,
     getState,
     getStateVector,
-} from "./runtime";
-import type { UpdatePayload } from "./runtime";
+} from "./runtime.js";
+import type { UpdatePayload } from "./runtime.js";
 
 /** Simulates Dart's `Uint8List`. In TypeScript, we usually use `Uint8Array`. */
 export type Uint8List = Uint8Array;

@@ -1,7 +1,7 @@
 import { expect } from "chai";
 
-import { RoomClient } from "../room-client";
-import { RemoteParticipant } from "../participant";
+import { RoomClient } from "../room-client.js";
+import { RemoteParticipant } from "../participant.js";
 import {
   Protocol,
   ProtocolCloseException,
@@ -9,7 +9,7 @@ import {
   ProtocolCloseKind,
   ProtocolHandshakeException,
   ProtocolReconnectUnsupportedException,
-} from "../protocol";
+} from "../protocol.js";
 import {
   BinaryContent,
   Content,
@@ -17,12 +17,12 @@ import {
   EmptyContent,
   JsonContent,
   unpackContent,
-} from "../response";
-import { RoomStatusEvent } from "../room-event";
-import { RoomServerException } from "../room-server-client";
-import { MeshSchema, ElementType } from "../schema";
-import type { OAuthTokenRequest, SecretRequest } from "../secrets-client";
-import { packMessage, unpackMessage } from "../utils";
+} from "../response.js";
+import { RoomStatusEvent } from "../room-event.js";
+import { RoomServerException } from "../room-server-client.js";
+import { MeshSchema, ElementType } from "../schema.js";
+import type { OAuthTokenRequest, SecretRequest } from "../secrets-client.js";
+import { packMessage, unpackMessage } from "../utils.js";
 
 class LinkedProtocolChannel implements ProtocolChannel {
   private _peer: LinkedProtocolChannel | null = null;
@@ -336,6 +336,13 @@ describe("room_client_request_lifecycle", () => {
         process.env.MESHAGENT_API_URL = previousApiUrl;
       }
     }
+  });
+
+  it("can create an IAP-backed room client", () => {
+    const room = RoomClient.withIAP();
+    expect(room.protocol.url).to.equal("./.well-known/meshagent/room/connect");
+    expect(room.protocol.token).to.equal(null);
+    room.dispose();
   });
 
   it("start surfaces retryable websocket close status when automatic reconnect is disabled", async () => {

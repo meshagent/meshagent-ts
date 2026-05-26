@@ -1,4 +1,4 @@
-import type { ProtocolChannel } from './protocol';
+import type { ProtocolChannel } from './protocol.js';
 
 import type { Room, RemoteParticipant } from 'livekit-client';
 import { RoomEvent } from 'livekit-client';

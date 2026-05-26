@@ -1,10 +1,10 @@
 import { expect } from "chai";
 
-import { MessageHandler, Protocol } from "../protocol";
-import { BinaryContent, Content, ControlContent, JsonContent } from "../response";
-import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "../room-event";
-import { StorageClient, StorageEntry } from "../storage-client";
-import { packMessage } from "../utils";
+import { MessageHandler, Protocol } from "../protocol.js";
+import { BinaryContent, Content, ControlContent, JsonContent } from "../response.js";
+import { FileDeletedEvent, FileMovedEvent, FileUpdatedEvent, RoomEvent } from "../room-event.js";
+import { StorageClient, StorageEntry } from "../storage-client.js";
+import { packMessage } from "../utils.js";
 
 type InvokeParams = {
   toolkit: string;

@@ -1,7 +1,7 @@
-import type { ServiceSpec } from "./meshagent-client";
-import { JsonContent, EmptyContent } from "./response";
-import { RoomClient } from "./room-client";
-import { RoomServerException } from "./room-server-client";
+import type { ServiceSpec } from "./meshagent-client.js";
+import { JsonContent, EmptyContent } from "./response.js";
+import { RoomClient } from "./room-client.js";
+import { RoomServerException } from "./room-server-client.js";
 
 export interface ServiceRuntimeState {
   serviceId: string;

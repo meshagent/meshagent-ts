@@ -1,9 +1,9 @@
-import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client";
-import { Protocol } from "./protocol";
-import { BinaryContent, EmptyContent, FileContent, JsonContent, type Content } from "./response";
-import { RoomClient } from "./room-client";
-import { RoomServerException } from "./room-server-client";
-import { unpackMessage } from "./utils";
+import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client.js";
+import { Protocol } from "./protocol.js";
+import { BinaryContent, EmptyContent, FileContent, JsonContent, type Content } from "./response.js";
+import { RoomClient } from "./room-client.js";
+import { RoomServerException } from "./room-server-client.js";
+import { unpackMessage } from "./utils.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

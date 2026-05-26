@@ -9,7 +9,7 @@ import {
   SimpleValue,
   TextElement,
   ValueProperty,
-} from "../index";
+} from "../index.js";
 
 export const schema = new MeshSchema({
   rootTagName: "root",

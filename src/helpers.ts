@@ -1,9 +1,9 @@
-import { MeshSchema, MeshSchemaValidationException } from './schema';
-import { RoomClient } from './room-client';
-import { ParticipantToken, ApiScope } from './participant-token';
-import { WebSocketClientProtocol } from './protocol';
-import type { ProtocolFactory } from './protocol';
-import { parseApiKey } from './api_keys';
+import { MeshSchema, MeshSchemaValidationException } from './schema.js';
+import { RoomClient } from './room-client.js';
+import { ParticipantToken, ApiScope } from './participant-token.js';
+import { WebSocketClientProtocol } from './protocol.js';
+import type { ProtocolFactory } from './protocol.js';
+import { parseApiKey } from './api_keys.js';
 
 /**
  * Validate schema name: cannot contain '.'.

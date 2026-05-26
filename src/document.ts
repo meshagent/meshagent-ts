@@ -1,8 +1,8 @@
 // document.ts
 
 import { v4 as uuid } from "uuid";
-import { MeshSchema, ElementType, ChildProperty } from "./schema";
-import { EventEmitter } from "./event-emitter";
+import { MeshSchema, ElementType, ChildProperty } from "./schema.js";
+import { EventEmitter } from "./event-emitter.js";
 
 export interface RuntimeDocumentEvent {
   type: string;

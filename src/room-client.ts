@@ -1,10 +1,10 @@
-import { Completer } from "./completer";
-import { DatasetsClient } from "./datasets-client";
-import { DeveloperClient } from "./developer-client";
-import { EventEmitter, type EventHandler, type EventName } from "./event-emitter";
-import { MessagingClient } from "./messaging-client";
-import { MemoryClient } from "./memory-client";
-import { LocalParticipant } from "./participant";
+import { Completer } from "./completer.js";
+import { DatasetsClient } from "./datasets-client.js";
+import { DeveloperClient } from "./developer-client.js";
+import { EventEmitter, type EventHandler, type EventName } from "./event-emitter.js";
+import { MessagingClient } from "./messaging-client.js";
+import { MemoryClient } from "./memory-client.js";
+import { LocalParticipant } from "./participant.js";
 import {
   Protocol,
   ProtocolCloseException,
@@ -14,20 +14,20 @@ import {
   WebSocketClientProtocol,
   type MessageHandler,
   type ProtocolFactory,
-} from "./protocol";
-import { QueuesClient } from "./queues-client";
-import { BinaryContent, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response";
-import type { Content } from "./response";
-import { RoomEvent, RoomStatusEvent } from "./room-event";
-import { RoomServerException } from "./room-server-client";
-import { SecretsClient, type OAuthTokenRequestHandler, type SecretRequestHandler } from "./secrets-client";
-import { ServicesClient } from "./services-client";
-import { StorageClient } from "./storage-client";
-import { StreamController } from "./stream-controller";
-import { SyncClient } from "./sync-client";
-import { splitMessageHeader, splitMessagePayload, packMessage, unpackMessage } from "./utils";
-import { AgentsClient, ToolkitDescription } from "./agent-client";
-import { ContainersClient } from "./containers-client";
+} from "./protocol.js";
+import { QueuesClient } from "./queues-client.js";
+import { BinaryContent, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response.js";
+import type { Content } from "./response.js";
+import { RoomEvent, RoomStatusEvent } from "./room-event.js";
+import { RoomServerException } from "./room-server-client.js";
+import { SecretsClient, type OAuthTokenRequestHandler, type SecretRequestHandler } from "./secrets-client.js";
+import { ServicesClient } from "./services-client.js";
+import { StorageClient } from "./storage-client.js";
+import { StreamController } from "./stream-controller.js";
+import { SyncClient } from "./sync-client.js";
+import { splitMessageHeader, splitMessagePayload, packMessage, unpackMessage } from "./utils.js";
+import { AgentsClient, ToolkitDescription } from "./agent-client.js";
+import { ContainersClient } from "./containers-client.js";
 
 interface RequestHeader {
   [key: string]: unknown;
@@ -401,6 +401,25 @@ export class RoomClient {
     this.containers = new ContainersClient({ room: this });
     this.memory = new MemoryClient({ room: this });
     this.services = new ServicesClient({ room: this });
+  }
+
+  public static withIAP({
+    url = "./.well-known/meshagent/room/connect",
+    reconnectTimeout = null,
+    oauthTokenRequestHandler,
+    secretRequestHandler,
+  }: {
+    url?: string;
+    reconnectTimeout?: number | null;
+    oauthTokenRequestHandler?: OAuthTokenRequestHandler;
+    secretRequestHandler?: SecretRequestHandler;
+  } = {}): RoomClient {
+    return new RoomClient({
+      protocolFactory: () => WebSocketClientProtocol.withIAP({ url }),
+      reconnectTimeout,
+      oauthTokenRequestHandler,
+      secretRequestHandler,
+    });
   }
 
   public get localParticipant(): LocalParticipant | null {
