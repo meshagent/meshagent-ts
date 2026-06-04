@@ -255,7 +255,7 @@ export class AgentsClient {
         onBehalfOfId?: string;
     }): Promise<ToolCallOutput | Content> {
         if (params.input === undefined) {
-            return await this.client.invoke({
+            return await this.client.invokeContent({
                 toolkit: params.toolkit,
                 tool: params.tool,
                 arguments: params.arguments ?? {},

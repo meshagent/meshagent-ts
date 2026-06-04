@@ -62,7 +62,7 @@ class FakeStorageRoom {
     return true;
   }
 
-  public async invoke(params: InvokeParams): Promise<Content> {
+  public async invokeContent(params: InvokeParams): Promise<Content> {
     switch (params.tool) {
       case "exists": {
         const path = (params.input as Record<string, any>)["path"];

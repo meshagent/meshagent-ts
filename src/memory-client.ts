@@ -561,7 +561,7 @@ export class MemoryClient {
   }
 
   private async invoke(operation: string, input: Record<string, unknown>): Promise<JsonContent | null> {
-    const response = await this.room.invoke({
+    const response = await this.room.invokeContent({
       toolkit: "memory",
       tool: operation,
       input,

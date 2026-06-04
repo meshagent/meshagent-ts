@@ -83,7 +83,7 @@ export class ServicesClient {
   }
 
   public async listWithState(): Promise<ListServicesResult> {
-    const response = await this.room.invoke({
+    const response = await this.room.invokeContent({
       toolkit: "services",
       tool: "list",
       input: {},
@@ -113,7 +113,7 @@ export class ServicesClient {
   }
 
   public async restart(params: { serviceId: string }): Promise<void> {
-    const response = await this.room.invoke({
+    const response = await this.room.invokeContent({
       toolkit: "services",
       tool: "restart",
       input: {

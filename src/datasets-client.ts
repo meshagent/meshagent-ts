@@ -279,7 +279,7 @@ export type DatasetRows = DatasetRecord[];
 export type DatasetRowChunks = AsyncIterable<DatasetRows> | Iterable<DatasetRows>;
 export type DatasetWhere = string | Record<string, DatasetValue>;
 
-type DatasetRoomInvoker = Pick<RoomClient, "invoke" | "invokeStream">;
+type DatasetRoomInvoker = Pick<RoomClient, "invokeContent" | "invokeStream">;
 
 type RowChunkJson = {
   kind: "rows";
@@ -1036,7 +1036,7 @@ export class DatasetsClient {
   }
 
   private async invoke(operation: string, input: Record<string, unknown>): Promise<JsonContent | null> {
-    const response = await this.room.invoke({ toolkit: "dataset", tool: operation, input });
+    const response = await this.room.invokeContent({ toolkit: "dataset", tool: operation, input });
     if (response instanceof JsonContent) {
       return response;
     }
@@ -1047,7 +1047,7 @@ export class DatasetsClient {
   }
 
   private async invokeContent(operation: string, input: Content): Promise<Content | null> {
-    return await this.room.invoke({ toolkit: "dataset", tool: operation, input });
+    return await this.room.invokeContent({ toolkit: "dataset", tool: operation, input });
   }
 
   private async invokeStream(operation: string, input: AsyncIterable<Content>): Promise<AsyncIterable<Content>> {
@@ -1317,7 +1317,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "drop_table",
       input: {
@@ -1410,7 +1410,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "drop_index",
       input: { table, name, namespace: namespace ?? null, branch: branch ?? null },
@@ -1435,7 +1435,7 @@ export class DatasetsClient {
       }));
       return;
     }
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "add_columns",
       input: {
@@ -1455,7 +1455,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "drop_columns",
       input: { table, columns, namespace: namespace ?? null, branch: branch ?? null },
@@ -1502,7 +1502,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "update",
       input: {
@@ -1521,7 +1521,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "delete",
       input: { table, where, namespace: namespace ?? null, branch: branch ?? null },
@@ -1690,14 +1690,14 @@ export class DatasetsClient {
   }
 
   public async closeSqlQuery({ queryId }: { queryId: string }): Promise<void> {
-    const response = await this.room.invoke({ toolkit: "dataset", tool: "close_sql_query", input: { query_id: queryId } });
+    const response = await this.room.invokeContent({ toolkit: "dataset", tool: "close_sql_query", input: { query_id: queryId } });
     if (!(response instanceof EmptyContent)) {
       throw this._unexpectedResponseError("close_sql_query");
     }
   }
 
   public async cancelSqlQuery({ queryId }: { queryId: string }): Promise<DatasetSqlCancelResult> {
-    const response = await this.room.invoke({ toolkit: "dataset", tool: "cancel_sql_query", input: { query_id: queryId } });
+    const response = await this.room.invokeContent({ toolkit: "dataset", tool: "cancel_sql_query", input: { query_id: queryId } });
     if (!(response instanceof JsonContent)
       || !["cancelled", "cancelling", "not_cancellable"].includes(response.json.status as string)) {
       throw this._unexpectedResponseError("cancel_sql_query");
@@ -1916,7 +1916,7 @@ export class DatasetsClient {
     branch?: string;
     version?: number;
   }): Promise<Schema> {
-    const response = await this.room.invoke({
+    const response = await this.room.invokeContent({
       toolkit: "dataset",
       tool: "inspect",
       input: {
@@ -1977,7 +1977,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "restore",
       input: { table, version, namespace: namespace ?? null, branch: branch ?? null },
@@ -2006,7 +2006,7 @@ export class DatasetsClient {
     namespace?: string[];
     branch?: string;
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "create_index",
       input: { table, config, namespace: namespace ?? null, branch: branch ?? null },
@@ -2048,7 +2048,7 @@ export class DatasetsClient {
     fromBranch?: string;
     namespace?: string[];
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "create_branch",
       input: {
@@ -2063,7 +2063,7 @@ export class DatasetsClient {
     branch: string;
     namespace?: string[];
   }): Promise<void> {
-    await this.room.invoke({
+    await this.room.invokeContent({
       toolkit: "dataset",
       tool: "delete_branch",
       input: { branch, namespace: namespace ?? null },

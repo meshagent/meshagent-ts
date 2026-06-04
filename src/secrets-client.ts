@@ -65,7 +65,7 @@ export class SecretsClient {
   }
 
   private async invoke(operation: string, input: Record<string, unknown> | Content): Promise<Content> {
-    return await this.client.invoke({
+    return await this.client.invokeContent({
       toolkit: "secrets",
       tool: operation,
       input,

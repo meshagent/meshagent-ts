@@ -225,7 +225,7 @@ export class SyncClient extends EventEmitter<SyncClientEvent> {
   }
 
   private async _invoke(operation: string, input: Record<string, unknown> | Content): Promise<Content> {
-    return await this.room.invoke({
+    return await this.room.invokeContent({
       toolkit: "sync",
       tool: operation,
       input,

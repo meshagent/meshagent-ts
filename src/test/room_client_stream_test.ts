@@ -8,6 +8,8 @@ import {
   Content,
   ControlContent,
   EmptyContent,
+  JsonContent,
+  TextContent,
   unpackContent,
 } from "../response.js";
 import { packMessage, unpackMessage } from "../utils.js";
@@ -324,6 +326,115 @@ describe("room_client_stream_test", () => {
       expect((requestChunks[1] as BinaryContent).headers["kind"]).to.equal("data");
       expect(requestChunks[2]).to.be.instanceOf(ControlContent);
       expect((requestChunks[2] as ControlContent).method).to.equal("close");
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("returns single invoke responses as an async iterable", async () => {
+    const pair = new ProtocolPair();
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data || type !== "room.invoke_tool") {
+          return;
+        }
+
+        const [request] = unpackMessage(data);
+        expect(request["toolkit"]).to.equal("demo");
+        expect(request["tool"]).to.equal("echo");
+        expect(request["arguments"]).to.deep.equal({ type: "json", json: { value: "hello" } });
+        expect(request["tool_call_id"]).to.be.a("string");
+        await protocol.send("__response__", new JsonContent({ json: { ok: true } }).pack(), messageId);
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const stream = room.invoke({
+        toolkit: "demo",
+        tool: "echo",
+        input: { value: "hello" },
+      });
+
+      const received: Content[] = [];
+      for await (const chunk of stream) {
+        received.push(chunk);
+      }
+
+      expect(received).to.have.length(1);
+      expect(received[0]).to.be.instanceOf(JsonContent);
+      expect((received[0] as JsonContent).json).to.deep.equal({ ok: true });
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("returns streamed invoke responses as an async iterable", async () => {
+    const pair = new ProtocolPair();
+    let toolCallId: string | undefined;
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data || type !== "room.invoke_tool") {
+          return;
+        }
+
+        const [request] = unpackMessage(data);
+        expect(request["toolkit"]).to.equal("demo");
+        expect(request["tool"]).to.equal("stream");
+        expect(request["arguments"]).to.deep.equal({ type: "json", json: { prompt: "hello" } });
+        expect(request["tool_call_id"]).to.be.a("string");
+        toolCallId = request["tool_call_id"] as string;
+        await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new TextContent({ text: "one" }),
+        });
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new TextContent({ text: "two" }),
+        });
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ControlContent({ method: "close" }),
+        });
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const stream = room.invoke({
+        toolkit: "demo",
+        tool: "stream",
+        input: { prompt: "hello" },
+      });
+
+      const received: Content[] = [];
+      for await (const chunk of stream) {
+        received.push(chunk);
+      }
+
+      expect(received).to.have.length(3);
+      expect(received[0]).to.be.instanceOf(TextContent);
+      expect((received[0] as TextContent).text).to.equal("one");
+      expect(received[1]).to.be.instanceOf(TextContent);
+      expect((received[1] as TextContent).text).to.equal("two");
+      expect(received[2]).to.be.instanceOf(ControlContent);
+      expect((received[2] as ControlContent).method).to.equal("close");
     } finally {
       room.dispose();
       pair.dispose();

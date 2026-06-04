@@ -33,6 +33,8 @@ interface RequestHeader {
   [key: string]: unknown;
 }
 
+export type InvokeInput = Record<string, unknown> | Content;
+
 class ProtocolStartupFailure extends Error {
   public readonly kind: ProtocolCloseKind;
   public readonly reason: string | null;
@@ -1616,21 +1618,10 @@ export class RoomClient {
     return toolkits;
   }
 
-  public async invoke(params: {
-    toolkit: string;
-    tool: string;
-    arguments?: Record<string, unknown>;
-    input?: Record<string, unknown> | Content;
-    participantId?: string;
-    onBehalfOfId?: string;
-  }): Promise<Content> {
-    const input = params.input ?? params.arguments ?? new EmptyContent();
-    const request: Record<string, unknown> = {
-      toolkit: params.toolkit,
-      tool: params.tool,
-    };
-
-    let requestData: Uint8Array | undefined;
+  private _normalizeInvokeInput(input: InvokeInput | undefined): Content {
+    if (input === undefined) {
+      return new EmptyContent();
+    }
     if (
       input instanceof BinaryContent ||
       input instanceof EmptyContent ||
@@ -1640,28 +1631,61 @@ export class RoomClient {
       input instanceof LinkContent ||
       input instanceof TextContent
     ) {
-      const packed = input.pack();
-      request["arguments"] = JSON.parse(splitMessageHeader(packed));
-      const payload = splitMessagePayload(packed);
-      if (payload.length > 0) {
-        requestData = payload;
-      }
-    } else if (typeof input === "object" && input !== null && !Array.isArray(input)) {
-      request["arguments"] = {
-        type: "json",
-        json: input,
-      };
-    } else {
-      throw new RoomServerException("invoke input must be a content value or JSON object");
+      return input;
     }
+    if (typeof input === "object" && input !== null && !Array.isArray(input)) {
+      return new JsonContent({ json: input });
+    }
+    throw new RoomServerException("invoke input must be a content value or JSON object");
+  }
 
-    if (params.participantId != null) {
-      request["participant_id"] = params.participantId;
+  public invoke(params: {
+    toolkit: string;
+    tool: string;
+    arguments?: Record<string, unknown>;
+    input?: InvokeInput;
+    participantId?: string;
+    onBehalfOfId?: string;
+  }): AsyncIterable<Content> {
+    const outputPromise = this.invokeToolCall({
+      toolkit: params.toolkit,
+      tool: params.tool,
+      input: this._normalizeInvokeInput(params.input ?? params.arguments),
+      participantId: params.participantId,
+      onBehalfOfId: params.onBehalfOfId,
+    });
+    void outputPromise.catch(() => undefined);
+    return {
+      async *[Symbol.asyncIterator](): AsyncIterator<Content> {
+        const output = await outputPromise;
+        if (output.kind === "stream") {
+          yield* output.stream;
+          return;
+        }
+        yield output.content;
+      },
+    };
+  }
+
+  public async invokeContent(params: {
+    toolkit: string;
+    tool: string;
+    arguments?: Record<string, unknown>;
+    input?: InvokeInput;
+    participantId?: string;
+    onBehalfOfId?: string;
+  }): Promise<Content> {
+    const output = await this.invokeToolCall({
+      toolkit: params.toolkit,
+      tool: params.tool,
+      input: this._normalizeInvokeInput(params.input ?? params.arguments),
+      participantId: params.participantId,
+      onBehalfOfId: params.onBehalfOfId,
+    });
+    if (output.kind !== "content") {
+      throw new RoomServerException("unexpected streamed output from " + params.toolkit + "." + params.tool);
     }
-    if (params.onBehalfOfId != null) {
-      request["on_behalf_of_id"] = params.onBehalfOfId;
-    }
-    return await this.sendRequest("room.invoke_tool", request, requestData);
+    return output.content;
   }
 
   public async invokeToolCall(params: {

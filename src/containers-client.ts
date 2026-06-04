@@ -600,7 +600,7 @@ export class ContainersClient {
   }
 
   private async invoke(operation: string, input: Record<string, unknown>): Promise<Content> {
-    return await this.room.invoke({
+    return await this.room.invokeContent({
       toolkit: "containers",
       tool: operation,
       input,

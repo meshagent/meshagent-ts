@@ -43,7 +43,7 @@ export class DeveloperClient extends EventEmitter<RoomLogEvent> {
    * Sends a developer.log message with specified type and data.
    */
   async log(type: string, data: Record<string, any>): Promise<void> {
-    await this.client.invoke({
+    await this.client.invokeContent({
       toolkit: "developer",
       tool: "log",
       input: { type, data },

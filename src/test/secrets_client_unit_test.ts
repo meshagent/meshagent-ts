@@ -47,7 +47,7 @@ class FakeSecretsRoom {
     return protocol === (this.protocol as unknown as Protocol);
   }
 
-  public async invoke(params: InvokeParams): Promise<Content> {
+  public async invokeContent(params: InvokeParams): Promise<Content> {
     this.requests.push(params);
 
     switch (params.tool) {
@@ -299,7 +299,7 @@ describe("secrets_client_unit_test", () => {
     });
   });
 
-  it("exists uses room.invoke and parses boolean responses", async () => {
+  it("exists uses room.invokeContent and parses boolean responses", async () => {
     const room = new FakeSecretsRoom();
     const client = new SecretsClient({ room: room as never });
 

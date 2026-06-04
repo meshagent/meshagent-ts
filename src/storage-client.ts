@@ -45,7 +45,7 @@ const _UPLOAD_MIME_TYPES_BY_EXTENSION = new Map<string, string>([
   [".zip", "application/zip"],
 ]);
 
-type StorageClientRoom = Pick<RoomClient, "invoke" | "invokeStream" | "emit"> & {
+type StorageClientRoom = Pick<RoomClient, "invokeContent" | "invokeStream" | "emit"> & {
   isActiveProtocol(protocol: Protocol): boolean;
   protocol: Pick<Protocol, "addHandler">;
 };
@@ -190,7 +190,7 @@ export class StorageClient extends EventEmitter<RoomEvent> {
     operation: string,
     input: Record<string, any> | Content,
   ): Promise<Content> {
-    return await this.client.invoke({
+    return await this.client.invokeContent({
       toolkit: "storage",
       tool: operation,
       input,
