@@ -16,7 +16,7 @@ import {
   type ProtocolFactory,
 } from "./protocol.js";
 import { QueuesClient } from "./queues-client.js";
-import { BinaryContent, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response.js";
+import { BinaryContent, ControlCloseStatus, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response.js";
 import type { Content } from "./response.js";
 import { RoomEvent, RoomStatusEvent } from "./room-event.js";
 import { RoomServerException } from "./room-server-client.js";
@@ -333,6 +333,7 @@ export class RoomClient {
   private readonly _eventEmitter = new EventEmitter<RoomEvent>();
   private readonly _pendingRequests = new Map<number, Completer<Content>>();
   private readonly _toolCallStreams = new Map<string, StreamController<Content>>();
+  private readonly _toolCallPreOpenErrors = new Map<string, Completer<never>>();
   private readonly _ignoredResponseLabels = new Map<number, string>();
   private readonly _ready = new Completer<void>();
   private readonly _roomClosed = new Completer<void>();
@@ -1699,7 +1700,9 @@ export class RoomClient {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const controller = new StreamController<Content>();
     const responseIterator = controller.stream[Symbol.asyncIterator]();
+    const preOpenError = new Completer<never>();
     this._toolCallStreams.set(toolCallId, controller);
+    this._toolCallPreOpenErrors.set(toolCallId, preOpenError);
 
     const request: Record<string, unknown> = {
       toolkit: params.toolkit,
@@ -1728,7 +1731,11 @@ export class RoomClient {
     }
 
     try {
-      const response = await this.sendRequest("room.invoke_tool", request, requestData);
+      const response = await Promise.race([
+        this.sendRequest("room.invoke_tool", request, requestData),
+        preOpenError.fut,
+      ]);
+      this._toolCallPreOpenErrors.delete(toolCallId);
       if (response instanceof ControlContent && response.method === "open") {
         if (requestTask != null) {
           void requestTask.catch((error: unknown) => {
@@ -1736,7 +1743,7 @@ export class RoomClient {
             if (stream == null) {
               return;
             }
-            stream.add(new ErrorContent({ text: `request stream failed: ${String(error)}` }));
+            stream.addError(error);
             stream.close();
             this._toolCallStreams.delete(toolCallId);
           });
@@ -1759,6 +1766,7 @@ export class RoomClient {
       return { kind: "content", content: response, inputClosed: requestTask };
     } catch (error) {
       await Promise.resolve(requestTask).catch(() => undefined);
+      this._toolCallPreOpenErrors.delete(toolCallId);
       this._toolCallStreams.delete(toolCallId);
       controller.close();
       throw error;
@@ -1809,7 +1817,9 @@ export class RoomClient {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const controller = new StreamController<Content>();
     const responseIterator = controller.stream[Symbol.asyncIterator]();
+    const preOpenError = new Completer<never>();
     this._toolCallStreams.set(toolCallId, controller);
+    this._toolCallPreOpenErrors.set(toolCallId, preOpenError);
 
     const request: Record<string, unknown> = {
       toolkit: params.toolkit,
@@ -1829,12 +1839,24 @@ export class RoomClient {
       if (stream == null) {
         return;
       }
-      stream.add(new ErrorContent({ text: `request stream failed: ${String(error)}` }));
+      stream.addError(error);
       stream.close();
       this._toolCallStreams.delete(toolCallId);
     });
 
-    const response = await this.sendRequest("room.invoke_tool", request);
+    let response: Content;
+    try {
+      response = await Promise.race([
+        this.sendRequest("room.invoke_tool", request),
+        preOpenError.fut,
+      ]);
+    } catch (error) {
+      this._toolCallPreOpenErrors.delete(toolCallId);
+      this._toolCallStreams.delete(toolCallId);
+      controller.close();
+      throw error;
+    }
+    this._toolCallPreOpenErrors.delete(toolCallId);
     if (!(response instanceof ControlContent) || response.method !== "open") {
       this._toolCallStreams.delete(toolCallId);
       controller.close();
@@ -1919,11 +1941,43 @@ export class RoomClient {
     }
 
     const content = this._decodeToolCallContent({ header, payload });
+    const preOpenError = this._toolCallPreOpenErrors.get(toolCallId);
+    if (preOpenError != null && content instanceof ErrorContent) {
+      const error = new RoomServerException(content.text, content.code);
+      if (!preOpenError.completed) {
+        preOpenError.completeError(error);
+      }
+      stream.addError(error);
+      stream.close();
+      this._toolCallStreams.delete(toolCallId);
+      this._toolCallPreOpenErrors.delete(toolCallId);
+      return;
+    }
+
+    if (
+      content instanceof ControlContent &&
+      content.method === "close" &&
+      content.statusCode !== undefined &&
+      content.statusCode !== ControlCloseStatus.NORMAL
+    ) {
+      const error = new RoomServerException(
+        content.message ?? `tool call stream closed with status ${content.statusCode}`,
+        undefined,
+        { statusCode: content.statusCode },
+      );
+      stream.addError(error);
+      stream.close();
+      this._toolCallStreams.delete(toolCallId);
+      this._toolCallPreOpenErrors.delete(toolCallId);
+      return;
+    }
+
     stream.add(content);
 
     if (content instanceof ControlContent && content.method === "close") {
       stream.close();
       this._toolCallStreams.delete(toolCallId);
+      this._toolCallPreOpenErrors.delete(toolCallId);
     }
   }
 

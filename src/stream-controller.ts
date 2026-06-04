@@ -4,8 +4,11 @@ export class StreamController<T> {
 
   // One entry per active iterator
   private subs = new Set<{
-    queue: T[];
-    waiter: ((r: IteratorResult<T>) => void) | null;
+    queue: Array<{ kind: "value"; value: T } | { kind: "error"; error: unknown }>;
+    waiter: {
+      resolve: (r: IteratorResult<T>) => void;
+      reject: (error: unknown) => void;
+    } | null;
   }>();
 
   get stream(): AsyncIterable<T> {
@@ -15,8 +18,11 @@ export class StreamController<T> {
       [Symbol.asyncIterator](): AsyncIterator<T> {
         // Each iterator gets its own queue + waiter
         const sub = {
-          queue: [] as T[],
-          waiter: null as ((r: IteratorResult<T>) => void) | null
+          queue: [] as Array<{ kind: "value"; value: T } | { kind: "error"; error: unknown }>,
+          waiter: null as {
+            resolve: (r: IteratorResult<T>) => void;
+            reject: (error: unknown) => void;
+          } | null
         };
 
         self.subs.add(sub);
@@ -27,7 +33,7 @@ export class StreamController<T> {
             const w = sub.waiter;
             sub.waiter = null;
 
-            w({ done: true, value: undefined as any });
+            w.resolve({ done: true, value: undefined as any });
           }
           self.subs.delete(sub);
         };
@@ -35,15 +41,20 @@ export class StreamController<T> {
         return {
           async next(): Promise<IteratorResult<T>> {
             if (sub.queue.length > 0) {
-              return { done: false, value: sub.queue.shift()! };
+              const item = sub.queue.shift()!;
+              if (item.kind === "error") {
+                cleanup();
+                return Promise.reject(item.error);
+              }
+              return { done: false, value: item.value };
             }
             if (self.closed) {
               cleanup();
               return { done: true, value: undefined as any };
             }
             // Otherwise park this iterator until the next add()/close()
-            return new Promise<IteratorResult<T>>(resolve => {
-              sub.waiter = resolve;
+            return new Promise<IteratorResult<T>>((resolve, reject) => {
+              sub.waiter = { resolve, reject };
             });
           },
 
@@ -74,10 +85,26 @@ export class StreamController<T> {
         sub.waiter = null;
 
         // Deliver immediately to a parked iterator
-        w({ done: false, value });
+        w.resolve({ done: false, value });
       } else {
         // Buffer for this iterator to pull later
-        sub.queue.push(value);
+        sub.queue.push({ kind: "value", value });
+      }
+    }
+  }
+
+  /** Fail the stream: current and already-created future iterators reject. */
+  addError(error: unknown): void {
+    if (this.closed) return;
+
+    for (const sub of [...this.subs]) {
+      if (sub.waiter) {
+        const w = sub.waiter;
+        sub.waiter = null;
+        w.reject(error);
+        this.subs.delete(sub);
+      } else {
+        sub.queue.push({ kind: "error", error });
       }
     }
   }
@@ -92,7 +119,7 @@ export class StreamController<T> {
         const w = sub.waiter;
         sub.waiter = null;
 
-        w({ done: true, value: undefined as any });
+        w.resolve({ done: true, value: undefined as any });
       }
     }
   }

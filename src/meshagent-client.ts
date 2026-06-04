@@ -1,5 +1,5 @@
 import { meshagentBaseUrl } from "./helpers.js";
-import { RoomException } from "./requirement.js";
+import { ForbiddenException, RoomException } from "./requirement.js";
 import { ApiScope } from "./participant-token.js";
 import { decoder, encoder } from "./utils.js";
 
@@ -18,13 +18,61 @@ export interface RoomConnectionInfo {
     roomUrl: string;
 }
 
-export interface RoomSession {
-    id: string;
-    roomId?: string | null;
-    roomName: string;
-    createdAt: Date;
-    isActive: boolean;
-    participants?: Record<string, number>;
+export class RoomSession {
+    public readonly id: string;
+    public readonly roomId?: string | null;
+    public readonly roomName: string;
+    public readonly createdAt: Date;
+    public readonly isActive: boolean;
+    public readonly participants?: Record<string, number> | null;
+    public readonly kind: string;
+    public readonly agentId?: string | null;
+    public readonly agentName?: string | null;
+
+    constructor({
+        id,
+        roomId,
+        roomName,
+        createdAt,
+        isActive,
+        participants,
+        kind = "room",
+        agentId,
+        agentName,
+    }: {
+        id: string;
+        roomId?: string | null;
+        roomName: string;
+        createdAt: Date;
+        isActive: boolean;
+        participants?: Record<string, number> | null;
+        kind?: string;
+        agentId?: string | null;
+        agentName?: string | null;
+    }) {
+        this.id = id;
+        this.roomId = roomId;
+        this.roomName = roomName;
+        this.createdAt = createdAt;
+        this.isActive = isActive;
+        this.participants = participants;
+        this.kind = kind;
+        this.agentId = agentId;
+        this.agentName = agentName;
+    }
+
+    public toJson(): Record<string, unknown> {
+        return {
+            id: this.id,
+            room_id: this.roomId ?? null,
+            room_name: this.roomName,
+            started_at: this.createdAt.toISOString(),
+            is_active: this.isActive,
+            kind: this.kind,
+            ...(this.agentId != null ? { agent_id: this.agentId } : {}),
+            ...(this.agentName != null ? { agent_name: this.agentName } : {}),
+        };
+    }
 }
 
 export interface RoomInfo {
@@ -80,6 +128,20 @@ export interface ProjectStorageMountSpec {
     read_only?: boolean;
 }
 
+export interface ImageStorageMountSpec {
+    path: string;
+    subpath?: string | null;
+    read_only?: boolean;
+    image: string;
+}
+
+export interface FileStorageMountSpec {
+    path: string;
+    subpath?: string | null;
+    read_only?: boolean;
+    text: string;
+}
+
 export interface EmptyDirMountSpec {
     path: string;
     read_only?: boolean;
@@ -92,6 +154,8 @@ export interface ConfigMountSpec {
 export interface ContainerMountSpec {
     room?: RoomStorageMountSpec[];
     project?: ProjectStorageMountSpec[];
+    images?: ImageStorageMountSpec[];
+    files?: FileStorageMountSpec[];
     empty_dirs?: EmptyDirMountSpec[];
     configs?: ConfigMountSpec[];
 }
@@ -256,6 +320,325 @@ export interface ServiceSpec {
     external?: ExternalServiceSpec | null;
 }
 
+export interface TemplateEnvironmentVariable {
+    name: string;
+    value?: string | null;
+    token?: Record<string, unknown> | null;
+}
+
+export interface ServiceTemplateContainerMountSpec {
+    room?: RoomStorageMountSpec[] | null;
+    project?: ProjectStorageMountSpec[] | null;
+    images?: ImageStorageMountSpec[] | null;
+    files?: FileStorageMountSpec[] | null;
+    empty_dirs?: EmptyDirMountSpec[] | null;
+    configs?: ConfigMountSpec[] | null;
+}
+
+export interface ContainerTemplateSpec {
+    private?: boolean | null;
+    command?: string | null;
+    working_dir?: string | null;
+    image?: string | null;
+    environment?: TemplateEnvironmentVariable[] | null;
+    storage?: ServiceTemplateContainerMountSpec | null;
+    on_demand?: boolean | null;
+    writable_root_fs?: boolean | null;
+}
+
+export interface ExternalServiceTemplateSpec {
+    url: string;
+}
+
+export interface ServiceTemplateVariable {
+    name: string;
+    label?: string | null;
+    description?: string | null;
+    default?: string | null;
+    required?: boolean | null;
+}
+
+function cloneJsonValue<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.map((item) => cloneJsonValue(item)) as T;
+    }
+
+    if (value != null && typeof value === "object") {
+        const result: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+            result[key] = cloneJsonValue(item);
+        }
+        return result as T;
+    }
+
+    return value;
+}
+
+function formatTemplateString(value: string, values: Record<string, string>): string {
+    return value.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (token, key: string) => values[key] ?? token);
+}
+
+function formatJsonValue(value: unknown, values: Record<string, string>): unknown {
+    if (typeof value === "string") {
+        return formatTemplateString(value, values);
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => formatJsonValue(item, values));
+    }
+
+    if (value != null && typeof value === "object") {
+        const result: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+            result[key] = formatJsonValue(item, values);
+        }
+        return result;
+    }
+
+    return value;
+}
+
+function objectOrUndefined(value: unknown): Record<string, unknown> | undefined {
+    return value != null && typeof value === "object" && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : undefined;
+}
+
+function objectArray(value: unknown): Record<string, unknown>[] | undefined {
+    return Array.isArray(value)
+        ? value.filter((item): item is Record<string, unknown> => objectOrUndefined(item) !== undefined)
+        : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === "string" ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeRoomMount(value: Record<string, unknown>): RoomStorageMountSpec {
+    return {
+        path: stringValue(value.path) ?? "",
+        ...(stringValue(value.subpath) !== undefined ? { subpath: stringValue(value.subpath) } : {}),
+        ...(booleanValue(value.read_only) !== undefined ? { read_only: booleanValue(value.read_only) } : {}),
+    };
+}
+
+function normalizeProjectMount(value: Record<string, unknown>): ProjectStorageMountSpec {
+    return {
+        path: stringValue(value.path) ?? "",
+        ...(stringValue(value.subpath) !== undefined ? { subpath: stringValue(value.subpath) } : {}),
+        read_only: booleanValue(value.read_only) ?? true,
+    };
+}
+
+function normalizeImageMount(value: Record<string, unknown>): ImageStorageMountSpec {
+    return {
+        path: stringValue(value.path) ?? "",
+        ...(stringValue(value.subpath) !== undefined ? { subpath: stringValue(value.subpath) } : {}),
+        read_only: booleanValue(value.read_only) ?? true,
+        image: stringValue(value.image) ?? "",
+    };
+}
+
+function normalizeFileMount(value: Record<string, unknown>): FileStorageMountSpec {
+    return {
+        path: stringValue(value.path) ?? "",
+        ...(stringValue(value.subpath) !== undefined ? { subpath: stringValue(value.subpath) } : {}),
+        read_only: booleanValue(value.read_only) ?? true,
+        text: stringValue(value.text) ?? "",
+    };
+}
+
+function normalizeEmptyDirMount(value: Record<string, unknown>): EmptyDirMountSpec {
+    return {
+        path: stringValue(value.path) ?? "",
+        read_only: booleanValue(value.read_only) ?? false,
+    };
+}
+
+function normalizeConfigMount(value: Record<string, unknown>): ConfigMountSpec {
+    return {
+        path: stringValue(value.path) ?? "/var/run/meshagent",
+    };
+}
+
+function normalizeContainerMountSpec(value: unknown): ContainerMountSpec {
+    const source = objectOrUndefined(value) ?? {};
+    const room = objectArray(source.room)?.map(normalizeRoomMount);
+    const project = objectArray(source.project)?.map(normalizeProjectMount);
+    const images = objectArray(source.images)?.map(normalizeImageMount);
+    const files = objectArray(source.files)?.map(normalizeFileMount);
+    const emptyDirs = objectArray(source.empty_dirs)?.map(normalizeEmptyDirMount);
+    const configs = objectArray(source.configs)?.map(normalizeConfigMount);
+    return {
+        ...(room !== undefined ? { room } : {}),
+        ...(project !== undefined ? { project } : {}),
+        ...(images !== undefined ? { images } : {}),
+        ...(files !== undefined ? { files } : {}),
+        ...(emptyDirs !== undefined ? { empty_dirs: emptyDirs } : {}),
+        ...(configs !== undefined ? { configs } : {}),
+    };
+}
+
+function normalizeAgentSpec(agent: Record<string, unknown>, values: Record<string, string>): AgentSpec {
+    const formatted = formatJsonValue(agent, values) as Record<string, unknown>;
+    const spec = cloneJsonValue(formatted) as unknown as AgentSpec;
+
+    if (spec.email != null && spec.email.public == null) {
+        spec.email = { ...spec.email, public: false };
+    }
+
+    if (spec.channels?.email) {
+        spec.channels = {
+            ...spec.channels,
+            email: spec.channels.email.map((channel) => ({
+                ...channel,
+                private: channel.private ?? false,
+            })),
+        };
+    }
+
+    if (spec.channels?.messaging) {
+        spec.channels = {
+            ...spec.channels,
+            messaging: spec.channels.messaging.map((channel) => ({
+                ...channel,
+                protocol: channel.protocol ?? "meshagent.agent-message.v1",
+            })),
+        };
+    }
+
+    return spec;
+}
+
+export function normalizeServiceSpec(service: ServiceSpec | Record<string, unknown>): ServiceSpec {
+    const normalized = cloneJsonValue(service) as ServiceSpec;
+    if (normalized.container?.storage != null) {
+        normalized.container = {
+            ...normalized.container,
+            storage: normalizeContainerMountSpec(normalized.container.storage),
+        };
+    }
+    return normalized;
+}
+
+export class ServiceTemplateSpec {
+    public readonly version: string;
+    public readonly kind: string;
+    public readonly variables?: ServiceTemplateVariable[] | null;
+    public readonly metadata: ServiceMetadata;
+    public readonly ports: PortSpec[];
+    public readonly container?: ContainerTemplateSpec | null;
+    public readonly external?: ExternalServiceTemplateSpec | null;
+    public readonly agents: Record<string, unknown>[];
+
+    constructor({
+        version = "v1",
+        kind = "ServiceTemplate",
+        variables,
+        metadata,
+        ports = [],
+        container,
+        external,
+        agents = [],
+    }: {
+        version?: string;
+        kind?: string;
+        variables?: ServiceTemplateVariable[] | null;
+        metadata: ServiceMetadata;
+        ports?: PortSpec[];
+        container?: ContainerTemplateSpec | null;
+        external?: ExternalServiceTemplateSpec | null;
+        agents?: Record<string, unknown>[];
+    }) {
+        this.version = version;
+        this.kind = kind;
+        this.variables = variables;
+        this.metadata = metadata;
+        this.ports = ports;
+        this.container = container;
+        this.external = external;
+        this.agents = agents;
+    }
+
+    public static fromJson(json: Record<string, unknown>): ServiceTemplateSpec {
+        const metadata = objectOrUndefined(json.metadata);
+        if (metadata === undefined || typeof metadata.name !== "string") {
+            throw new RoomException("Invalid service template payload: missing metadata.name");
+        }
+        return new ServiceTemplateSpec({
+            version: stringValue(json.version) ?? "v1",
+            kind: stringValue(json.kind) ?? "ServiceTemplate",
+            variables: objectArray(json.variables) as ServiceTemplateVariable[] | undefined,
+            metadata: cloneJsonValue(metadata) as unknown as ServiceMetadata,
+            ports: (objectArray(json.ports) ?? []) as unknown as PortSpec[],
+            container: objectOrUndefined(json.container) as unknown as ContainerTemplateSpec | undefined,
+            external: objectOrUndefined(json.external) as unknown as ExternalServiceTemplateSpec | undefined,
+            agents: objectArray(json.agents) ?? [],
+        });
+    }
+
+    public toJson(): Record<string, unknown> {
+        return {
+            version: this.version,
+            kind: this.kind,
+            ...(this.variables != null ? { variables: cloneJsonValue(this.variables) } : {}),
+            metadata: cloneJsonValue(this.metadata),
+            ...(this.ports.length > 0 ? { ports: cloneJsonValue(this.ports) } : {}),
+            ...(this.container != null ? { container: cloneJsonValue(this.container) } : {}),
+            ...(this.external != null ? { external: cloneJsonValue(this.external) } : {}),
+            ...(this.agents.length > 0 ? { agents: cloneJsonValue(this.agents) } : {}),
+        };
+    }
+
+    public toServiceSpec({ values = {} }: { values?: Record<string, string> } = {}): ServiceSpec {
+        const service: ServiceSpec = {
+            version: "v1",
+            kind: "Service",
+            metadata: cloneJsonValue(this.metadata),
+            agents: this.agents.map((agent) => normalizeAgentSpec(agent, values)),
+            ports: cloneJsonValue(this.ports),
+        };
+
+        if (this.container != null) {
+            const formattedContainer = formatJsonValue(this.container, values) as Record<string, unknown>;
+            const image = stringValue(formattedContainer.image);
+            if (image === undefined || image.length === 0) {
+                throw new RoomException("ServiceTemplateSpec.image is required to build a ServiceSpec");
+            }
+            service.container = {
+                ...(booleanValue(formattedContainer.private) !== undefined ? { private: booleanValue(formattedContainer.private) } : {}),
+                ...(stringValue(formattedContainer.command) !== undefined ? { command: stringValue(formattedContainer.command) } : {}),
+                ...(stringValue(formattedContainer.working_dir) !== undefined ? { working_dir: stringValue(formattedContainer.working_dir) } : {}),
+                image,
+                ...(Array.isArray(formattedContainer.environment)
+                    ? { environment: formattedContainer.environment as EnvironmentVariable[] }
+                    : {}),
+                ...(objectOrUndefined(formattedContainer.storage) !== undefined
+                    ? { storage: normalizeContainerMountSpec(formattedContainer.storage) }
+                    : {}),
+                ...(booleanValue(formattedContainer.on_demand) !== undefined ? { on_demand: booleanValue(formattedContainer.on_demand) } : {}),
+                ...(booleanValue(formattedContainer.writable_root_fs) !== undefined
+                    ? { writable_root_fs: booleanValue(formattedContainer.writable_root_fs) }
+                    : {}),
+            };
+        }
+
+        if (this.external != null) {
+            const formattedExternal = formatJsonValue(this.external, values) as Record<string, unknown>;
+            const url = stringValue(formattedExternal.url);
+            if (url !== undefined) {
+                service.external = { url };
+            }
+        }
+
+        return normalizeServiceSpec(service);
+    }
+}
+
 export interface RouteMetadata {
     name: string;
     annotations?: Record<string, string>;
@@ -315,6 +698,31 @@ function pruneUndefinedValues(value: unknown): unknown {
                 continue;
             }
             result[key] = pruneUndefinedValues(entryValue);
+        }
+        return result;
+    }
+
+    return value;
+}
+
+function pruneNullishValues(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => pruneNullishValues(item))
+            .filter((item) => item !== undefined);
+    }
+
+    if (value === null || value === undefined) {
+        return undefined;
+    }
+
+    if (typeof value === "object") {
+        const result: Record<string, unknown> = {};
+        for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
+            const normalized = pruneNullishValues(entryValue);
+            if (normalized !== undefined) {
+                result[key] = normalized;
+            }
         }
         return result;
     }
@@ -493,6 +901,28 @@ export interface ExternalOAuthClientRegistration {
     clientSecret?: string | null;
 }
 
+export interface ManagedAgent {
+    id: string;
+    name: string;
+    configuration: Record<string, unknown>;
+}
+
+export class ManagedAgentGrant {
+    public readonly admin: boolean;
+
+    constructor({ admin = false }: { admin?: boolean } = {}) {
+        this.admin = admin;
+    }
+
+    public static fromJson(json: Record<string, unknown>): ManagedAgentGrant {
+        return new ManagedAgentGrant({ admin: json["admin"] === true });
+    }
+
+    public toJson(): Record<string, unknown> {
+        return { admin: this.admin };
+    }
+}
+
 type RequestBody = string | Uint8Array | ArrayBuffer | null | undefined;
 type JsonRequest = Record<string, unknown> | Array<unknown> | string | number | boolean | null;
 
@@ -632,7 +1062,11 @@ export class Meshagent {
             } catch {
                 message = "<unable to read body>";
             }
-            throw new RoomException(`Failed to ${action}. Status code: ${response.status}, body: ${message}`);
+            const errorMessage = `Failed to ${action}. Status code: ${response.status}, body: ${message}`;
+            if (response.status === 403) {
+                throw new ForbiddenException(errorMessage);
+            }
+            throw new RoomException(errorMessage);
         }
 
         switch (responseType) {
@@ -674,7 +1108,23 @@ export class Meshagent {
         if (!data || typeof data !== "object") {
             throw new RoomException("Invalid room session payload");
         }
-        const { id, room_id: roomIdRaw, roomId, room_name: roomNameRaw, roomName, created_at: createdRaw, createdAt, is_active: isActiveRaw, isActive, participants } = data as any;
+        const {
+            id,
+            room_id: roomIdRaw,
+            roomId,
+            room_name: roomNameRaw,
+            roomName,
+            created_at: createdRaw,
+            createdAt,
+            is_active: isActiveRaw,
+            isActive,
+            participants,
+            kind,
+            agent_id: agentIdRaw,
+            agentId,
+            agent_name: agentNameRaw,
+            agentName,
+        } = data as any;
         if (typeof id !== "string") {
             throw new RoomException("Invalid room session payload: missing id");
         }
@@ -690,13 +1140,33 @@ export class Meshagent {
         if (typeof isActiveValue !== "boolean") {
             throw new RoomException("Invalid room session payload: missing is_active");
         }
-        return {
+        return new RoomSession({
             id,
             roomId: typeof roomId === "string" ? roomId : typeof roomIdRaw === "string" ? roomIdRaw : undefined,
             roomName: roomNameValue,
             createdAt: new Date(created),
             isActive: isActiveValue,
             participants: participants && typeof participants === "object" ? participants as Record<string, number> : undefined,
+            kind: typeof kind === "string" ? kind : "room",
+            agentId: typeof agentId === "string" ? agentId : typeof agentIdRaw === "string" ? agentIdRaw : undefined,
+            agentName: typeof agentName === "string" ? agentName : typeof agentNameRaw === "string" ? agentNameRaw : undefined,
+        });
+    }
+
+    private parseManagedAgent(data: any): ManagedAgent {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid managed agent payload");
+        }
+        const { id, name, configuration } = data as any;
+        if (typeof id !== "string" || typeof name !== "string") {
+            throw new RoomException("Invalid managed agent payload: missing id or name");
+        }
+        return {
+            id,
+            name,
+            configuration: configuration && typeof configuration === "object" && !Array.isArray(configuration)
+                ? configuration as Record<string, unknown>
+                : {},
         };
     }
 
@@ -1491,6 +1961,34 @@ export class Meshagent {
         });
     }
 
+    async createAgent(params: {
+        projectId: string;
+        configuration: Record<string, unknown>;
+        ifNotExists?: boolean;
+        permissions?: Record<string, ManagedAgentGrant> | null;
+    }): Promise<ManagedAgent> {
+        const { projectId, configuration, ifNotExists = false, permissions } = params;
+        const permissionsJson = permissions == null
+            ? undefined
+            : Object.fromEntries(
+                Object.entries(permissions).map(([userId, grant]) => [userId, grant.toJson()]),
+            );
+
+        const data = await this.request<Record<string, unknown>>(
+            `/accounts/projects/${this.encodePathComponent(projectId)}/agents`,
+            {
+                method: "POST",
+                json: {
+                    configuration: pruneNullishValues(configuration) as Record<string, unknown>,
+                    if_not_exists: ifNotExists,
+                    ...(permissionsJson !== undefined ? { permissions: permissionsJson } : {}),
+                },
+                action: "create agent",
+            },
+        );
+        return this.parseManagedAgent(data);
+    }
+
     // API keys ----------------------------------------------------------------
 
     async createApiKey(projectId: string, name: string, description: string): Promise<Record<string, unknown>> {
@@ -2169,7 +2667,7 @@ export class Meshagent {
         const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/services/${serviceId}`, {
             action: "fetch room service",
         });
-        return data as ServiceSpec;
+        return normalizeServiceSpec(data as Record<string, unknown>);
     }
 
     async listRoomServices(projectId: string, roomName: string): Promise<ServiceSpec[]> {
@@ -2180,7 +2678,7 @@ export class Meshagent {
             },
         );
         const services = Array.isArray(data?.services) ? data.services : [];
-        return services as ServiceSpec[];
+        return services.map((service) => normalizeServiceSpec(service));
     }
 
     async deleteRoomService(projectId: string, roomName: string, serviceId: string): Promise<void> {
@@ -2207,7 +2705,7 @@ export class Meshagent {
         const data = await this.request(`/accounts/projects/${projectId}/services/${serviceId}`, {
             action: "fetch service",
         });
-        return data as ServiceSpec;
+        return normalizeServiceSpec(data as Record<string, unknown>);
     }
 
     async listServices(projectId: string): Promise<ServiceSpec[]> {
@@ -2215,7 +2713,7 @@ export class Meshagent {
             action: "list services",
         });
         const services = Array.isArray(data?.services) ? data.services : [];
-        return services as ServiceSpec[];
+        return services.map((service) => normalizeServiceSpec(service));
     }
 
     async deleteService(projectId: string, serviceId: string): Promise<void> {
