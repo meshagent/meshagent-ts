@@ -1881,9 +1881,9 @@ export class Meshagent {
     async addUserToProject(
         projectId: string,
         userId: string,
-        options: { isAdmin?: boolean; isDeveloper?: boolean; canCreateRooms?: boolean } = {},
+        options: { isAdmin?: boolean; isDeveloper?: boolean; canCreateRooms?: boolean; inviteRedirectUrl?: string } = {},
     ): Promise<Record<string, unknown>> {
-        const { isAdmin, isDeveloper, canCreateRooms } = options;
+        const { isAdmin, isDeveloper, canCreateRooms, inviteRedirectUrl } = options;
         return await this.request(`/accounts/projects/${projectId}/users`, {
             method: "POST",
             json: {
@@ -1893,6 +1893,33 @@ export class Meshagent {
                 ...(isDeveloper !== undefined ? { is_developer: isDeveloper } : {}),
                 ...(canCreateRooms !== undefined
                     ? { can_create_rooms: canCreateRooms }
+                    : {}),
+                ...(inviteRedirectUrl !== undefined
+                    ? { invite_redirect_url: inviteRedirectUrl }
+                    : {}),
+            },
+            action: "add user to project",
+        });
+    }
+
+    async addUserToProjectByEmail(
+        projectId: string,
+        email: string,
+        options: { isAdmin?: boolean; isDeveloper?: boolean; canCreateRooms?: boolean; inviteRedirectUrl?: string } = {},
+    ): Promise<Record<string, unknown>> {
+        const { isAdmin, isDeveloper, canCreateRooms, inviteRedirectUrl } = options;
+        return await this.request(`/accounts/projects/${projectId}/users`, {
+            method: "POST",
+            json: {
+                project_id: projectId,
+                email,
+                ...(isAdmin !== undefined ? { is_admin: isAdmin } : {}),
+                ...(isDeveloper !== undefined ? { is_developer: isDeveloper } : {}),
+                ...(canCreateRooms !== undefined
+                    ? { can_create_rooms: canCreateRooms }
+                    : {}),
+                ...(inviteRedirectUrl !== undefined
+                    ? { invite_redirect_url: inviteRedirectUrl }
                     : {}),
             },
             action: "add user to project",
@@ -3194,14 +3221,17 @@ export class Meshagent {
         });
     }
 
-    async createRoomGrantByEmail(params: { projectId: string; roomId: string; email: string; permissions: ApiScope }): Promise<void> {
-        const { projectId, roomId, email, permissions } = params;
+    async createRoomGrantByEmail(params: { projectId: string; roomId: string; email: string; permissions: ApiScope; inviteRedirectUrl?: string }): Promise<void> {
+        const { projectId, roomId, email, permissions, inviteRedirectUrl } = params;
         await this.request(`/accounts/projects/${projectId}/room-grants`, {
             method: "POST",
             json: {
                 room_id: roomId,
                 email,
                 permissions: permissions.toJSON(),
+                ...(inviteRedirectUrl !== undefined
+                    ? { invite_redirect_url: inviteRedirectUrl }
+                    : {}),
             },
             action: "create room grant",
             responseType: "void",
