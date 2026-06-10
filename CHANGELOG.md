@@ -1,3 +1,18 @@
+## [0.44.11]
+- Stability
+
+## [0.44.10]
+- Stability
+
+## [0.44.9]
+START SUMMARY OF PYTHON API CHANGES END SUMMARY OF PYTHON API CHANGES
+
+## [0.44.8]
+- Stability
+
+## [0.44.7]
+- Stability
+
 ## [0.44.6]
 - Stability
 
