@@ -35,7 +35,7 @@ describe("meshagent_client_repository_test", () => {
                     : undefined,
             });
 
-            if (url.endsWith("/repositories")) {
+            if (url.endsWith("/repositories") && (init?.method ?? "GET") === "POST") {
                 return jsonResponse({
                     id: "repo-1",
                     project_id: "proj_123",
@@ -132,7 +132,7 @@ describe("meshagent_client_repository_test", () => {
                 url,
             });
 
-            if (url.endsWith("/repositories")) {
+            if (url.endsWith("/repositories?page_size=100")) {
                 return jsonResponse({
                     repositories: [
                         {
@@ -144,6 +144,7 @@ describe("meshagent_client_repository_test", () => {
                             created_at: "2026-04-19T00:00:00Z",
                         },
                     ],
+                    continuation_token: null,
                 });
             }
 
@@ -189,7 +190,7 @@ describe("meshagent_client_repository_test", () => {
             expect(calls).to.deep.equal([
                 {
                     method: "GET",
-                    url: "http://example.test/accounts/projects/proj_123/repositories",
+                    url: "http://example.test/accounts/projects/proj_123/repositories?page_size=100",
                 },
                 {
                     method: "GET",

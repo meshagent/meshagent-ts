@@ -3,12 +3,85 @@ import { RoomException } from "./requirement.js";
 import { ApiScope } from "./participant-token.js";
 import { decoder, encoder } from "./utils.js";
 
-export type ProjectRole = "member" | "admin" | "developer";
+export type ProjectRole =
+    | "member"
+    | "admin"
+    | "developer"
+    | "room_creator"
+    | "room_inventory"
+    | "room_manager"
+    | "session_inventory"
+    | "agent_creator"
+    | "agent_inventory"
+    | "agent_manager"
+    | "repository_creator"
+    | "repository_inventory"
+    | "repository_manager"
+    | "feed_creator"
+    | "feed_inventory"
+    | "feed_manager"
+    | "oauth_client_creator"
+    | "oauth_client_inventory"
+    | "oauth_client_manager"
+    | "api_key_creator"
+    | "api_key_inventory"
+    | "api_key_manager"
+    | "secret_creator"
+    | "secret_inventory"
+    | "secret_manager"
+    | "external_oauth_client_creator"
+    | "external_oauth_client_inventory"
+    | "external_oauth_client_manager"
+    | "service_creator"
+    | "service_inventory"
+    | "service_manager"
+    | "service_account_creator"
+    | "service_account_inventory"
+    | "service_account_manager"
+    | "participant_token_creator"
+    | "mailbox_creator"
+    | "mailbox_inventory"
+    | "mailbox_manager"
+    | "route_creator"
+    | "route_inventory"
+    | "route_manager"
+    | "scheduled_task_creator"
+    | "scheduled_task_inventory"
+    | "scheduled_task_manager"
+    | "feed_subscription_creator"
+    | "feed_subscription_inventory"
+    | "feed_subscription_manager"
+    | "llm_logger_creator"
+    | "llm_logger_inventory"
+    | "llm_logger_manager"
+    | "llm_proxy_user"
+    | "usage_reporter"
+    | "billing_manager"
+    | "group_manager";
+export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
+export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
+export type SecretRole = "secret_accessor" | "secret_manager" | "secret_list";
+export type AccessRole = ProjectRole | ResourceRole | FeedRole | SecretRole | "list";
+export type AccessSubjectType = "user" | "group" | "agent" | "service_account" | "userset";
+export type AccessResourceType = "project" | "room" | "agent" | "group" | "repository" | "feed" | "secret";
 
-export interface RoomShare {
+export interface AccessSubject {
+    type: AccessSubjectType;
     id: string;
-    projectId: string;
-    settings: Record<string, unknown>;
+    name?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    objectType?: "project" | null;
+    relation?: "member" | "developer" | "agent" | null;
+}
+
+export interface AccessResource {
+    type: AccessResourceType;
+    id: string;
+    name?: string | null;
+    metadata?: Record<string, unknown> | null;
+    annotations?: Record<string, string> | null;
 }
 
 export interface RoomConnectionInfo {
@@ -25,6 +98,9 @@ export interface RoomSession {
     createdAt: Date;
     isActive: boolean;
     participants?: Record<string, number>;
+    kind?: string;
+    agentId?: string | null;
+    agentName?: string | null;
 }
 
 export interface RoomInfo {
@@ -34,33 +110,108 @@ export interface RoomInfo {
     annotations: Record<string, string>;
 }
 
+export interface GroupInfo {
+    id: string;
+    name: string;
+    metadata: Record<string, unknown>;
+    annotations: Record<string, string>;
+}
+
 export interface ProjectRoomGrant {
+    resource: AccessResource;
+    subject: AccessSubject;
+    directRoles: AccessRole[];
     room: RoomInfo;
     userId: string;
-    permissions: ApiScope;
 }
 
-export interface ProjectRoomGrantCount {
-    room: RoomInfo;
-    count: number;
+export interface AccessTestResult {
+    allowed: boolean;
+    resource?: AccessResource;
+    subject?: AccessSubject;
+    relation?: string;
 }
 
-export interface ProjectUserGrantCount {
-    userId: string;
-    count: number;
+export interface EffectiveAccess {
+    resource: AccessResource;
+    subject: AccessSubject;
+    effectiveRoles: string[];
+    capabilities: Record<string, boolean>;
+}
+
+export interface AccessBindingsPage {
+    accessGrants: ProjectRoomGrant[];
+}
+
+export interface ResourcePolicyPage {
+    resource: AccessResource;
+    accessGrants: ProjectRoomGrant[];
+    continuationToken?: string | null;
+}
+
+export interface ProjectMember {
+    id: string;
+    email: string;
     firstName?: string | null;
     lastName?: string | null;
-    email: string;
+    directRoles: ProjectRole[];
 }
 
 export interface ProjectMembersPage {
-    users: Record<string, unknown>[];
-    total: number;
+    users: ProjectMember[];
+    continuationToken?: string | null;
 }
 
-export interface ProjectUserGrantCountsPage {
-    users: ProjectUserGrantCount[];
-    total: number;
+export interface GroupsPage {
+    groups: GroupInfo[];
+    continuationToken?: string | null;
+}
+
+export interface ServiceAccountInfo {
+    id: string;
+    project_id?: string;
+    key?: string;
+    name: string;
+    display_name?: string | null;
+    description?: string | null;
+    metadata?: Record<string, unknown>;
+    annotations?: Record<string, string>;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export interface ServiceAccountsPage {
+    service_accounts: ServiceAccountInfo[];
+    continuation_token?: string | null;
+}
+
+export interface ApiKeyInfo {
+    id: string;
+    name: string;
+    description?: string | null;
+    project_id?: string | null;
+    service_account_id?: string | null;
+    created_at?: string | null;
+    last_used_at?: string | null;
+    value?: string | null;
+}
+
+export interface ApiKeysPage {
+    keys: ApiKeyInfo[];
+}
+
+export interface ApiKeysRevocationResult {
+    revoked: string[];
+}
+
+export interface GroupMember {
+    subject: AccessSubject;
+    directRoles: Array<"member" | "manager">;
+}
+
+export interface GroupMembersPage {
+    members: GroupMember[];
+    continuationToken?: string | null;
 }
 
 export interface EnvironmentVariable {
@@ -294,6 +445,7 @@ export interface Route {
 export interface RoutesPage {
     routes: Route[];
     total: number;
+    continuationToken?: string | null;
 }
 
 function pruneUndefinedValues(value: unknown): unknown {
@@ -358,6 +510,7 @@ export interface Mailbox {
 export interface MailboxesPage {
     mailboxes: Mailbox[];
     total: number;
+    continuationToken?: string | null;
 }
 
 export type FeedVisibility = "public" | "project" | "private";
@@ -377,6 +530,7 @@ export interface Feed {
 export interface FeedsPage {
     feeds: Feed[];
     total: number;
+    continuationToken?: string | null;
 }
 
 export interface FeedSubscription {
@@ -438,6 +592,7 @@ export interface OAuthClient {
     scope: string;
     projectId: string;
     metadata: Record<string, string>;
+    official: boolean;
 }
 
 export interface OAuthClientsPage {
@@ -651,30 +806,27 @@ export class Meshagent {
         }
     }
 
-    private parseRoomShare(data: any): RoomShare {
-        if (!data || typeof data !== "object") {
-            throw new RoomException("Invalid room share payload: expected object");
-        }
-        const { id, project_id: projectId, projectId: projectIdAlt, settings } = data as any;
-        if (typeof id !== "string") {
-            throw new RoomException("Invalid room share payload: missing id");
-        }
-        const finalProjectId = typeof projectIdAlt === "string" ? projectIdAlt : typeof projectId === "string" ? projectId : undefined;
-        if (!finalProjectId) {
-            throw new RoomException("Invalid room share payload: missing project id");
-        }
-        return {
-            id,
-            projectId: finalProjectId,
-            settings: (settings && typeof settings === "object") ? settings as Record<string, unknown> : {},
-        };
-    }
-
     private parseRoomSession(data: any): RoomSession {
         if (!data || typeof data !== "object") {
             throw new RoomException("Invalid room session payload");
         }
-        const { id, room_id: roomIdRaw, roomId, room_name: roomNameRaw, roomName, created_at: createdRaw, createdAt, is_active: isActiveRaw, isActive, participants } = data as any;
+        const {
+            id,
+            room_id: roomIdRaw,
+            roomId,
+            room_name: roomNameRaw,
+            roomName,
+            created_at: createdRaw,
+            createdAt,
+            is_active: isActiveRaw,
+            isActive,
+            participants,
+            kind,
+            agent_id: agentIdRaw,
+            agentId,
+            agent_name: agentNameRaw,
+            agentName,
+        } = data as any;
         if (typeof id !== "string") {
             throw new RoomException("Invalid room session payload: missing id");
         }
@@ -697,6 +849,9 @@ export class Meshagent {
             createdAt: new Date(created),
             isActive: isActiveValue,
             participants: participants && typeof participants === "object" ? participants as Record<string, number> : undefined,
+            kind: typeof kind === "string" ? kind : undefined,
+            agentId: typeof agentId === "string" ? agentId : typeof agentIdRaw === "string" ? agentIdRaw : undefined,
+            agentName: typeof agentName === "string" ? agentName : typeof agentNameRaw === "string" ? agentNameRaw : undefined,
         };
     }
 
@@ -707,6 +862,22 @@ export class Meshagent {
         const { id, name, metadata, annotations } = data as any;
         if (typeof id !== "string" || typeof name !== "string") {
             throw new RoomException("Invalid room payload: missing id or name");
+        }
+        return {
+            id,
+            name,
+            metadata: metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : {},
+            annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+        };
+    }
+
+    private parseGroup(data: any): GroupInfo {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid group payload");
+        }
+        const { id, name, metadata, annotations } = data as any;
+        if (typeof id !== "string" || typeof name !== "string") {
+            throw new RoomException("Invalid group payload: missing id or name");
         }
         return {
             id,
@@ -948,55 +1119,186 @@ export class Meshagent {
         };
     }
 
+    private parseAccessResource(resource: any): AccessResource {
+        if (!resource || typeof resource !== "object" || typeof resource.type !== "string" || typeof resource.id !== "string") {
+            throw new RoomException("Invalid access resource payload");
+        }
+        return {
+            type: resource.type as AccessResourceType,
+            id: resource.id,
+            name: typeof resource.name === "string" ? resource.name : null,
+            metadata: resource.metadata && typeof resource.metadata === "object" ? resource.metadata as Record<string, unknown> : {},
+            annotations: resource.annotations && typeof resource.annotations === "object" ? resource.annotations as Record<string, string> : {},
+        };
+    }
+
+    private parseAccessSubject(subject: any): AccessSubject {
+        if (!subject || typeof subject !== "object" || typeof subject.type !== "string" || typeof subject.id !== "string") {
+            throw new RoomException("Invalid access subject payload");
+        }
+        return {
+            type: subject.type as AccessSubjectType,
+            id: subject.id,
+            name: typeof subject.name === "string" ? subject.name : null,
+            firstName: typeof subject.first_name === "string" ? subject.first_name : null,
+            lastName: typeof subject.last_name === "string" ? subject.last_name : null,
+            email: typeof subject.email === "string" ? subject.email : null,
+            objectType: typeof subject.object_type === "string" ? subject.object_type as "project" : null,
+            relation: typeof subject.relation === "string" ? subject.relation as "member" | "developer" | "agent" : null,
+        };
+    }
+
+    private serializeAccessSubject(subject: AccessSubject): Record<string, unknown> {
+        return {
+            type: subject.type,
+            id: subject.id,
+            ...(subject.name !== undefined ? { name: subject.name } : {}),
+            ...(subject.firstName !== undefined ? { first_name: subject.firstName } : {}),
+            ...(subject.lastName !== undefined ? { last_name: subject.lastName } : {}),
+            ...(subject.email !== undefined ? { email: subject.email } : {}),
+            ...(subject.objectType !== undefined ? { object_type: subject.objectType } : {}),
+            ...(subject.relation !== undefined ? { relation: subject.relation } : {}),
+        };
+    }
+
+    private serializeAccessResource(resource: AccessResource): Record<string, unknown> {
+        return {
+            type: resource.type,
+            id: resource.id,
+            ...(resource.name !== undefined ? { name: resource.name } : {}),
+            ...(resource.metadata !== undefined ? { metadata: resource.metadata } : {}),
+            ...(resource.annotations !== undefined ? { annotations: resource.annotations } : {}),
+        };
+    }
+
+    private parseProjectMember(data: any): ProjectMember {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid project member payload");
+        }
+        const user = data.user && typeof data.user === "object" ? data.user : data;
+        const directRoles = Array.isArray(data.direct_roles)
+            ? data.direct_roles.filter(
+                  (item: unknown): item is ProjectRole =>
+                      item === "member" ||
+                      item === "admin" ||
+                      item === "developer" ||
+                      item === "room_creator" ||
+                      item === "agent_creator" ||
+                      item === "mailbox_creator" ||
+                      item === "route_creator" ||
+                      item === "scheduled_task_creator" ||
+                      item === "llm_proxy_user" ||
+                      item === "usage_reporter" ||
+                      item === "billing_manager" ||
+                      item === "group_manager",
+              )
+            : [];
+        const id = typeof user.id === "string" ? user.id : "";
+        const email = typeof user.email === "string" ? user.email : "";
+        return {
+            id,
+            email,
+            firstName: typeof user.first_name === "string" ? user.first_name : null,
+            lastName: typeof user.last_name === "string" ? user.last_name : null,
+            directRoles,
+        };
+    }
+
+    private parseGroupMember(data: any): GroupMember {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid group member payload");
+        }
+        const directRoles = Array.isArray(data.direct_roles)
+            ? data.direct_roles.filter((item: unknown): item is "member" | "manager" => item === "member" || item === "manager")
+            : [];
+        return {
+            subject: this.parseAccessSubject(data.subject),
+            directRoles,
+        };
+    }
+
     private parseProjectRoomGrant(data: any): ProjectRoomGrant {
         if (!data || typeof data !== "object") {
             throw new RoomException("Invalid room grant payload");
         }
-        const roomData = (data as any).room;
-        const room = this.parseRoom(roomData);
-        const userId = (data as any).user_id ?? (data as any).userId;
-        if (typeof userId !== "string") {
-            throw new RoomException("Invalid room grant payload: missing user_id");
-        }
-        const permissionsRaw = (data as any).permissions;
-        const permissions = permissionsRaw && typeof permissionsRaw === "object" ? ApiScope.fromJSON(permissionsRaw) : new ApiScope();
-        return { room, userId, permissions };
-    }
-
-    private parseProjectRoomGrantCount(data: any): ProjectRoomGrantCount {
-        const roomData = (data && typeof data === "object") ? ((data as any).room ?? { id: (data as any).room_id, name: (data as any).room_name, metadata: (data as any).metadata ?? {} }) : undefined;
-        if (!roomData) {
-            throw new RoomException("Invalid room grant count payload: missing room");
-        }
-        const room = this.parseRoom(roomData);
-        const count = (data as any).count;
-        if (typeof count !== "number") {
-            throw new RoomException("Invalid room grant count payload: missing count");
-        }
-        return { room, count };
-    }
-
-    private parseProjectUserGrantCount(data: any): ProjectUserGrantCount {
-        if (!data || typeof data !== "object") {
-            throw new RoomException("Invalid room grant user count payload");
-        }
-        const { user_id: userIdRaw, userId, count, first_name: firstNameRaw, firstName, last_name: lastNameRaw, lastName, email } = data as any;
-        const userIdValue = typeof userId === "string" ? userId : userIdRaw;
-        if (typeof userIdValue !== "string") {
-            throw new RoomException("Invalid room grant user count payload: missing user_id");
-        }
-        if (typeof count !== "number") {
-            throw new RoomException("Invalid room grant user count payload: missing count");
-        }
-        if (typeof email !== "string") {
-            throw new RoomException("Invalid room grant user count payload: missing email");
-        }
+        const parsedResource = this.parseAccessResource((data as any).resource);
+        const parsedSubject = this.parseAccessSubject((data as any).subject);
+        const parsedDirectRoles = Array.isArray((data as any).direct_roles)
+            ? (data as any).direct_roles.filter((item: unknown): item is AccessRole =>
+                  item === "member" ||
+                  item === "viewer" ||
+                  item === "operator" ||
+                  item === "developer" ||
+                  item === "admin" ||
+                  item === "room_creator" ||
+                  item === "room_inventory" ||
+                  item === "room_manager" ||
+                  item === "session_inventory" ||
+                  item === "agent_creator" ||
+                  item === "agent_inventory" ||
+                  item === "agent_manager" ||
+                  item === "repository_creator" ||
+                  item === "repository_inventory" ||
+                  item === "repository_manager" ||
+                  item === "feed_creator" ||
+                  item === "feed_inventory" ||
+                  item === "feed_manager" ||
+                  item === "oauth_client_creator" ||
+                  item === "oauth_client_inventory" ||
+                  item === "oauth_client_manager" ||
+                  item === "api_key_creator" ||
+                  item === "api_key_inventory" ||
+                  item === "api_key_manager" ||
+                  item === "secret_creator" ||
+                  item === "secret_inventory" ||
+                  item === "secret_manager" ||
+                  item === "external_oauth_client_creator" ||
+                  item === "external_oauth_client_inventory" ||
+                  item === "external_oauth_client_manager" ||
+                  item === "service_creator" ||
+                  item === "service_inventory" ||
+                  item === "service_manager" ||
+                  item === "service_account_creator" ||
+                  item === "service_account_inventory" ||
+                  item === "service_account_manager" ||
+                  item === "participant_token_creator" ||
+                  item === "mailbox_creator" ||
+                  item === "mailbox_inventory" ||
+                  item === "mailbox_manager" ||
+                  item === "route_creator" ||
+                  item === "route_inventory" ||
+                  item === "route_manager" ||
+                  item === "scheduled_task_creator" ||
+                  item === "scheduled_task_inventory" ||
+                  item === "scheduled_task_manager" ||
+                  item === "feed_subscription_creator" ||
+                  item === "feed_subscription_inventory" ||
+                  item === "feed_subscription_manager" ||
+                  item === "llm_logger_creator" ||
+                  item === "llm_logger_inventory" ||
+                  item === "llm_logger_manager" ||
+                  item === "llm_proxy_user" ||
+                  item === "usage_reporter" ||
+                  item === "billing_manager" ||
+                  item === "group_manager" ||
+                  item === "reader" ||
+                  item === "subscriber" ||
+                  item === "publisher" ||
+                  item === "manager" ||
+                  item === "list")
+            : [];
+        const room: RoomInfo = {
+            id: parsedResource.id,
+            name: parsedResource.name ?? parsedResource.id,
+            metadata: parsedResource.metadata ?? {},
+            annotations: parsedResource.annotations ?? {},
+        };
         return {
-            userId: userIdValue,
-            count,
-            firstName: typeof firstName === "string" ? firstName : firstNameRaw,
-            lastName: typeof lastName === "string" ? lastName : lastNameRaw,
-            email,
+            resource: parsedResource,
+            subject: parsedSubject,
+            directRoles: parsedDirectRoles,
+            room,
+            userId: parsedSubject.id,
         };
     }
 
@@ -1278,6 +1580,9 @@ export class Meshagent {
         if (!data || typeof data !== "object") {
             throw new RoomException("Invalid OAuth client payload");
         }
+        if ("client" in data && data.client && typeof data.client === "object") {
+            data = data.client;
+        }
         const { client_id: clientIdRaw, clientId, client_secret: clientSecretRaw, clientSecret, grant_types: grantTypesRaw, grantTypes, response_types: responseTypesRaw, responseTypes, redirect_uris: redirectUrisRaw, redirectUris, scope, project_id: projectIdRaw, projectId, metadata } = data as any;
         const clientIdValue = typeof clientId === "string" ? clientId : clientIdRaw;
         const clientSecretValue = typeof clientSecret === "string" ? clientSecret : clientSecretRaw;
@@ -1305,6 +1610,7 @@ export class Meshagent {
             scope,
             projectId: projectIdValue,
             metadata: metadata && typeof metadata === "object" ? metadata as Record<string, string> : {},
+            official: Boolean((data as any).official),
         };
     }
 
@@ -1354,50 +1660,6 @@ export class Meshagent {
 
     // Shares ------------------------------------------------------------------
 
-    async getProjectRole(projectId: string): Promise<ProjectRole> {
-        const payload = await this.request<{ role: ProjectRole }>(`/accounts/projects/${projectId}/role`, {
-            action: "fetch project role",
-        });
-        const role = payload?.role;
-        if (role !== "member" && role !== "admin" && role !== "developer") {
-            throw new RoomException("Invalid role payload");
-        }
-        return role;
-    }
-
-    async createShare(projectId: string, settings?: Record<string, unknown>): Promise<{ id: string }> {
-        return await this.request(`/accounts/projects/${projectId}/shares`, {
-            method: "POST",
-            json: { settings: settings ?? {} },
-            action: "create share",
-        });
-    }
-
-    async deleteShare(projectId: string, shareId: string): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/shares/${shareId}`, {
-            method: "DELETE",
-            action: "delete share",
-            responseType: "void",
-        });
-    }
-
-    async updateShare(projectId: string, shareId: string, settings?: Record<string, unknown>): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/shares/${shareId}`, {
-            method: "PUT",
-            json: { settings: settings ?? {} },
-            action: "update share",
-            responseType: "void",
-        });
-    }
-
-    async listShares(projectId: string): Promise<RoomShare[]> {
-        const data = await this.request<{ shares: any[] }>(`/accounts/projects/${projectId}/shares`, {
-            action: "list shares",
-        });
-        const shares = Array.isArray(data?.shares) ? data.shares : [];
-        return shares.map((item) => this.parseRoomShare(item));
-    }
-
     // Projects & users --------------------------------------------------------
 
     async createProject(name: string, settings?: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1411,19 +1673,17 @@ export class Meshagent {
     async addUserToProject(
         projectId: string,
         userId: string,
-        options: { isAdmin?: boolean; isDeveloper?: boolean; canCreateRooms?: boolean } = {},
+        options: { roles?: ProjectRole[]; email?: string; inviteRedirectUrl?: string } = {},
     ): Promise<Record<string, unknown>> {
-        const { isAdmin, isDeveloper, canCreateRooms } = options;
+        const { roles = ["member"], email, inviteRedirectUrl } = options;
         return await this.request(`/accounts/projects/${projectId}/users`, {
             method: "POST",
             json: {
                 project_id: projectId,
                 user_id: userId,
-                ...(isAdmin !== undefined ? { is_admin: isAdmin } : {}),
-                ...(isDeveloper !== undefined ? { is_developer: isDeveloper } : {}),
-                ...(canCreateRooms !== undefined
-                    ? { can_create_rooms: canCreateRooms }
-                    : {}),
+                roles,
+                ...(email !== undefined ? { email } : {}),
+                ...(inviteRedirectUrl !== undefined ? { invite_redirect_url: inviteRedirectUrl } : {}),
             },
             action: "add user to project",
         });
@@ -1444,19 +1704,27 @@ export class Meshagent {
         });
     }
 
-    async getUsersInProjectPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<ProjectMembersPage> {
-        const { count = 100, offset = 0, filter } = options;
-        const data = await this.request<{ users?: any[]; total?: number }>(`/accounts/projects/${projectId}/users`, {
-            query: { count, offset, filter },
+    async updateUserInProject(projectId: string, userId: string, roles: ProjectRole[]): Promise<Record<string, unknown>> {
+        return await this.request(`/accounts/projects/${projectId}/users/${userId}`, {
+            method: "PUT",
+            json: { roles },
+            action: "update project user",
+        });
+    }
+
+    async getUsersInProjectPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string; email?: string } = {}): Promise<ProjectMembersPage> {
+        const { pageSize = 100, continuationToken, filter, email } = options;
+        const data = await this.request<{ users?: any[]; continuation_token?: string | null }>(`/accounts/projects/${projectId}/users`, {
+            query: { page_size: pageSize, continuation_token: continuationToken, filter, email },
             action: "fetch project users",
         });
         const users = Array.isArray(data?.users) ? data.users : [];
-        return { users, total: typeof data?.total === "number" ? data.total : users.length };
+        return { users: users.map((user) => this.parseProjectMember(user)), continuationToken: data?.continuation_token ?? null };
     }
 
-    async getUsersInProject(projectId: string): Promise<Record<string, unknown>> {
+    async getUsersInProject(projectId: string): Promise<ProjectMember[]> {
         const page = await this.getUsersInProjectPage(projectId);
-        return { users: page.users, total: page.total };
+        return page.users;
     }
 
     async getUserProfile(userId: string): Promise<Record<string, unknown>> {
@@ -1491,26 +1759,79 @@ export class Meshagent {
         });
     }
 
+    // Service accounts --------------------------------------------------------
+
+    async listServiceAccounts(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<ServiceAccountsPage> {
+        const params = new URLSearchParams();
+        if (options.pageSize !== undefined) params.set("page_size", String(options.pageSize));
+        if (options.continuationToken !== undefined) params.set("continuation_token", options.continuationToken);
+        if (options.filter !== undefined) params.set("filter", options.filter);
+        const query = params.toString();
+        return await this.request(`/accounts/projects/${projectId}/service-accounts${query ? `?${query}` : ""}`, {
+            action: "list service accounts",
+        });
+    }
+
+    async createServiceAccount(projectId: string, name: string, options: { displayName?: string; description?: string; metadata?: Record<string, unknown>; annotations?: Record<string, string> } = {}): Promise<ServiceAccountInfo> {
+        return await this.request(`/accounts/projects/${projectId}/service-accounts`, {
+            method: "POST",
+            json: { name, ...options },
+            action: "create service account",
+        });
+    }
+
+    async mintParticipantToken(
+        projectId: string,
+        options: { name: string; roomName?: string; role?: string; api?: Record<string, unknown>; grants?: Record<string, unknown>[] },
+    ): Promise<string> {
+        const json =
+            options.grants !== undefined
+                ? { name: options.name, grants: options.grants }
+                : {
+                      name: options.name,
+                      room_name: options.roomName,
+                      role: options.role,
+                      api: options.api,
+                  };
+        const data = await this.request<{ token?: unknown }>(`/accounts/projects/${projectId}/participant-tokens`, {
+            method: "POST",
+            json,
+            action: "mint participant token",
+        });
+        if (typeof data?.token !== "string" || data.token.trim() === "") {
+            throw new Error("Invalid participant token mint response");
+        }
+        return data.token;
+    }
+
     // API keys ----------------------------------------------------------------
 
-    async createApiKey(projectId: string, name: string, description: string): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/api-keys`, {
+    async createApiKey(projectId: string, serviceAccountId: string, name: string, description: string): Promise<ApiKeyInfo> {
+        return await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/api-keys`, {
             method: "POST",
             json: { name, description },
             action: "create api key",
         });
     }
 
-    async deleteApiKey(projectId: string, id: string): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/api-keys/${id}`, {
+    async deleteApiKey(projectId: string, serviceAccountId: string, id: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/api-keys/${id}`, {
             method: "DELETE",
             action: "delete api key",
             responseType: "void",
         });
     }
 
-    async listApiKeys(projectId: string): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/api-keys`, {
+    async revokeApiKeysByMsid(projectId: string, serviceAccountId: string, msid: string): Promise<ApiKeysRevocationResult> {
+        return await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/api-keys:revoke`, {
+            method: "POST",
+            json: { msid },
+            action: "revoke api keys",
+        });
+    }
+
+    async listApiKeys(projectId: string, serviceAccountId: string): Promise<ApiKeysPage> {
+        return await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/api-keys`, {
             action: "list api keys",
         });
     }
@@ -1654,6 +1975,34 @@ export class Meshagent {
         return sessions.map((item) => this.parseRoomSession(item));
     }
 
+    async listRecentRoomSessions(projectId: string, roomName: string, options: { limit?: number } = {}): Promise<RoomSession[]> {
+        const params = new URLSearchParams();
+        if (options.limit !== undefined) {
+            params.set("limit", String(options.limit));
+        }
+        const query = params.size > 0 ? `?${params.toString()}` : "";
+        const data = await this.request<{ sessions?: any[] }>(
+            `/accounts/projects/${projectId}/rooms/${encodeURIComponent(roomName)}/sessions${query}`,
+            { action: "list recent room sessions" },
+        );
+        const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+        return sessions.map((item) => this.parseRoomSession(item));
+    }
+
+    async listRecentSingleAgentSessions(projectId: string, agentName: string, options: { limit?: number } = {}): Promise<RoomSession[]> {
+        const params = new URLSearchParams();
+        if (options.limit !== undefined) {
+            params.set("limit", String(options.limit));
+        }
+        const query = params.size > 0 ? `?${params.toString()}` : "";
+        const data = await this.request<{ sessions?: any[] }>(
+            `/accounts/projects/${projectId}/agents/${encodeURIComponent(agentName)}/sessions${query}`,
+            { action: "list recent agent sessions" },
+        );
+        const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+        return sessions.map((item) => this.parseRoomSession(item));
+    }
+
     async listSessionEvents(projectId: string, sessionId: string): Promise<Record<string, unknown>[]> {
         const data = await this.request<Record<string, unknown>>(`/accounts/projects/${projectId}/sessions/${sessionId}/events`, {
             action: "list session events",
@@ -1684,40 +2033,6 @@ export class Meshagent {
         });
         const metrics = data?.["metrics"];
         return Array.isArray(metrics) ? metrics as Record<string, unknown>[] : [];
-    }
-
-    // Webhooks ----------------------------------------------------------------
-
-    async createWebhook(projectId: string, params: { name: string; url: string; events: string[]; description?: string; action?: string; payload?: Record<string, unknown> | null }): Promise<Record<string, unknown>> {
-        const { name, url, events, description = "", action: webhookAction = "", payload = null } = params;
-        return await this.request(`/accounts/projects/${projectId}/webhooks`, {
-            method: "POST",
-            json: { name, description, url, events, action: webhookAction, payload },
-            action: "create webhook",
-        });
-    }
-
-    async updateWebhook(projectId: string, webhookId: string, params: { name: string; url: string; events: string[]; description?: string; action?: string | null; payload?: Record<string, unknown> | null }): Promise<Record<string, unknown>> {
-        const { name, url, events, description = "", action: webhookAction = null, payload = null } = params;
-        return await this.request(`/accounts/projects/${projectId}/webhooks/${webhookId}`, {
-            method: "PUT",
-            json: { name, description, url, events, action: webhookAction, payload },
-            action: "update webhook",
-        });
-    }
-
-    async listWebhooks(projectId: string): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/webhooks`, {
-            action: "list webhooks",
-        });
-    }
-
-    async deleteWebhook(projectId: string, webhookId: string): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/webhooks/${webhookId}`, {
-            method: "DELETE",
-            action: "delete webhook",
-            responseType: "void",
-        });
     }
 
     // Mailboxes ---------------------------------------------------------------
@@ -1756,20 +2071,26 @@ export class Meshagent {
         return { address, room, roomId: room_id, queue };
     }
 
-    async listMailboxesPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<MailboxesPage> {
-        const { count = 100, offset = 0, filter } = options;
-        const data = await this.request<{ mailboxes?: any[]; total?: number }>(`/accounts/projects/${projectId}/mailboxes`, {
-            query: { count, offset, filter },
+    async listMailboxesPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<MailboxesPage> {
+        const { pageSize = 100, continuationToken, filter } = options;
+        const data = await this.request<{ mailboxes?: any[]; total?: number; continuation_token?: string | null }>(`/accounts/projects/${projectId}/mailboxes`, {
+            query: { page_size: pageSize, continuation_token: continuationToken, filter },
             action: "list mailboxes",
         });
         const mailboxes = Array.isArray(data?.mailboxes) ? data.mailboxes : [];
         const parsed = mailboxes.map((item) => this.parseMailbox(item));
-        return { mailboxes: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+        return { mailboxes: parsed, total: typeof data?.total === "number" ? data.total : parsed.length, continuationToken: data.continuation_token ?? null };
     }
 
-    async listMailboxes(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Mailbox[]> {
-        const page = await this.listMailboxesPage(projectId, options);
-        return page.mailboxes;
+    async listMailboxes(projectId: string, options: { pageSize?: number; filter?: string } = {}): Promise<Mailbox[]> {
+        const mailboxes: Mailbox[] = [];
+        let continuationToken: string | undefined;
+        do {
+            const page = await this.listMailboxesPage(projectId, { ...options, continuationToken });
+            mailboxes.push(...page.mailboxes);
+            continuationToken = page.continuationToken ?? undefined;
+        } while (continuationToken);
+        return mailboxes;
     }
 
     async deleteMailbox(projectId: string, address: string): Promise<void> {
@@ -1854,20 +2175,26 @@ export class Meshagent {
         return this.parseFeed((data as any).feed);
     }
 
-    async listFeedsPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<FeedsPage> {
-        const { count = 100, offset = 0, filter } = options;
-        const data = await this.request<{ feeds?: any[]; total?: number }>(`/accounts/projects/${projectId}/feeds`, {
-            query: { count, offset, filter },
+    async listFeedsPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string; view?: "my" | "all" } = {}): Promise<FeedsPage> {
+        const { pageSize = 100, continuationToken, filter, view } = options;
+        const data = await this.request<{ feeds?: any[]; total?: number; continuation_token?: string | null }>(`/accounts/projects/${projectId}/feeds`, {
+            query: { page_size: pageSize, continuation_token: continuationToken, filter, view },
             action: "list feeds",
         });
         const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
         const parsed = feeds.map((item) => this.parseFeed(item));
-        return { feeds: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+        return { feeds: parsed, total: typeof data?.total === "number" ? data.total : parsed.length, continuationToken: data.continuation_token ?? null };
     }
 
-    async listFeeds(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Feed[]> {
-        const page = await this.listFeedsPage(projectId, options);
-        return page.feeds;
+    async listFeeds(projectId: string, options: { pageSize?: number; filter?: string; view?: "my" | "all" } = {}): Promise<Feed[]> {
+        const feeds: Feed[] = [];
+        let continuationToken: string | undefined;
+        do {
+            const page = await this.listFeedsPage(projectId, { ...options, continuationToken });
+            feeds.push(...page.feeds);
+            continuationToken = page.continuationToken ?? undefined;
+        } while (continuationToken);
+        return feeds;
     }
 
     async listRoomFeedsPage(projectId: string, roomName: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<FeedsPage> {
@@ -2108,15 +2435,32 @@ export class Meshagent {
         return this.parseProjectRepository(data);
     }
 
-    async listRepositories(projectId: string): Promise<ProjectRepository[]> {
-        const data = await this.request<{ repositories?: unknown[] }>(
+    async listRepositoriesPage(projectId: string, options: { pageSize?: number; view?: "my" | "all"; continuationToken?: string } = {}): Promise<{ repositories: ProjectRepository[]; total: number; continuationToken?: string | null }> {
+        const { pageSize = 100, view, continuationToken } = options;
+        const data = await this.request<{ repositories?: unknown[]; total?: number; continuation_token?: string | null }>(
             `/accounts/projects/${projectId}/repositories`,
             {
+                query: { page_size: pageSize, view, continuation_token: continuationToken },
                 action: "list repositories",
             },
         );
         const repositories = Array.isArray(data?.repositories) ? data.repositories : [];
-        return repositories.map((item) => this.parseProjectRepository(item));
+        return {
+            repositories: repositories.map((item) => this.parseProjectRepository(item)),
+            total: Number(data.total ?? repositories.length),
+            continuationToken: data.continuation_token ?? null,
+        };
+    }
+
+    async listRepositories(projectId: string, options: { view?: "my" | "all" } = {}): Promise<ProjectRepository[]> {
+        const repositories: ProjectRepository[] = [];
+        let continuationToken: string | undefined;
+        do {
+            const page = await this.listRepositoriesPage(projectId, { view: options.view, continuationToken });
+            repositories.push(...page.repositories);
+            continuationToken = page.continuationToken ?? undefined;
+        } while (continuationToken);
+        return repositories;
     }
 
     async deleteRepository(projectId: string, repositoryId: string): Promise<void> {
@@ -2277,8 +2621,13 @@ export class Meshagent {
         return this.parseManagedSecret(data);
     }
 
-    async listProjectSecrets(projectId: string): Promise<ManagedSecretInfo[]> {
-        const data = await this.request<{ secrets?: unknown[] }>(`/accounts/projects/${projectId}/secrets`, {
+    async listProjectSecrets(projectId: string, params: { view?: "my" | "all" } = {}): Promise<ManagedSecretInfo[]> {
+        const search = new URLSearchParams();
+        if (params.view) {
+            search.set("view", params.view);
+        }
+        const query = search.toString();
+        const data = await this.request<{ secrets?: unknown[] }>(`/accounts/projects/${projectId}/secrets${query ? `?${query}` : ""}`, {
             action: "list project secrets",
         });
         const secrets = Array.isArray(data?.secrets) ? data.secrets : [];
@@ -2614,21 +2963,14 @@ export class Meshagent {
 
     // Rooms -------------------------------------------------------------------
 
-    async createRoom(params: { projectId: string; name: string; ifNotExists?: boolean; metadata?: Record<string, unknown>; annotations?: Record<string, string>; permissions?: Record<string, ApiScope> }): Promise<RoomInfo> {
-        const { projectId, name, ifNotExists = false, metadata, annotations, permissions } = params;
+    async createRoom(params: { projectId: string; name: string; ifNotExists?: boolean; metadata?: Record<string, unknown>; annotations?: Record<string, string> }): Promise<RoomInfo> {
+        const { projectId, name, ifNotExists = false, metadata, annotations } = params;
         const payload: Record<string, unknown> = {
             name,
             if_not_exists: Boolean(ifNotExists),
             metadata,
             annotations,
         };
-        if (permissions) {
-            const serialized: Record<string, unknown> = {};
-            for (const [key, value] of Object.entries(permissions)) {
-                serialized[key] = value instanceof ApiScope ? value.toJSON() : value;
-            }
-            payload["permissions"] = serialized;
-        }
         const data = await this.request(`/accounts/projects/${projectId}/rooms`, {
             method: "POST",
             json: payload,
@@ -2673,6 +3015,117 @@ export class Meshagent {
         });
     }
 
+    async createGroup(params: {
+        projectId: string;
+        name: string;
+        metadata?: Record<string, unknown>;
+        annotations?: Record<string, string>;
+    }): Promise<GroupInfo> {
+        const { projectId, name, metadata, annotations } = params;
+        const data = await this.request(`/accounts/projects/${projectId}/groups`, {
+            method: "POST",
+            json: { name, metadata, annotations },
+            action: "create group",
+        });
+        return this.parseGroup(data);
+    }
+
+    async getGroup(projectId: string, groupId: string): Promise<GroupInfo> {
+        const data = await this.request(`/accounts/projects/${projectId}/groups/${groupId}`, {
+            action: "fetch group",
+        });
+        return this.parseGroup(data);
+    }
+
+    async updateGroup(
+        projectId: string,
+        groupId: string,
+        name: string,
+        options: { metadata?: Record<string, unknown>; annotations?: Record<string, string> } = {},
+    ): Promise<void> {
+        const payload: Record<string, unknown> = { name };
+        if (options.metadata !== undefined) {
+            payload["metadata"] = options.metadata;
+        }
+        if (options.annotations !== undefined) {
+            payload["annotations"] = options.annotations;
+        }
+        await this.request(`/accounts/projects/${projectId}/groups/${groupId}`, {
+            method: "PUT",
+            json: payload,
+            action: "update group",
+            responseType: "void",
+        });
+    }
+
+    async deleteGroup(projectId: string, groupId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/groups/${groupId}`, {
+            method: "DELETE",
+            action: "delete group",
+            responseType: "void",
+        });
+    }
+
+    async listGroupsPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<GroupsPage> {
+        const data = await this.request<{ groups?: unknown[]; continuation_token?: string | null }>(
+            `/accounts/projects/${projectId}/groups`,
+            {
+                query: {
+                    page_size: options.pageSize ?? 50,
+                    continuation_token: options.continuationToken,
+                    filter: options.filter,
+                },
+                action: "list groups",
+            },
+        );
+        const groups = Array.isArray(data?.groups) ? data.groups : [];
+        return {
+            groups: groups.map((item) => this.parseGroup(item)),
+            continuationToken: data?.continuation_token ?? null,
+        };
+    }
+
+    async listGroups(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<GroupInfo[]> {
+        const page = await this.listGroupsPage(projectId, options);
+        return page.groups;
+    }
+
+    async setGroupMember(params: { projectId: string; groupId: string; subject: AccessSubject; role?: "member" | "manager" }): Promise<void> {
+        const { projectId, groupId, subject, role = "member" } = params;
+        await this.request(`/accounts/projects/${projectId}/groups/${groupId}/members`, {
+            method: "POST",
+            json: { subject, role },
+            action: "set group member",
+            responseType: "void",
+        });
+    }
+
+    async listGroupMembersPage(projectId: string, groupId: string, options: { pageSize?: number; continuationToken?: string } = {}): Promise<GroupMembersPage> {
+        const data = await this.request<{ members?: unknown[]; continuation_token?: string | null }>(
+            `/accounts/projects/${projectId}/groups/${groupId}/members`,
+            {
+                query: { page_size: options.pageSize ?? 50, continuation_token: options.continuationToken },
+                action: "list group members",
+            },
+        );
+        const members = Array.isArray(data?.members) ? data.members : [];
+        return { members: members.map((item) => this.parseGroupMember(item)), continuationToken: data?.continuation_token ?? null };
+    }
+
+    async listGroupMembers(projectId: string, groupId: string, options: { pageSize?: number; continuationToken?: string } = {}): Promise<GroupMember[]> {
+        const page = await this.listGroupMembersPage(projectId, groupId, options);
+        return page.members;
+    }
+
+    async deleteGroupMember(params: { projectId: string; groupId: string; subjectType: "user" | "agent" | "service_account" | "group"; subjectId: string }): Promise<void> {
+        const { projectId, groupId, subjectType, subjectId } = params;
+        await this.request(`/accounts/projects/${projectId}/groups/${groupId}/members/${subjectType}/${subjectId}`, {
+            method: "DELETE",
+            action: "delete group member",
+            responseType: "void",
+        });
+    }
+
     async connectRoom(projectId: string, room: string): Promise<RoomConnectionInfo> {
         const data = await this.request(`/accounts/projects/${projectId}/rooms/${room}/connect`, {
             method: "POST",
@@ -2682,72 +3135,13 @@ export class Meshagent {
         return this.parseRoomConnectionInfo(data);
     }
 
-    async createRoomGrant(params: { projectId: string; roomId: string; userId: string; permissions: ApiScope }): Promise<void> {
-        const { projectId, roomId, userId, permissions } = params;
-        await this.request(`/accounts/projects/${projectId}/room-grants`, {
-            method: "POST",
-            json: {
-                room_id: roomId,
-                user_id: userId,
-                permissions: permissions.toJSON(),
-            },
-            action: "create room grant",
-            responseType: "void",
-        });
-    }
-
-    async createRoomGrantByEmail(params: { projectId: string; roomId: string; email: string; permissions: ApiScope }): Promise<void> {
-        const { projectId, roomId, email, permissions } = params;
-        await this.request(`/accounts/projects/${projectId}/room-grants`, {
-            method: "POST",
-            json: {
-                room_id: roomId,
-                email,
-                permissions: permissions.toJSON(),
-            },
-            action: "create room grant",
-            responseType: "void",
-        });
-    }
-
-    async updateRoomGrant(params: { projectId: string; roomId: string; userId: string; permissions: ApiScope; grantId?: string }): Promise<void> {
-        const { projectId, roomId, userId, permissions, grantId } = params;
-        const gid = grantId ?? "unused";
-        await this.request(`/accounts/projects/${projectId}/room-grants/${gid}`, {
-            method: "PUT",
-            json: {
-                room_id: roomId,
-                user_id: userId,
-                permissions: permissions.toJSON(),
-            },
-            action: "update room grant",
-            responseType: "void",
-        });
-    }
-
-    async deleteRoomGrant(projectId: string, roomId: string, userId: string): Promise<void> {
-        const room = this.encodePathComponent(roomId);
-        const user = this.encodePathComponent(userId);
-        await this.request(`/accounts/projects/${projectId}/room-grants/${room}/${user}`, {
-            method: "DELETE",
-            action: "delete room grant",
-            responseType: "void",
-        });
-    }
-
-    async getRoomGrant(projectId: string, roomId: string, userId: string): Promise<ProjectRoomGrant> {
-        const room = this.encodePathComponent(roomId);
-        const user = this.encodePathComponent(userId);
-        const data = await this.request(`/accounts/projects/${projectId}/room-grants/${room}/${user}`, {
-            action: "fetch room grant",
-        });
-        return this.parseProjectRoomGrant(data);
-    }
-
-    async listRooms(projectId: string, options: { limit?: number; offset?: number; orderBy?: string } = {}): Promise<RoomInfo[]> {
-        const { limit = 50, offset = 0, orderBy = "room_name" } = options;
+    async listRooms(
+        projectId: string,
+        options: { pageSize?: number; continuationToken?: string; filter?: string; view?: "my" | "all" } = {},
+    ): Promise<RoomInfo[]> {
+        const { pageSize = 50, continuationToken, filter, view } = options;
         const data = await this.request<{ rooms?: any[] }>(`/accounts/projects/${projectId}/rooms`, {
-            query: { limit, offset, order_by: orderBy },
+            query: { page_size: pageSize, continuation_token: continuationToken, filter, view },
             action: "list rooms",
         });
         const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
@@ -2781,18 +3175,25 @@ export class Meshagent {
         return this.parseRoute(data.route);
     }
 
-    async listRoutesPage(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<RoutesPage> {
-        const { count = 100, offset = 0, filter } = options;
-        const data = await this.request<{ routes?: any[]; total?: number }>(`/accounts/projects/${projectId}/routes`, {
-            query: { count, offset, filter },
+    async listRoutesPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<RoutesPage> {
+        const { pageSize = 100, continuationToken, filter } = options;
+        const data = await this.request<{ routes?: any[]; total?: number; continuation_token?: string | null }>(`/accounts/projects/${projectId}/routes`, {
+            query: { page_size: pageSize, continuation_token: continuationToken, filter },
             action: "list routes",
         });
         const routes = Array.isArray(data.routes) ? data.routes.map((item) => this.parseRoute(item)) : [];
-        return { routes, total: Number(data.total ?? routes.length) };
+        return { routes, total: Number(data.total ?? routes.length), continuationToken: data.continuation_token ?? null };
     }
 
-    async listRoutes(projectId: string, options: { count?: number; offset?: number; filter?: string } = {}): Promise<Route[]> {
-        return (await this.listRoutesPage(projectId, options)).routes;
+    async listRoutes(projectId: string, options: { pageSize?: number; filter?: string } = {}): Promise<Route[]> {
+        const routes: Route[] = [];
+        let continuationToken: string | undefined;
+        do {
+            const page = await this.listRoutesPage(projectId, { ...options, continuationToken });
+            routes.push(...page.routes);
+            continuationToken = page.continuationToken ?? undefined;
+        } while (continuationToken);
+        return routes;
     }
 
     async listRoomRoutesPage(params: { projectId: string; roomName: string; count?: number; offset?: number; filter?: string }): Promise<RoutesPage> {
@@ -2834,71 +3235,117 @@ export class Meshagent {
         });
     }
 
-    async listRoomGrants(projectId: string, options: { limit?: number; offset?: number; orderBy?: string } = {}): Promise<ProjectRoomGrant[]> {
-        const { limit = 50, offset = 0, orderBy = "room_name" } = options;
-        const data = await this.request<{ room_grants?: any[] }>(`/accounts/projects/${projectId}/room-grants`, {
-            query: { limit, offset, order_by: orderBy },
-            action: "list room grants",
+    async testAccess(projectId: string, params: { subject: AccessSubject; resource: AccessResource; relation: string }): Promise<AccessTestResult> {
+        const data = await this.request<any>(`/accounts/projects/${projectId}/access:test`, {
+            method: "POST",
+            json: {
+                subject: this.serializeAccessSubject(params.subject),
+                resource: this.serializeAccessResource(params.resource),
+                relation: params.relation,
+            },
+            action: "test access",
         });
-        const grants = Array.isArray(data?.room_grants) ? data.room_grants : [];
-        return grants.map((item) => this.parseProjectRoomGrant(item));
+        return {
+            allowed: data?.allowed === true,
+            resource: data?.resource && typeof data.resource === "object" ? this.parseAccessResource(data.resource) : undefined,
+            subject: data?.subject && typeof data.subject === "object" ? this.parseAccessSubject(data.subject) : undefined,
+            relation: typeof data?.relation === "string" ? data.relation : undefined,
+        };
     }
 
-    async listRoomGrantsByUser(projectId: string, userId: string, options: { limit?: number; offset?: number } = {}): Promise<ProjectRoomGrant[]> {
-        const { limit = 50, offset = 0 } = options;
-        const encodedUser = this.encodePathComponent(userId);
-        const data = await this.request<{ room_grants?: any[] }>(`/accounts/projects/${projectId}/room-grants/by-user/${encodedUser}`, {
-            query: { limit, offset },
-            action: "list room grants by user",
+    async getEffectiveAccess(projectId: string, params: { subject: AccessSubject; resource: AccessResource; relations?: string[] }): Promise<EffectiveAccess> {
+        const data = await this.request<any>(`/accounts/projects/${projectId}/access:effective`, {
+            method: "POST",
+            json: {
+                subject: this.serializeAccessSubject(params.subject),
+                resource: this.serializeAccessResource(params.resource),
+                ...(params.relations ? { relations: params.relations } : {}),
+            },
+            action: "get effective access",
         });
-        const grants = Array.isArray(data?.room_grants) ? data.room_grants : [];
-        return grants.map((item) => this.parseProjectRoomGrant(item));
+        return {
+            resource: this.parseAccessResource(data?.resource),
+            subject: this.parseAccessSubject(data?.subject),
+            effectiveRoles: Array.isArray(data?.effective_roles) ? data.effective_roles.filter((item: unknown): item is string => typeof item === "string") : [],
+            capabilities: data?.capabilities && typeof data.capabilities === "object" ? data.capabilities as Record<string, boolean> : {},
+        };
     }
 
-    async listRoomGrantsByRoom(projectId: string, roomId: string, options: { limit?: number; offset?: number } = {}): Promise<ProjectRoomGrant[]> {
-        const { limit = 50, offset = 0 } = options;
-        const encodedRoom = this.encodePathComponent(roomId);
-        const data = await this.request<{ room_grants?: any[] }>(`/accounts/projects/${projectId}/room-grants/by-room/${encodedRoom}`, {
-            query: { limit, offset },
-            action: "list room grants by room",
-        });
-        const grants = Array.isArray(data?.room_grants) ? data.room_grants : [];
-        return grants.map((item) => this.parseProjectRoomGrant(item));
+    async listAccessBindings(projectId: string, params: { subject: AccessSubject }): Promise<ProjectRoomGrant[]> {
+        const page = await this.listAccessBindingsPage(projectId, params);
+        return page.accessGrants;
     }
 
-    async listUniqueRoomsWithGrants(projectId: string, options: { limit?: number; offset?: number } = {}): Promise<ProjectRoomGrantCount[]> {
-        const { limit = 50, offset = 0 } = options;
-        const data = await this.request<{ rooms?: any[] }>(`/accounts/projects/${projectId}/room-grants/by-room`, {
-            query: { limit, offset },
-            action: "list unique rooms with grants",
+    async listAccessBindingsPage(projectId: string, params: { subject: AccessSubject }): Promise<AccessBindingsPage> {
+        const data = await this.request<any>(`/accounts/projects/${projectId}/access:bindings`, {
+            method: "POST",
+            json: {
+                subject: this.serializeAccessSubject(params.subject),
+            },
+            action: "list access bindings",
         });
-        const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
-        return rooms.map((item) => this.parseProjectRoomGrantCount(item));
+        return {
+            accessGrants: Array.isArray(data?.access_grants)
+                ? data.access_grants.map((item: unknown) => this.parseProjectRoomGrant(item))
+                : [],
+        };
     }
 
-    async listUniqueUsersWithGrantsPage(projectId: string, options: { limit?: number; offset?: number; filter?: string } = {}): Promise<ProjectUserGrantCountsPage> {
-        const { limit = 100, offset = 0, filter } = options;
-        const data = await this.request<{ users?: any[]; total?: number }>(`/accounts/projects/${projectId}/room-grants/by-user`, {
-            query: { limit, offset, filter },
-            action: "list unique users with grants",
+    async getResourcePolicyPage(projectId: string, params: { resourceType: string; resourceId: string; pageSize?: number; continuationToken?: string }): Promise<ResourcePolicyPage> {
+        const data = await this.request<any>(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy`, {
+            method: "GET",
+            query: { page_size: params.pageSize ?? 50, continuation_token: params.continuationToken },
+            action: "get resource policy",
         });
-        const users = Array.isArray(data?.users) ? data.users : [];
-        const parsed = users.map((item) => this.parseProjectUserGrantCount(item));
-        return { users: parsed, total: typeof data?.total === "number" ? data.total : parsed.length };
+        return {
+            resource: this.parseAccessResource(data?.resource),
+            accessGrants: Array.isArray(data?.access_grants)
+                ? data.access_grants.map((item: unknown) => this.parseProjectRoomGrant(item))
+                : [],
+            continuationToken: typeof data?.continuation_token === "string" ? data.continuation_token : null,
+        };
     }
 
-    async listUniqueUsersWithGrants(projectId: string, options: { limit?: number; offset?: number; filter?: string } = {}): Promise<ProjectUserGrantCount[]> {
-        const page = await this.listUniqueUsersWithGrantsPage(projectId, options);
-        return page.users;
+    async getResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; pageSize?: number; continuationToken?: string }): Promise<ProjectRoomGrant[]> {
+        const grants: ProjectRoomGrant[] = [];
+        let continuationToken = params.continuationToken;
+        do {
+            const page = await this.getResourcePolicyPage(projectId, { ...params, continuationToken });
+            grants.push(...page.accessGrants);
+            continuationToken = page.continuationToken ?? undefined;
+        } while (continuationToken);
+        return grants;
+    }
+
+    async grantResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; subject: AccessSubject; roles: string[]; inviteRedirectUrl?: string }): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy:grant`, {
+            method: "POST",
+            json: {
+                subject: this.serializeAccessSubject(params.subject),
+                roles: params.roles,
+                ...(params.inviteRedirectUrl ? { invite_redirect_url: params.inviteRedirectUrl } : {}),
+            },
+            action: "grant resource policy",
+        });
+    }
+
+    async revokeResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; subject: AccessSubject }): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy:revoke`, {
+            method: "POST",
+            json: {
+                subject: this.serializeAccessSubject(params.subject),
+            },
+            action: "revoke resource policy",
+        });
     }
 
     // OAuth Clients -----------------------------------------------------------
 
-    async createOAuthClient(projectId: string, params: { grantTypes: string[]; responseTypes: string[]; redirectUris: string[]; scope: string; metadata?: Record<string, any> }): Promise<OAuthClient> {
-        const { grantTypes, responseTypes, redirectUris, scope, metadata = {} } = params;
+    async createOAuthClient(projectId: string, params: { grantTypes: string[]; responseTypes: string[]; redirectUris: string[]; scope: string; metadata?: Record<string, any>; official?: boolean }): Promise<OAuthClient> {
+        const { grantTypes, responseTypes, redirectUris, scope, metadata = {}, official = false } = params;
         const data = await this.request(`/accounts/projects/${projectId}/oauth/clients`, {
             method: "POST",
-            json: { grant_types: grantTypes, response_types: responseTypes, redirect_uris: redirectUris, scope, metadata },
+            json: { grant_types: grantTypes, response_types: responseTypes, redirect_uris: redirectUris, scope, metadata, official },
             action: "create oauth client",
         });
         return this.parseOAuthClient(data);
