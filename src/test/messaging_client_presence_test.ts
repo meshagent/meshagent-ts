@@ -29,7 +29,7 @@ class FakeRoom {
   public _allowDisconnectedRequests = false;
   public localParticipant = null;
 
-  public async invoke(params: {
+  public async invokeContent(params: {
     toolkit: string;
     tool: string;
     input: unknown;
@@ -46,7 +46,7 @@ class FakeRoom {
     tool: string;
     input?: unknown;
   }): void {
-    void this.invoke({
+    void this.invokeContent({
       toolkit: params.toolkit,
       tool: params.tool,
       input: params.input ?? {},

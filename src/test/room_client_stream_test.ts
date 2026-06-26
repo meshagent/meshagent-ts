@@ -3,13 +3,19 @@ import { expect } from "chai";
 import { RoomClient } from "../room-client.js";
 import { RoomStatusEvent } from "../room-event.js";
 import { Protocol, ProtocolMessageStream, StreamProtocolChannel } from "../protocol.js";
+import { ToolContentInput, ToolStreamInput, ToolStreamOutput } from "../agent.js";
 import {
   BinaryContent,
   Content,
+  ControlCloseStatus,
   ControlContent,
   EmptyContent,
+  ErrorContent,
+  JsonContent,
+  TextContent,
   unpackContent,
 } from "../response.js";
+import { RoomServerException } from "../room-server-client.js";
 import { packMessage, unpackMessage } from "../utils.js";
 
 class ProtocolPair {
@@ -76,7 +82,387 @@ async function sendToolCallResponseChunk(params: {
   }, payload.length > 0 ? payload : undefined));
 }
 
+class AsyncContentQueue implements AsyncIterable<Content> {
+  private readonly values: Content[] = [];
+  private waiter: (() => void) | null = null;
+  private closed = false;
+
+  public add(content: Content): void {
+    this.values.push(content);
+    this.waiter?.();
+    this.waiter = null;
+  }
+
+  public close(): void {
+    this.closed = true;
+    this.waiter?.();
+    this.waiter = null;
+  }
+
+  public async *[Symbol.asyncIterator](): AsyncIterator<Content> {
+    while (true) {
+      if (this.values.length > 0) {
+        yield this.values.shift()!;
+        continue;
+      }
+      if (this.closed) {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        this.waiter = resolve;
+      });
+    }
+  }
+}
+
+async function expectRoomServerException(
+  promise: Promise<unknown>,
+  expectedMessage: string,
+): Promise<RoomServerException> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).to.be.instanceOf(RoomServerException);
+    const roomError = error as RoomServerException;
+    expect(roomError.message).to.contain(expectedMessage);
+    return roomError;
+  }
+  throw new Error("expected RoomServerException");
+}
+
+async function collectStreamResult(stream: AsyncIterable<Content>): Promise<{
+  received: Content[];
+  error?: unknown;
+}> {
+  const received: Content[] = [];
+  try {
+    for await (const chunk of stream) {
+      received.push(chunk);
+    }
+    return { received };
+  } catch (error) {
+    return { received, error };
+  }
+}
+
 describe("room_client_stream_test", () => {
+  it("invokeTool fails fast when server returns invoke response error", async () => {
+    const pair = new ProtocolPair();
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type) => {
+        if (type !== "room.invoke_tool") {
+          return;
+        }
+        await protocol.send(
+          "__response__",
+          new ErrorContent({ text: "tool 'stream' requires streamed input", code: 1002 }).pack(),
+          messageId,
+        );
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const error = await expectRoomServerException(
+        room.agents.invokeTool({
+          toolkit: "test-stream-toolkit",
+          tool: "stream",
+          input: new ToolContentInput(new JsonContent({ json: {} })),
+        }),
+        "requires streamed input",
+      );
+      expect(error.code).to.equal(1002);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("invokeTool fails when error chunk arrives before invoke response", async () => {
+    const pair = new ProtocolPair();
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, _messageId, type, data) => {
+        if (!data || type !== "room.invoke_tool") {
+          return;
+        }
+        const [request] = unpackMessage(data);
+        const toolCallId = request["tool_call_id"] as string;
+        await protocol.send(
+          "room.tool_call_response_chunk",
+          packMessage({
+            tool_call_id: toolCallId,
+            toolkit: "test-stream-toolkit",
+            tool: "stream",
+            chunk: { type: "error", text: "tool 'stream' requires streamed input", code: 1002 },
+          }),
+        );
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const error = await expectRoomServerException(
+        room.agents.invokeTool({
+          toolkit: "test-stream-toolkit",
+          tool: "stream",
+          input: new ToolContentInput(new JsonContent({ json: {} })),
+        }),
+        "requires streamed input",
+      );
+      expect(error.code).to.equal(1002);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("invokeTool stream emits error when request chunk send fails after open", async () => {
+    const pair = new ProtocolPair();
+    let sawTextChunk = false;
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (type === "room.invoke_tool") {
+          await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
+          return;
+        }
+        if (!data || type !== "room.tool_call_request_chunk") {
+          return;
+        }
+
+        const [message] = unpackMessage(data);
+        const chunk = message["chunk"] as Record<string, unknown>;
+        if (chunk["type"] === "text") {
+          sawTextChunk = true;
+          await protocol.send("__response__", new ErrorContent({ text: "schema mismatch" }).pack(), messageId);
+          return;
+        }
+        await protocol.send("__response__", new EmptyContent().pack(), messageId);
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const input = new AsyncContentQueue();
+      const response = await room.agents.invokeTool({
+        toolkit: "test-stream-toolkit",
+        tool: "stream",
+        input: new ToolStreamInput(input),
+      });
+      expect(response).to.be.instanceOf(ToolStreamOutput);
+
+      const resultPromise = collectStreamResult((response as ToolStreamOutput).stream);
+      input.add(new TextContent({ text: "bad" }));
+      input.close();
+
+      const result = await resultPromise;
+      expect(sawTextChunk).to.equal(true);
+      expect(result.error).to.be.instanceOf(RoomServerException);
+      expect((result.error as RoomServerException).message).to.contain("schema mismatch");
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("invokeTool stream delivers ErrorContent chunk and then closes when server closes stream", async () => {
+    const pair = new ProtocolPair();
+    let toolCallId: string | undefined;
+    let sentFailureChunks = false;
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data) {
+          return;
+        }
+        if (type === "room.invoke_tool") {
+          const [request] = unpackMessage(data);
+          toolCallId = request["tool_call_id"] as string;
+          await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
+          return;
+        }
+        if (type !== "room.tool_call_request_chunk") {
+          return;
+        }
+
+        await protocol.send("__response__", new EmptyContent().pack(), messageId);
+        if (sentFailureChunks || toolCallId == null) {
+          return;
+        }
+        sentFailureChunks = true;
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ErrorContent({ text: "schema mismatch" }),
+        });
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ControlContent({ method: "close" }),
+        });
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const input = new AsyncContentQueue();
+      const response = await room.agents.invokeTool({
+        toolkit: "test-stream-toolkit",
+        tool: "stream",
+        input: new ToolStreamInput(input),
+      });
+      expect(response).to.be.instanceOf(ToolStreamOutput);
+
+      const resultPromise = collectStreamResult((response as ToolStreamOutput).stream);
+      input.add(new TextContent({ text: "bad" }));
+      input.close();
+
+      const result = await resultPromise;
+      expect(result.error).to.equal(undefined);
+      expect(result.received).to.have.length(2);
+      expect(result.received[0]).to.be.instanceOf(ErrorContent);
+      expect((result.received[0] as ErrorContent).text).to.contain("schema mismatch");
+      expect(result.received[1]).to.be.instanceOf(ControlContent);
+      expect((result.received[1] as ControlContent).method).to.equal("close");
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("invokeTool stream raises when close control chunk is abnormal", async () => {
+    const pair = new ProtocolPair();
+    let toolCallId: string | undefined;
+    let sentClose = false;
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data) {
+          return;
+        }
+        if (type === "room.invoke_tool") {
+          const [request] = unpackMessage(data);
+          toolCallId = request["tool_call_id"] as string;
+          await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
+          return;
+        }
+        if (type !== "room.tool_call_request_chunk") {
+          return;
+        }
+
+        await protocol.send("__response__", new EmptyContent().pack(), messageId);
+        if (sentClose || toolCallId == null) {
+          return;
+        }
+        sentClose = true;
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ControlContent({
+            method: "close",
+            statusCode: ControlCloseStatus.INVALID_DATA,
+            message: "schema mismatch",
+          }),
+        });
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const input = new AsyncContentQueue();
+      const response = await room.agents.invokeTool({
+        toolkit: "test-stream-toolkit",
+        tool: "stream",
+        input: new ToolStreamInput(input),
+      });
+      expect(response).to.be.instanceOf(ToolStreamOutput);
+      const streamOutput = response as ToolStreamOutput;
+
+      const resultPromise = collectStreamResult(streamOutput.stream);
+      input.add(new TextContent({ text: "bad" }));
+      input.close();
+
+      const result = await resultPromise;
+      await streamOutput.inputClosed?.catch(() => undefined);
+      expect(result.error).to.be.instanceOf(RoomServerException);
+      const error = result.error as RoomServerException;
+      expect(error.message).to.contain("schema mismatch");
+      expect(error.statusCode).to.equal(ControlCloseStatus.INVALID_DATA);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("invokeTool stream preserves abnormal close error when close arrives before listener attaches", async () => {
+    const pair = new ProtocolPair();
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data || type !== "room.invoke_tool") {
+          return;
+        }
+        const [request] = unpackMessage(data);
+        const toolCallId = request["tool_call_id"] as string;
+        await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ControlContent({
+            method: "close",
+            statusCode: ControlCloseStatus.INVALID_DATA,
+            message: "schema mismatch",
+          }),
+        });
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const response = await room.agents.invokeTool({
+        toolkit: "test-stream-toolkit",
+        tool: "stream",
+        input: new ToolContentInput(new JsonContent({ json: {} })),
+      });
+      expect(response).to.be.instanceOf(ToolStreamOutput);
+
+      const result = await collectStreamResult((response as ToolStreamOutput).stream);
+      expect(result.error).to.be.instanceOf(RoomServerException);
+      const error = result.error as RoomServerException;
+      expect(error.message).to.contain("schema mismatch");
+      expect(error.statusCode).to.equal(ControlCloseStatus.INVALID_DATA);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
   it("starts request chunks before waiting for the open response", async () => {
     const pair = new ProtocolPair();
     let toolCallId: string | undefined;
@@ -324,6 +710,115 @@ describe("room_client_stream_test", () => {
       expect((requestChunks[1] as BinaryContent).headers["kind"]).to.equal("data");
       expect(requestChunks[2]).to.be.instanceOf(ControlContent);
       expect((requestChunks[2] as ControlContent).method).to.equal("close");
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("returns single invoke responses as an async iterable", async () => {
+    const pair = new ProtocolPair();
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data || type !== "room.invoke_tool") {
+          return;
+        }
+
+        const [request] = unpackMessage(data);
+        expect(request["toolkit"]).to.equal("demo");
+        expect(request["tool"]).to.equal("echo");
+        expect(request["arguments"]).to.deep.equal({ type: "json", json: { value: "hello" } });
+        expect(request["tool_call_id"]).to.be.a("string");
+        await protocol.send("__response__", new JsonContent({ json: { ok: true } }).pack(), messageId);
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const stream = room.invoke({
+        toolkit: "demo",
+        tool: "echo",
+        input: { value: "hello" },
+      });
+
+      const received: Content[] = [];
+      for await (const chunk of stream) {
+        received.push(chunk);
+      }
+
+      expect(received).to.have.length(1);
+      expect(received[0]).to.be.instanceOf(JsonContent);
+      expect((received[0] as JsonContent).json).to.deep.equal({ ok: true });
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("returns streamed invoke responses as an async iterable", async () => {
+    const pair = new ProtocolPair();
+    let toolCallId: string | undefined;
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data || type !== "room.invoke_tool") {
+          return;
+        }
+
+        const [request] = unpackMessage(data);
+        expect(request["toolkit"]).to.equal("demo");
+        expect(request["tool"]).to.equal("stream");
+        expect(request["arguments"]).to.deep.equal({ type: "json", json: { prompt: "hello" } });
+        expect(request["tool_call_id"]).to.be.a("string");
+        toolCallId = request["tool_call_id"] as string;
+        await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new TextContent({ text: "one" }),
+        });
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new TextContent({ text: "two" }),
+        });
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ControlContent({ method: "close" }),
+        });
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const stream = room.invoke({
+        toolkit: "demo",
+        tool: "stream",
+        input: { prompt: "hello" },
+      });
+
+      const received: Content[] = [];
+      for await (const chunk of stream) {
+        received.push(chunk);
+      }
+
+      expect(received).to.have.length(3);
+      expect(received[0]).to.be.instanceOf(TextContent);
+      expect((received[0] as TextContent).text).to.equal("one");
+      expect(received[1]).to.be.instanceOf(TextContent);
+      expect((received[1] as TextContent).text).to.equal("two");
+      expect(received[2]).to.be.instanceOf(ControlContent);
+      expect((received[2] as ControlContent).method).to.equal("close");
     } finally {
       room.dispose();
       pair.dispose();

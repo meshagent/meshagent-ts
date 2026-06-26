@@ -17,7 +17,11 @@ import {
     ParticipantToken,
     parseApiKey,
     QueuesGrant,
+    SecretsGrant,
     ServicesGrant,
+    SqliteDatabaseGrant,
+    SqliteGrant,
+    SqliteTableGrant,
     StorageGrant,
     StoragePathGrant,
     SyncGrant,
@@ -104,6 +108,46 @@ describe("Grants", () => {
         expect(grant.canWrite("write_only", ["default"])).to.equal(false);
         expect(grant.canRead("write_only", ["analytics"])).to.equal(false);
         expect(grant.canRead("unknown")).to.equal(false);
+    });
+
+    it("sqlite grant supports database and table namespace matching", () => {
+        let grant = new SqliteGrant();
+        expect(grant.canCreateDatabase()).to.equal(true);
+        expect(grant.canListDatabases()).to.equal(true);
+        expect(grant.canRead("app", "users")).to.equal(true);
+        expect(grant.canWrite("app", "users")).to.equal(true);
+
+        grant = new SqliteGrant({
+            createDatabase: false,
+            databases: [
+                new SqliteDatabaseGrant({
+                    name: "app",
+                    namespace: ["analytics"],
+                    createTable: false,
+                    drop: false,
+                    inspect: true,
+                    listTables: true,
+                    execute: false,
+                    tables: [
+                        new SqliteTableGrant({
+                            database: "app",
+                            table: "users",
+                            namespace: ["analytics"],
+                            read: true,
+                            write: false,
+                            alter: false,
+                        }),
+                    ],
+                }),
+            ],
+        });
+
+        expect(grant.canCreateDatabase()).to.equal(false);
+        expect(grant.canInspectDatabase("app", ["analytics"])).to.equal(true);
+        expect(grant.canExecute("app", ["analytics"])).to.equal(false);
+        expect(grant.canRead("app", "users", ["analytics"])).to.equal(true);
+        expect(grant.canWrite("app", "users", ["analytics"])).to.equal(false);
+        expect(grant.canRead("app", "users", ["other"])).to.equal(false);
     });
 
     it("memory grant scopes to memory name and namespace", () => {
@@ -222,21 +266,38 @@ describe("Grants", () => {
         expect(scope.livekit).to.be.instanceOf(LivekitGrant);
         expect(scope.llm).to.be.instanceOf(LLMGrant);
         expect(scope.memory).to.be.instanceOf(MemoryGrant);
+        expect(scope.sqlite).to.be.instanceOf(SqliteGrant);
         expect(scope.services).to.be.instanceOf(ServicesGrant);
         expect(scope.secrets).to.equal(undefined);
         expect(scope.admin).to.equal(undefined);
         expect(scope.tunnels).to.equal(undefined);
     });
 
-    it("api scope user default includes llm and secrets without admin or tunnels", () => {
+    it("api scope user default includes llm and excludes legacy secrets, admin, and tunnels", () => {
         const scope = ApiScope.userDefault();
         expect(scope.livekit).to.be.instanceOf(LivekitGrant);
         expect(scope.llm).to.be.instanceOf(LLMGrant);
         expect(scope.memory).to.be.instanceOf(MemoryGrant);
+        expect(scope.sqlite).to.be.instanceOf(SqliteGrant);
         expect(scope.services).to.be.instanceOf(ServicesGrant);
-        expect(scope.secrets).to.exist;
+        expect(scope.secrets).to.equal(undefined);
         expect(scope.admin).to.equal(undefined);
         expect(scope.tunnels).to.equal(undefined);
+    });
+
+    it("api scope full includes sqlite", () => {
+        expect(ApiScope.full().sqlite).to.be.instanceOf(SqliteGrant);
+    });
+
+    it("secrets grant rejects legacy oauth token request grant", () => {
+        expect(() => SecretsGrant.fromJSON({
+            request_oauth_token: [
+                {
+                    endpoint: "https://accounts.example/authorize",
+                    client_id: "client-1",
+                },
+            ],
+        })).to.throw("request_oauth_token");
     });
 });
 

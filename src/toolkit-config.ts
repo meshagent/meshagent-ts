@@ -62,6 +62,12 @@ function parseMcpHeaders(value: unknown): MCPHeader[] | undefined {
 
 export type MCPRequireApproval = "always" | "never";
 
+export interface MeshagentProxyConfig {
+    apiUrl: string;
+    apiKey: string;
+    user?: string | null;
+}
+
 export class MCPServer {
     public readonly serverLabel: string;
     public readonly authorization?: string;
@@ -277,12 +283,9 @@ export class Connector {
         if (connector == null && this.oauth == null) {
             return true;
         }
-        const token = await room.secrets.getOfflineOAuthToken({
-            connector,
-            oauth: this.oauth,
-            delegatedTo: agentName,
-        });
-        return token != null;
+        void room;
+        void agentName;
+        throw new Error("OAuth MCP connections require proxy-backed user secrets");
     }
 
     async authenticate(client: RoomClient, agent: RemoteParticipant, redirectUri: string | URL): Promise<string | null> {
@@ -290,18 +293,10 @@ export class Connector {
         if (connector == null && this.oauth == null) {
             return null;
         }
-        const localParticipant = client.localParticipant;
-        if (localParticipant == null) {
-            throw new Error("Connector.authenticate requires a local participant");
-        }
-        const agentName = agent.getAttribute("name");
-        return await client.secrets.requestOAuthToken({
-            fromParticipantId: localParticipant.id,
-            connector,
-            oauth: this.oauth,
-            redirectUri,
-            delegateTo: agentName == null ? null : String(agentName),
-        });
+        void client;
+        void agent;
+        void redirectUri;
+        throw new Error("OAuth MCP connections require proxy-backed user secrets");
     }
 }
 
@@ -375,12 +370,41 @@ function roomServiceMcpServerUrl({
     return `${baseUrl.protocol}//${userInfo}${bracketIpv6Host(baseUrl.hostname)}:${portValue}${joinedPath}${query}${fragment}`;
 }
 
+function proxyMcpServerUrl({
+    serverUrl,
+    useProxySecret,
+    proxyConfig,
+}: {
+    serverUrl: string | null;
+    useProxySecret?: string | null;
+    proxyConfig?: MeshagentProxyConfig | null;
+}): string | null {
+    const secretId = useProxySecret?.trim();
+    if (serverUrl == null || secretId == null || secretId.length === 0 || proxyConfig == null) {
+        return serverUrl;
+    }
+    const apiUrl = proxyConfig.apiUrl.trim().replace(/\/+$/, "");
+    if (apiUrl.length === 0 || proxyConfig.apiKey.trim().length === 0) {
+        throw new Error("meshagent_proxy_config requires apiUrl and apiKey");
+    }
+    const url = new URL(`${apiUrl}/proxy-request`);
+    url.searchParams.set("url", serverUrl);
+    url.searchParams.set("secret-id", secretId);
+    const user = proxyConfig.user?.trim();
+    if (user != null && user.length > 0) {
+        url.searchParams.set("user", user);
+    }
+    return url.toString();
+}
+
 export function mcpConnectorsFromRoomServices({
     services,
     agentName,
+    meshagentProxyConfig,
 }: {
     services: Iterable<ServiceSpec>;
     agentName?: string | null;
+    meshagentProxyConfig?: MeshagentProxyConfig | null;
 }): Connector[] {
     const connectors: Connector[] = [];
 
@@ -401,12 +425,24 @@ export function mcpConnectorsFromRoomServices({
                     name: mcp.label,
                     server: new MCPServer({
                         serverLabel: mcp.label,
-                        serverUrl: roomServiceMcpServerUrl({ service, port, endpoint }),
-                        headers: headersFromEndpointSpec(mcp.headers),
+                        serverUrl: proxyMcpServerUrl({
+                            serverUrl: roomServiceMcpServerUrl({ service, port, endpoint }),
+                            useProxySecret: mcp.use_proxy_secret,
+                            proxyConfig: meshagentProxyConfig,
+                        }),
+                        headers: mcp.use_proxy_secret != null && meshagentProxyConfig != null
+                            ? [
+                                ...(headersFromEndpointSpec(mcp.headers) ?? []),
+                                new MCPHeader({
+                                    name: "Authorization",
+                                    value: `Bearer ${meshagentProxyConfig.apiKey}`,
+                                }),
+                            ]
+                            : headersFromEndpointSpec(mcp.headers),
                         requireApproval: mcp.require_approval,
                         openaiConnectorId: mcp.openai_connector_id,
                     }),
-                    oauth: mcp.oauth,
+                    oauth: mcp.use_proxy_secret != null ? undefined : mcp.oauth,
                 }));
             }
         }

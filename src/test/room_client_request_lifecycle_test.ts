@@ -21,7 +21,6 @@ import {
 import { RoomStatusEvent } from "../room-event.js";
 import { RoomServerException } from "../room-server-client.js";
 import { MeshSchema, ElementType } from "../schema.js";
-import type { OAuthTokenRequest, SecretRequest } from "../secrets-client.js";
 import { packMessage, unpackMessage } from "../utils.js";
 
 class LinkedProtocolChannel implements ProtocolChannel {
@@ -532,74 +531,19 @@ describe("room_client_request_lifecycle", () => {
     pair.dispose();
   });
 
-  it("routes inbound secret requests through RoomClient handler options", async () => {
+  it("does not expose a secrets toolkit on room clients", async () => {
     const pair = new ProtocolPair();
-    const oauthRequests: OAuthTokenRequest[] = [];
-    const secretRequests: SecretRequest[] = [];
-
     pair.serverProtocol.start({ onMessage: async () => {} });
 
     const room = new RoomClient({
       protocolFactory: () => pair.clientProtocolFactory(),
-      oauthTokenRequestHandler: (request) => {
-        oauthRequests.push(request);
-      },
-      secretRequestHandler: (request) => {
-        secretRequests.push(request);
-      },
     });
 
     const start = room.start();
     await sendRoomReady(pair.serverProtocol);
     await start;
 
-    await pair.serverProtocol.send(
-      "secrets.request_oauth_token",
-      packMessage({
-        request_id: "req-1",
-        request: {
-          oauth: {
-            client_id: "client-id",
-            authorization_endpoint: "https://example.com/authorize",
-            token_endpoint: "https://example.com/token",
-            scopes: ["openid"],
-          },
-        },
-        challenge: "challenge",
-      }),
-    );
-    await pair.serverProtocol.send(
-      "secrets.request_secret",
-      packMessage({
-        request_id: "req-2",
-        request: {
-          url: "https://example.com/secret",
-          type: "text/plain",
-          delegate_to: "agent",
-        },
-      }),
-    );
-
-    await waitUntil(() => oauthRequests.length === 1 && secretRequests.length === 1);
-
-    expect(oauthRequests).to.deep.equal([
-      {
-        requestId: "req-1",
-        authorizationEndpoint: "https://example.com/authorize",
-        tokenEndpoint: "https://example.com/token",
-        challenge: "challenge",
-        scopes: ["openid"],
-        clientId: "client-id",
-      },
-    ]);
-    expect(secretRequests).to.deep.equal([
-      {
-        requestId: "req-2",
-        url: "https://example.com/secret",
-        type: "text/plain",
-        delegateTo: "agent",
-      },
-    ]);
+    expect("secrets" in room).to.equal(false);
 
     room.dispose();
     pair.dispose();

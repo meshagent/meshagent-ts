@@ -1,5 +1,6 @@
 import { Completer } from "./completer.js";
 import { DatasetsClient } from "./datasets-client.js";
+import { SqliteClient } from "./sqlite-client.js";
 import { DeveloperClient } from "./developer-client.js";
 import { EventEmitter, type EventHandler, type EventName } from "./event-emitter.js";
 import { MessagingClient } from "./messaging-client.js";
@@ -16,11 +17,10 @@ import {
   type ProtocolFactory,
 } from "./protocol.js";
 import { QueuesClient } from "./queues-client.js";
-import { BinaryContent, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response.js";
+import { BinaryContent, ControlCloseStatus, ControlContent, EmptyContent, ErrorContent, FileContent, JsonContent, LinkContent, TextContent, unpackContent } from "./response.js";
 import type { Content } from "./response.js";
 import { RoomEvent, RoomStatusEvent } from "./room-event.js";
 import { RoomServerException } from "./room-server-client.js";
-import { SecretsClient, type OAuthTokenRequestHandler, type SecretRequestHandler } from "./secrets-client.js";
 import { ServicesClient } from "./services-client.js";
 import { StorageClient } from "./storage-client.js";
 import { StreamController } from "./stream-controller.js";
@@ -32,6 +32,8 @@ import { ContainersClient } from "./containers-client.js";
 interface RequestHeader {
   [key: string]: unknown;
 }
+
+export type InvokeInput = Record<string, unknown> | Content;
 
 class ProtocolStartupFailure extends Error {
   public readonly kind: ProtocolCloseKind;
@@ -315,8 +317,8 @@ export class RoomClient {
   public readonly messaging: MessagingClient;
   public readonly queues: QueuesClient;
   public readonly datasets: DatasetsClient;
+  public readonly sqlite: SqliteClient;
   public readonly agents: AgentsClient;
-  public readonly secrets: SecretsClient;
   public readonly containers: ContainersClient;
   public readonly memory: MemoryClient;
   public readonly services: ServicesClient;
@@ -331,6 +333,7 @@ export class RoomClient {
   private readonly _eventEmitter = new EventEmitter<RoomEvent>();
   private readonly _pendingRequests = new Map<number, Completer<Content>>();
   private readonly _toolCallStreams = new Map<string, StreamController<Content>>();
+  private readonly _toolCallPreOpenErrors = new Map<string, Completer<never>>();
   private readonly _ignoredResponseLabels = new Map<number, string>();
   private readonly _ready = new Completer<void>();
   private readonly _roomClosed = new Completer<void>();
@@ -363,13 +366,9 @@ export class RoomClient {
   constructor({
     protocolFactory = null,
     reconnectTimeout = null,
-    oauthTokenRequestHandler,
-    secretRequestHandler,
   }: {
     protocolFactory?: ProtocolFactory | null;
     reconnectTimeout?: number | null;
-    oauthTokenRequestHandler?: OAuthTokenRequestHandler;
-    secretRequestHandler?: SecretRequestHandler;
   } = {}) {
     if (reconnectTimeout != null && reconnectTimeout < 0) {
       throw new Error("reconnectTimeout must be null or non-negative");
@@ -392,12 +391,8 @@ export class RoomClient {
     this.messaging = new MessagingClient({ room: this });
     this.queues = new QueuesClient({ room: this });
     this.datasets = new DatasetsClient({ room: this });
+    this.sqlite = new SqliteClient({ room: this });
     this.agents = new AgentsClient({ room: this });
-    this.secrets = new SecretsClient({
-      room: this,
-      oauthTokenRequestHandler,
-      secretRequestHandler,
-    });
     this.containers = new ContainersClient({ room: this });
     this.memory = new MemoryClient({ room: this });
     this.services = new ServicesClient({ room: this });
@@ -406,19 +401,13 @@ export class RoomClient {
   public static withIAP({
     url = "./.well-known/meshagent/room/connect",
     reconnectTimeout = null,
-    oauthTokenRequestHandler,
-    secretRequestHandler,
   }: {
     url?: string;
     reconnectTimeout?: number | null;
-    oauthTokenRequestHandler?: OAuthTokenRequestHandler;
-    secretRequestHandler?: SecretRequestHandler;
   } = {}): RoomClient {
     return new RoomClient({
       protocolFactory: () => WebSocketClientProtocol.withIAP({ url }),
       reconnectTimeout,
-      oauthTokenRequestHandler,
-      secretRequestHandler,
     });
   }
 
@@ -1616,21 +1605,10 @@ export class RoomClient {
     return toolkits;
   }
 
-  public async invoke(params: {
-    toolkit: string;
-    tool: string;
-    arguments?: Record<string, unknown>;
-    input?: Record<string, unknown> | Content;
-    participantId?: string;
-    onBehalfOfId?: string;
-  }): Promise<Content> {
-    const input = params.input ?? params.arguments ?? new EmptyContent();
-    const request: Record<string, unknown> = {
-      toolkit: params.toolkit,
-      tool: params.tool,
-    };
-
-    let requestData: Uint8Array | undefined;
+  private _normalizeInvokeInput(input: InvokeInput | undefined): Content {
+    if (input === undefined) {
+      return new EmptyContent();
+    }
     if (
       input instanceof BinaryContent ||
       input instanceof EmptyContent ||
@@ -1640,28 +1618,61 @@ export class RoomClient {
       input instanceof LinkContent ||
       input instanceof TextContent
     ) {
-      const packed = input.pack();
-      request["arguments"] = JSON.parse(splitMessageHeader(packed));
-      const payload = splitMessagePayload(packed);
-      if (payload.length > 0) {
-        requestData = payload;
-      }
-    } else if (typeof input === "object" && input !== null && !Array.isArray(input)) {
-      request["arguments"] = {
-        type: "json",
-        json: input,
-      };
-    } else {
-      throw new RoomServerException("invoke input must be a content value or JSON object");
+      return input;
     }
+    if (typeof input === "object" && input !== null && !Array.isArray(input)) {
+      return new JsonContent({ json: input });
+    }
+    throw new RoomServerException("invoke input must be a content value or JSON object");
+  }
 
-    if (params.participantId != null) {
-      request["participant_id"] = params.participantId;
+  public invoke(params: {
+    toolkit: string;
+    tool: string;
+    arguments?: Record<string, unknown>;
+    input?: InvokeInput;
+    participantId?: string;
+    onBehalfOfId?: string;
+  }): AsyncIterable<Content> {
+    const outputPromise = this.invokeToolCall({
+      toolkit: params.toolkit,
+      tool: params.tool,
+      input: this._normalizeInvokeInput(params.input ?? params.arguments),
+      participantId: params.participantId,
+      onBehalfOfId: params.onBehalfOfId,
+    });
+    void outputPromise.catch(() => undefined);
+    return {
+      async *[Symbol.asyncIterator](): AsyncIterator<Content> {
+        const output = await outputPromise;
+        if (output.kind === "stream") {
+          yield* output.stream;
+          return;
+        }
+        yield output.content;
+      },
+    };
+  }
+
+  public async invokeContent(params: {
+    toolkit: string;
+    tool: string;
+    arguments?: Record<string, unknown>;
+    input?: InvokeInput;
+    participantId?: string;
+    onBehalfOfId?: string;
+  }): Promise<Content> {
+    const output = await this.invokeToolCall({
+      toolkit: params.toolkit,
+      tool: params.tool,
+      input: this._normalizeInvokeInput(params.input ?? params.arguments),
+      participantId: params.participantId,
+      onBehalfOfId: params.onBehalfOfId,
+    });
+    if (output.kind !== "content") {
+      throw new RoomServerException("unexpected streamed output from " + params.toolkit + "." + params.tool);
     }
-    if (params.onBehalfOfId != null) {
-      request["on_behalf_of_id"] = params.onBehalfOfId;
-    }
-    return await this.sendRequest("room.invoke_tool", request, requestData);
+    return output.content;
   }
 
   public async invokeToolCall(params: {
@@ -1675,7 +1686,9 @@ export class RoomClient {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const controller = new StreamController<Content>();
     const responseIterator = controller.stream[Symbol.asyncIterator]();
+    const preOpenError = new Completer<never>();
     this._toolCallStreams.set(toolCallId, controller);
+    this._toolCallPreOpenErrors.set(toolCallId, preOpenError);
 
     const request: Record<string, unknown> = {
       toolkit: params.toolkit,
@@ -1704,7 +1717,11 @@ export class RoomClient {
     }
 
     try {
-      const response = await this.sendRequest("room.invoke_tool", request, requestData);
+      const response = await Promise.race([
+        this.sendRequest("room.invoke_tool", request, requestData),
+        preOpenError.fut,
+      ]);
+      this._toolCallPreOpenErrors.delete(toolCallId);
       if (response instanceof ControlContent && response.method === "open") {
         if (requestTask != null) {
           void requestTask.catch((error: unknown) => {
@@ -1712,7 +1729,7 @@ export class RoomClient {
             if (stream == null) {
               return;
             }
-            stream.add(new ErrorContent({ text: `request stream failed: ${String(error)}` }));
+            stream.addError(error);
             stream.close();
             this._toolCallStreams.delete(toolCallId);
           });
@@ -1735,6 +1752,7 @@ export class RoomClient {
       return { kind: "content", content: response, inputClosed: requestTask };
     } catch (error) {
       await Promise.resolve(requestTask).catch(() => undefined);
+      this._toolCallPreOpenErrors.delete(toolCallId);
       this._toolCallStreams.delete(toolCallId);
       controller.close();
       throw error;
@@ -1785,7 +1803,9 @@ export class RoomClient {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const controller = new StreamController<Content>();
     const responseIterator = controller.stream[Symbol.asyncIterator]();
+    const preOpenError = new Completer<never>();
     this._toolCallStreams.set(toolCallId, controller);
+    this._toolCallPreOpenErrors.set(toolCallId, preOpenError);
 
     const request: Record<string, unknown> = {
       toolkit: params.toolkit,
@@ -1805,12 +1825,24 @@ export class RoomClient {
       if (stream == null) {
         return;
       }
-      stream.add(new ErrorContent({ text: `request stream failed: ${String(error)}` }));
+      stream.addError(error);
       stream.close();
       this._toolCallStreams.delete(toolCallId);
     });
 
-    const response = await this.sendRequest("room.invoke_tool", request);
+    let response: Content;
+    try {
+      response = await Promise.race([
+        this.sendRequest("room.invoke_tool", request),
+        preOpenError.fut,
+      ]);
+    } catch (error) {
+      this._toolCallPreOpenErrors.delete(toolCallId);
+      this._toolCallStreams.delete(toolCallId);
+      controller.close();
+      throw error;
+    }
+    this._toolCallPreOpenErrors.delete(toolCallId);
     if (!(response instanceof ControlContent) || response.method !== "open") {
       this._toolCallStreams.delete(toolCallId);
       controller.close();
@@ -1895,11 +1927,43 @@ export class RoomClient {
     }
 
     const content = this._decodeToolCallContent({ header, payload });
+    const preOpenError = this._toolCallPreOpenErrors.get(toolCallId);
+    if (preOpenError != null && content instanceof ErrorContent) {
+      const error = new RoomServerException(content.text, content.code);
+      if (!preOpenError.completed) {
+        preOpenError.completeError(error);
+      }
+      stream.addError(error);
+      stream.close();
+      this._toolCallStreams.delete(toolCallId);
+      this._toolCallPreOpenErrors.delete(toolCallId);
+      return;
+    }
+
+    if (
+      content instanceof ControlContent &&
+      content.method === "close" &&
+      content.statusCode !== undefined &&
+      content.statusCode !== ControlCloseStatus.NORMAL
+    ) {
+      const error = new RoomServerException(
+        content.message ?? `tool call stream closed with status ${content.statusCode}`,
+        undefined,
+        { statusCode: content.statusCode },
+      );
+      stream.addError(error);
+      stream.close();
+      this._toolCallStreams.delete(toolCallId);
+      this._toolCallPreOpenErrors.delete(toolCallId);
+      return;
+    }
+
     stream.add(content);
 
     if (content instanceof ControlContent && content.method === "close") {
       stream.close();
       this._toolCallStreams.delete(toolCallId);
+      this._toolCallPreOpenErrors.delete(toolCallId);
     }
   }
 

@@ -1,7 +1,6 @@
 import { meshagentBaseUrl } from "./helpers.js";
-import { RoomException } from "./requirement.js";
+import { ForbiddenException, RoomException } from "./requirement.js";
 import { ApiScope } from "./participant-token.js";
-import { decoder, encoder } from "./utils.js";
 
 export type ProjectRole =
     | "member"
@@ -26,12 +25,6 @@ export type ProjectRole =
     | "api_key_creator"
     | "api_key_inventory"
     | "api_key_manager"
-    | "secret_creator"
-    | "secret_inventory"
-    | "secret_manager"
-    | "external_oauth_client_creator"
-    | "external_oauth_client_inventory"
-    | "external_oauth_client_manager"
     | "service_creator"
     | "service_inventory"
     | "service_manager"
@@ -60,7 +53,7 @@ export type ProjectRole =
     | "group_manager";
 export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
 export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
-export type SecretRole = "secret_accessor" | "secret_manager" | "secret_list";
+export type SecretRole = "use_proxy";
 export type AccessRole = ProjectRole | ResourceRole | FeedRole | SecretRole | "list";
 export type AccessSubjectType = "user" | "group" | "agent" | "service_account" | "userset";
 export type AccessResourceType = "project" | "room" | "agent" | "group" | "repository" | "feed" | "secret";
@@ -91,16 +84,61 @@ export interface RoomConnectionInfo {
     roomUrl: string;
 }
 
-export interface RoomSession {
-    id: string;
-    roomId?: string | null;
-    roomName: string;
-    createdAt: Date;
-    isActive: boolean;
-    participants?: Record<string, number>;
-    kind?: string;
-    agentId?: string | null;
-    agentName?: string | null;
+export class RoomSession {
+    public readonly id: string;
+    public readonly roomId?: string | null;
+    public readonly roomName: string;
+    public readonly createdAt: Date;
+    public readonly isActive: boolean;
+    public readonly participants?: Record<string, number> | null;
+    public readonly kind: string;
+    public readonly agentId?: string | null;
+    public readonly agentName?: string | null;
+
+    constructor({
+        id,
+        roomId,
+        roomName,
+        createdAt,
+        isActive,
+        participants,
+        kind = "room",
+        agentId,
+        agentName,
+    }: {
+        id: string;
+        roomId?: string | null;
+        roomName: string;
+        createdAt: Date;
+        isActive: boolean;
+        participants?: Record<string, number> | null;
+        kind?: string;
+        agentId?: string | null;
+        agentName?: string | null;
+    }) {
+        this.id = id;
+        this.roomId = roomId;
+        this.roomName = roomName;
+        this.createdAt = createdAt;
+        this.isActive = isActive;
+        this.participants = participants;
+        this.kind = kind;
+        this.agentId = agentId;
+        this.agentName = agentName;
+    }
+
+    public toJson(): Record<string, unknown> {
+        return {
+            id: this.id,
+            room_id: this.roomId ?? null,
+            room_name: this.roomName,
+            started_at: this.createdAt.toISOString(),
+            is_active: this.isActive,
+            kind: this.kind,
+            ...(this.agentId != null ? { agent_id: this.agentId } : {}),
+            ...(this.agentName != null ? { agent_name: this.agentName } : {}),
+        };
+    }
 }
 
 export interface RoomInfo {
@@ -204,6 +242,79 @@ export interface ApiKeysRevocationResult {
     revoked: string[];
 }
 
+export interface Secret {
+    id: string;
+    project_id: string;
+    owner_user_id?: string | null;
+    owner_service_account_id?: string | null;
+    created_by_user_id?: string | null;
+    created_by_service_account_id?: string | null;
+    type: string;
+    name: string;
+    http_only: boolean;
+    metadata: Record<string, unknown>;
+    annotations: Record<string, unknown>;
+    current_version_id?: string | null;
+    value_base64?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface SecretVersion {
+    id: string;
+    secret_id: string;
+    version: number;
+    encryption_key_id: string;
+    value_sha256?: string | null;
+    created_by_user_id?: string | null;
+    created_by_service_account_id?: string | null;
+    created_at: string;
+}
+
+export interface SecretsPage {
+    secrets: Secret[];
+    continuation_token?: string | null;
+}
+
+export interface SecretVersionsPage {
+    versions: SecretVersion[];
+}
+
+export interface SecretProxyAccessGrant {
+    subject: AccessSubject;
+    roles: SecretRole[];
+}
+
+export interface SecretProxyAccessGrantsPage {
+    access_grants: SecretProxyAccessGrant[];
+    continuation_token?: string | null;
+}
+
+export interface SecretInput {
+    projectId?: string;
+    name?: string;
+    type?: string;
+    httpOnly?: boolean;
+    metadata?: Record<string, unknown>;
+    annotations?: Record<string, unknown>;
+}
+
+export interface SecretSearchInput {
+    filter?: string;
+    name?: string;
+    type?: string;
+    httpOnly?: boolean;
+    metadata?: Record<string, unknown>;
+    annotations?: Record<string, unknown>;
+    pageSize?: number;
+    continuationToken?: string;
+}
+
+export interface SecretVersionInput {
+    value: Uint8Array | ArrayBuffer;
+    setCurrent?: boolean;
+}
+
 export interface GroupMember {
     subject: AccessSubject;
     directRoles: Array<"member" | "manager">;
@@ -214,18 +325,24 @@ export interface GroupMembersPage {
     continuationToken?: string | null;
 }
 
+export interface SecretValue {
+    id: string;
+}
+
+export interface TokenValue {
+    identity: string;
+    api?: ApiScope | null;
+    role?: "user" | "agent" | "tool" | null;
+}
+
 export interface EnvironmentVariable {
     name: string;
-    value: string;
+    value?: string | null;
+    token?: TokenValue | null;
+    secret?: SecretValue | null;
 }
 
 export interface RoomStorageMountSpec {
-    path: string;
-    subpath?: string | null;
-    read_only?: boolean;
-}
-
-export interface ProjectStorageMountSpec {
     path: string;
     subpath?: string | null;
     read_only?: boolean;
@@ -240,11 +357,17 @@ export interface ConfigMountSpec {
     path?: string | null;
 }
 
+export interface FileMountSpec {
+    path: string;
+    read_only?: boolean;
+    text?: string | null;
+}
+
 export interface ContainerMountSpec {
     room?: RoomStorageMountSpec[];
-    project?: ProjectStorageMountSpec[];
     empty_dirs?: EmptyDirMountSpec[];
     configs?: ConfigMountSpec[];
+    files?: FileMountSpec[];
 }
 
 export interface ServiceApiKeySpec {
@@ -324,6 +447,12 @@ export interface AgentSpec {
     heartbeat?: HeartbeatSpec | null;
 }
 
+export interface ManagedAgent {
+    id: string;
+    name: string;
+    configuration: Record<string, unknown>;
+}
+
 export interface ServiceMetadata {
     name: string;
     description?: string | null;
@@ -332,15 +461,19 @@ export interface ServiceMetadata {
     annotations?: Record<string, string> | null;
 }
 
+export interface ServiceRunAs {
+    email: string;
+    scopes?: string[] | null;
+}
+
 export interface ContainerSpec {
     private?: boolean | null;
     template?: "agent" | "none" | null;
     command?: string | null;
     working_dir?: string | null;
     image: string;
+    run_as?: ServiceRunAs | null;
     environment?: EnvironmentVariable[] | null;
-    secrets?: string[];
-    pull_secret?: string | null;
     storage?: ContainerMountSpec;
     on_demand?: boolean | null;
     writable_root_fs?: boolean | null;
@@ -377,6 +510,7 @@ export interface MCPEndpointSpec {
     require_approval?: "always" | "never" | null;
     oauth?: OAuthClientConfig | null;
     openai_connector_id?: string | null;
+    use_proxy_secret?: string | null;
 }
 
 export interface EndpointSpec {
@@ -405,6 +539,87 @@ export interface ServiceSpec {
     ports?: PortSpec[];
     container?: ContainerSpec | null;
     external?: ExternalServiceSpec | null;
+}
+
+function applyTemplateValues(value: unknown, values: Record<string, string>): unknown {
+    if (typeof value === "string") {
+        return Object.entries(values).reduce(
+            (current, [key, replacement]) => current.split(`{${key}}`).join(replacement),
+            value,
+        );
+    }
+    if (Array.isArray(value)) {
+        return value.map((item) => applyTemplateValues(item, values));
+    }
+    if (value !== null && typeof value === "object") {
+        const result: Record<string, unknown> = {};
+        for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+            result[key] = applyTemplateValues(entry, values);
+        }
+        return result;
+    }
+    return value;
+}
+
+function normalizeServiceSpec(service: ServiceSpec): ServiceSpec {
+    const storage = service.container?.storage;
+    const agents = service.agents?.map((agent) => ({
+        ...agent,
+        email: agent.email == null
+            ? agent.email
+            : {
+                ...agent.email,
+                public: agent.email.public ?? false,
+            },
+        channels: agent.channels == null
+            ? agent.channels
+            : {
+                ...agent.channels,
+                messaging: agent.channels.messaging?.map((channel) => ({
+                    ...channel,
+                    protocol: channel.protocol ?? "meshagent.agent-message.v1",
+                })),
+            },
+    }));
+    const container = service.container == null
+        ? service.container
+        : {
+            ...service.container,
+            storage: storage == null
+                ? storage
+                : {
+                    ...storage,
+                    configs: storage.configs?.map((config) => ({
+                        ...config,
+                        path: config.path ?? "/var/run/meshagent",
+                    })),
+                    files: storage.files?.map((file) => ({
+                        ...file,
+                        read_only: file.read_only ?? true,
+                    })),
+                },
+        };
+    return { ...service, agents, container };
+}
+
+export class ServiceTemplateSpec {
+    private readonly template: Record<string, unknown>;
+
+    private constructor(template: Record<string, unknown>) {
+        this.template = template;
+    }
+
+    public static fromJson(json: Record<string, unknown>): ServiceTemplateSpec {
+        return new ServiceTemplateSpec(json);
+    }
+
+    public toServiceSpec({ values = {} }: { values?: Record<string, string> } = {}): ServiceSpec {
+        const templated = applyTemplateValues(this.template, values) as Record<string, unknown>;
+        return normalizeServiceSpec({
+            ...templated,
+            kind: "Service",
+        } as ServiceSpec);
+    }
 }
 
 export interface RouteMetadata {
@@ -474,7 +689,65 @@ function pruneUndefinedValues(value: unknown): unknown {
     return value;
 }
 
+function validateServiceSpec(service: ServiceSpec): void {
+    const container = service.container;
+    if (container == null) {
+        return;
+    }
+
+    if (typeof (container as unknown as Record<string, unknown>).run_as === "string") {
+        throw new Error("container.run_as must be an object with an email field");
+    }
+
+    const environment = container.environment ?? [];
+    const hasSecretEnvironment = environment.some((entry) => entry.secret != null);
+    if (hasSecretEnvironment && container.run_as == null) {
+        throw new Error("container.run_as is required when using SecretValue");
+    }
+
+    for (const entry of environment) {
+        const secret = entry.secret;
+        if (secret == null) {
+            continue;
+        }
+        const unsupportedFields = Object.keys(secret).filter((key) => key !== "id");
+        if (unsupportedFields.length > 0) {
+            throw new Error(`unsupported SecretValue fields: ${unsupportedFields.join(", ")}`);
+        }
+    }
+}
+
+const defaultServiceRunAsScopes = ["secrets:proxy"];
+
+function normalizeServiceRunAs(runAs: ServiceRunAs | null | undefined): ServiceRunAs | null | undefined {
+    if (runAs == null) {
+        return runAs;
+    }
+
+    const email = runAs.email.trim().toLowerCase();
+    if (email.length === 0) {
+        throw new Error("container.run_as.email is required");
+    }
+
+    const scopes = runAs.scopes == null ? defaultServiceRunAsScopes : runAs.scopes;
+    const normalizedScopes: string[] = [];
+    for (const scope of scopes) {
+        const normalized = scope.trim();
+        if (normalized.length === 0 || normalizedScopes.includes(normalized)) {
+            continue;
+        }
+        normalizedScopes.push(normalized);
+    }
+
+    return {
+        email,
+        scopes: normalizedScopes.length === 0 ? [...defaultServiceRunAsScopes] : normalizedScopes,
+    };
+}
+
 function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
+    validateServiceSpec(service);
+
     const agents = service.agents?.map((agent) => ({
         ...agent,
         channels: agent.channels == null
@@ -487,9 +760,16 @@ function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
                 })),
             },
     }));
+    const container = service.container == null
+        ? service.container
+        : {
+            ...service.container,
+            run_as: normalizeServiceRunAs(service.container.run_as),
+        };
 
     return pruneUndefinedValues({
         ...service,
+        container,
         agents,
     }) as Record<string, unknown>;
 }
@@ -600,52 +880,10 @@ export interface OAuthClientsPage {
     total: number;
 }
 
-export interface BaseSecret {
-    id?: string;
-    name: string;
-    type: "docker" | "keys";
-}
-
-export interface PullSecret extends BaseSecret {
-    type: "docker";
-    server: string;
-    username: string;
-    password: string;
-    email?: string;
-}
-
-export interface KeysSecret extends BaseSecret {
-    type: "keys";
-    data: Record<string, string>;
-}
-
-export type SecretLike = PullSecret | KeysSecret;
-
-export interface ManagedSecretInfo {
-    id: string;
-    type: string;
-    name: string;
-    delegatedTo?: string | null;
-}
-
-export interface ManagedSecret extends ManagedSecretInfo {
-    dataBase64: string;
-    data: Uint8Array;
-}
-
 export interface ConnectorRef {
     openaiConnectorId?: string | null;
     serverUrl?: string | null;
     clientSecretId?: string | null;
-}
-
-export interface ExternalOAuthClientRegistration {
-    id: string;
-    delegatedTo: string;
-    connector?: ConnectorRef | null;
-    oauth?: OAuthClientConfig | null;
-    clientId: string;
-    clientSecret?: string | null;
 }
 
 type RequestBody = string | Uint8Array | ArrayBuffer | null | undefined;
@@ -659,47 +897,6 @@ interface RequestOptions {
     headers?: Record<string, string>;
     action: string;
     responseType?: "json" | "text" | "arrayBuffer" | "void";
-}
-
-const globalScope = globalThis as typeof globalThis & {
-    Buffer?: {
-        from(data: Uint8Array | string, encoding?: string): { toString(encoding: string): string };
-    };
-    btoa?: (data: string) => string;
-    atob?: (data: string) => string;
-};
-
-function bytesToBase64(bytes: Uint8Array): string {
-    if (globalScope.Buffer) {
-        return globalScope.Buffer.from(bytes).toString("base64");
-    }
-
-    if (!globalScope.btoa) {
-        throw new Error("base64 encoding is not available in this runtime");
-    }
-
-    let binary = "";
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-    return globalScope.btoa(binary);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-    if (globalScope.Buffer) {
-        return Uint8Array.from(globalScope.Buffer.from(base64, "base64") as unknown as ArrayLike<number>);
-    }
-
-    if (!globalScope.atob) {
-        throw new Error("base64 decoding is not available in this runtime");
-    }
-
-    const binary = globalScope.atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
-    }
-    return bytes;
 }
 
 function toFetchBody(body: RequestBody): string | ArrayBuffer | undefined {
@@ -716,11 +913,17 @@ function toFetchBody(body: RequestBody): string | ArrayBuffer | undefined {
     return copy.buffer;
 }
 
-function normalizeBinary(data: Uint8Array | ArrayBuffer | Buffer): Uint8Array {
-    if (data instanceof Uint8Array) {
-        return data;
+function bytesToBase64(value: Uint8Array | ArrayBuffer): string {
+    const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+    if (typeof Buffer !== "undefined") {
+        return Buffer.from(bytes).toString("base64");
     }
-    return new Uint8Array(data);
+
+    let binary = "";
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
 }
 
 export class Meshagent {
@@ -787,6 +990,9 @@ export class Meshagent {
             } catch {
                 message = "<unable to read body>";
             }
+            if (response.status === 403) {
+                throw new ForbiddenException(`Failed to ${action}. Status code: ${response.status}, body: ${message}`);
+            }
             throw new RoomException(`Failed to ${action}. Status code: ${response.status}, body: ${message}`);
         }
 
@@ -804,6 +1010,38 @@ export class Meshagent {
             default:
                 return undefined as T;
         }
+    }
+
+    private secretPayload(input: SecretInput): Record<string, unknown> {
+        const payload: Record<string, unknown> = {};
+        if (input.projectId !== undefined) payload.project_id = input.projectId;
+        if (input.name !== undefined) payload.name = input.name;
+        if (input.type !== undefined) payload.type = input.type;
+        if (input.httpOnly !== undefined) payload.http_only = input.httpOnly;
+        if (input.metadata !== undefined) payload.metadata = input.metadata;
+        if (input.annotations !== undefined) payload.annotations = input.annotations;
+        return payload;
+    }
+
+    private secretSearchPayload(input: SecretSearchInput): Record<string, unknown> {
+        const payload: Record<string, unknown> = {
+            page_size: input.pageSize ?? 100,
+        };
+        if (input.filter !== undefined) payload.filter = input.filter;
+        if (input.name !== undefined) payload.name = input.name;
+        if (input.type !== undefined) payload.type = input.type;
+        if (input.httpOnly !== undefined) payload.http_only = input.httpOnly;
+        if (input.metadata !== undefined) payload.metadata = input.metadata;
+        if (input.annotations !== undefined) payload.annotations = input.annotations;
+        if (input.continuationToken !== undefined) payload.continuation_token = input.continuationToken;
+        return payload;
+    }
+
+    private secretVersionPayload(input: SecretVersionInput): Record<string, unknown> {
+        return {
+            value_base64: bytesToBase64(input.value),
+            set_current: input.setCurrent ?? true,
+        };
     }
 
     private parseRoomSession(data: any): RoomSession {
@@ -842,7 +1080,7 @@ export class Meshagent {
         if (typeof isActiveValue !== "boolean") {
             throw new RoomException("Invalid room session payload: missing is_active");
         }
-        return {
+        return new RoomSession({
             id,
             roomId: typeof roomId === "string" ? roomId : typeof roomIdRaw === "string" ? roomIdRaw : undefined,
             roomName: roomNameValue,
@@ -852,7 +1090,7 @@ export class Meshagent {
             kind: typeof kind === "string" ? kind : undefined,
             agentId: typeof agentId === "string" ? agentId : typeof agentIdRaw === "string" ? agentIdRaw : undefined,
             agentName: typeof agentName === "string" ? agentName : typeof agentNameRaw === "string" ? agentNameRaw : undefined,
-        };
+        });
     }
 
     private parseRoom(data: any): RoomInfo {
@@ -1249,12 +1487,6 @@ export class Meshagent {
                   item === "api_key_creator" ||
                   item === "api_key_inventory" ||
                   item === "api_key_manager" ||
-                  item === "secret_creator" ||
-                  item === "secret_inventory" ||
-                  item === "secret_manager" ||
-                  item === "external_oauth_client_creator" ||
-                  item === "external_oauth_client_inventory" ||
-                  item === "external_oauth_client_manager" ||
                   item === "service_creator" ||
                   item === "service_inventory" ||
                   item === "service_manager" ||
@@ -1347,232 +1579,6 @@ export class Meshagent {
             referenceType: typeof referenceTypeValue === "string" ? referenceTypeValue : null,
             description,
             createdAt: new Date(createdValue),
-        };
-    }
-
-    private parseSecret(data: any): SecretLike {
-        if (!data || typeof data !== "object") {
-            throw new RoomException("Invalid secret payload");
-        }
-        const type = (data as any).type;
-        if (type === "docker") {
-            const server = (data as any).server;
-            const username = (data as any).username;
-            const password = (data as any).password;
-            if (typeof server !== "string" || typeof username !== "string" || typeof password !== "string") {
-                throw new RoomException("Invalid docker secret payload");
-            }
-            return {
-                id: typeof (data as any).id === "string" ? (data as any).id : undefined,
-                name: (data as any).name,
-                type: "docker",
-                server,
-                username,
-                password,
-                email: typeof (data as any).email === "string" ? (data as any).email : undefined,
-            };
-        }
-        if (type === "keys") {
-            const record = (data as any).data;
-            if (!record || typeof record !== "object") {
-                throw new RoomException("Invalid keys secret payload");
-            }
-            return {
-                id: typeof (data as any).id === "string" ? (data as any).id : undefined,
-                name: (data as any).name,
-                type: "keys",
-                data: record as Record<string, string>,
-            };
-        }
-        throw new RoomException(`Unknown secret type: ${type}`);
-    }
-
-    private parseManagedSecretInfo(data: any): ManagedSecretInfo {
-        if (!data || typeof data !== "object") {
-            throw new RoomException("Invalid managed secret payload");
-        }
-
-        const { id, type, name, delegated_to: delegatedToRaw, delegatedTo } = data as any;
-        if (typeof id !== "string" || typeof type !== "string" || typeof name !== "string") {
-            throw new RoomException("Invalid managed secret payload: missing id, type, or name");
-        }
-
-        const delegatedToValue = typeof delegatedTo === "string"
-            ? delegatedTo
-            : typeof delegatedToRaw === "string"
-                ? delegatedToRaw
-                : null;
-
-        return {
-            id,
-            type,
-            name,
-            delegatedTo: delegatedToValue,
-        };
-    }
-
-    private parseManagedSecret(data: any): ManagedSecret {
-        const secret = this.parseManagedSecretInfo(data);
-        const dataBase64 = (data as any).data_base64 ?? (data as any).dataBase64;
-        if (typeof dataBase64 !== "string") {
-            throw new RoomException("Invalid managed secret payload: missing data_base64");
-        }
-
-        return {
-            ...secret,
-            dataBase64,
-            data: base64ToBytes(dataBase64),
-        };
-    }
-
-    private parseSecretPayload(secret: ManagedSecretInfo, rawData: Uint8Array): SecretLike {
-        let payload: unknown;
-        try {
-            payload = JSON.parse(decoder.decode(rawData));
-        } catch {
-            throw new RoomException(`Invalid secret payload for ${secret.id}`);
-        }
-
-        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-            throw new RoomException(`Invalid secret payload for ${secret.id}`);
-        }
-
-        if (secret.type === "docker") {
-            const { server, username, password, email } = payload as Record<string, unknown>;
-            if (typeof server !== "string" || typeof username !== "string" || typeof password !== "string") {
-                throw new RoomException(`Invalid secret payload for ${secret.id}`);
-            }
-            return {
-                id: secret.id,
-                name: secret.name,
-                type: "docker",
-                server,
-                username,
-                password,
-                email: typeof email === "string" ? email : "none@example.com",
-            };
-        }
-
-        const entries = Object.entries(payload as Record<string, unknown>);
-        if (entries.some(([, value]) => typeof value !== "string")) {
-            throw new RoomException(`Invalid secret payload for ${secret.id}`);
-        }
-
-        return {
-            id: secret.id,
-            name: secret.name,
-            type: "keys",
-            data: Object.fromEntries(entries as Array<[string, string]>),
-        };
-    }
-
-    private toSecretPayload(secret: SecretLike): { name: string; type: string; data: Record<string, string> } {
-        if (secret.type === "docker") {
-            return {
-                name: secret.name,
-                type: secret.type,
-                data: {
-                    server: secret.server,
-                    username: secret.username,
-                    password: secret.password,
-                    email: secret.email ?? "none@example.com",
-                },
-            };
-        }
-        return {
-            name: secret.name,
-            type: secret.type,
-            data: { ...secret.data },
-        };
-    }
-
-    private parseConnectorRef(data: any): ConnectorRef | null {
-        if (data == null) {
-            return null;
-        }
-
-        if (typeof data !== "object") {
-            throw new RoomException("Invalid connector payload");
-        }
-
-        const {
-            openai_connector_id: openaiConnectorIdRaw,
-            openaiConnectorId,
-            server_url: serverUrlRaw,
-            serverUrl,
-            client_secret_id: clientSecretIdRaw,
-            clientSecretId,
-        } = data as any;
-
-        return {
-            openaiConnectorId: typeof openaiConnectorId === "string"
-                ? openaiConnectorId
-                : typeof openaiConnectorIdRaw === "string"
-                    ? openaiConnectorIdRaw
-                    : null,
-            serverUrl: typeof serverUrl === "string"
-                ? serverUrl
-                : typeof serverUrlRaw === "string"
-                    ? serverUrlRaw
-                    : null,
-            clientSecretId: typeof clientSecretId === "string"
-                ? clientSecretId
-                : typeof clientSecretIdRaw === "string"
-                    ? clientSecretIdRaw
-                    : null,
-        };
-    }
-
-    private serializeConnectorRef(connector?: ConnectorRef | null): Record<string, string> | null {
-        if (connector == null) {
-            return null;
-        }
-
-        const payload: Record<string, string> = {};
-        if (connector.openaiConnectorId) {
-            payload.openai_connector_id = connector.openaiConnectorId;
-        }
-        if (connector.serverUrl) {
-            payload.server_url = connector.serverUrl;
-        }
-        if (connector.clientSecretId) {
-            payload.client_secret_id = connector.clientSecretId;
-        }
-        return payload;
-    }
-
-    private parseExternalOAuthClientRegistration(data: any): ExternalOAuthClientRegistration {
-        if (!data || typeof data !== "object") {
-            throw new RoomException("Invalid external oauth registration payload");
-        }
-
-        const {
-            id,
-            delegated_to: delegatedToRaw,
-            delegatedTo,
-            connector,
-            oauth,
-            client_id: clientIdRaw,
-            clientId,
-            client_secret: clientSecretRaw,
-            clientSecret,
-        } = data as any;
-
-        const delegatedToValue = typeof delegatedTo === "string" ? delegatedTo : delegatedToRaw;
-        const clientIdValue = typeof clientId === "string" ? clientId : clientIdRaw;
-        const clientSecretValue = typeof clientSecret === "string" ? clientSecret : clientSecretRaw;
-
-        if (typeof id !== "string" || typeof delegatedToValue !== "string" || typeof clientIdValue !== "string") {
-            throw new RoomException("Invalid external oauth registration payload: missing fields");
-        }
-
-        return {
-            id,
-            delegatedTo: delegatedToValue,
-            connector: this.parseConnectorRef(connector),
-            oauth: oauth && typeof oauth === "object" ? oauth as OAuthClientConfig : null,
-            clientId: clientIdValue,
-            clientSecret: typeof clientSecretValue === "string" ? clientSecretValue : null,
         };
     }
 
@@ -1836,6 +1842,197 @@ export class Meshagent {
         });
     }
 
+    // Secrets -----------------------------------------------------------------
+
+    async createUserSecret(input: Required<Pick<SecretInput, "projectId" | "name">> & Omit<SecretInput, "projectId" | "name">): Promise<Secret> {
+        return await this.request<Secret>(`/accounts/users/me/secrets`, {
+            method: "POST",
+            json: this.secretPayload(input),
+            action: "create user secret",
+        });
+    }
+
+    async listUserSecrets(options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<SecretsPage> {
+        return await this.request<SecretsPage>(`/accounts/users/me/secrets`, {
+            query: {
+                page_size: options.pageSize ?? 100,
+                continuation_token: options.continuationToken,
+                filter: options.filter,
+            },
+            action: "list user secrets",
+        });
+    }
+
+    async searchUserSecrets(input: SecretSearchInput = {}): Promise<SecretsPage> {
+        return await this.request<SecretsPage>(`/accounts/users/me/secrets:search`, {
+            method: "POST",
+            json: this.secretSearchPayload(input),
+            action: "search user secrets",
+        });
+    }
+
+    async getUserSecret(secretId: string, options: { includeValue?: boolean } = {}): Promise<Secret> {
+        return await this.request<Secret>(`/accounts/users/me/secrets/${secretId}`, {
+            query: {
+                include_value: options.includeValue ? "true" : undefined,
+            },
+            action: "get user secret",
+        });
+    }
+
+    async updateUserSecret(secretId: string, input: SecretInput): Promise<Secret> {
+        return await this.request<Secret>(`/accounts/users/me/secrets/${secretId}`, {
+            method: "PATCH",
+            json: this.secretPayload(input),
+            action: "update user secret",
+        });
+    }
+
+    async deleteUserSecret(secretId: string): Promise<void> {
+        await this.request(`/accounts/users/me/secrets/${secretId}`, {
+            method: "DELETE",
+            action: "delete user secret",
+            responseType: "void",
+        });
+    }
+
+    async listUserSecretVersions(secretId: string): Promise<SecretVersion[]> {
+        const page = await this.request<SecretVersionsPage>(`/accounts/users/me/secrets/${secretId}/versions`, {
+            action: "list user secret versions",
+        });
+        return page.versions;
+    }
+
+    async createUserSecretVersion(secretId: string, input: SecretVersionInput): Promise<SecretVersion> {
+        return await this.request<SecretVersion>(`/accounts/users/me/secrets/${secretId}/versions`, {
+            method: "POST",
+            json: this.secretVersionPayload(input),
+            action: "create user secret version",
+        });
+    }
+
+    async listUserSecretProxyAccess(secretId: string, options: { pageSize?: number; continuationToken?: string } = {}): Promise<SecretProxyAccessGrantsPage> {
+        return await this.request<SecretProxyAccessGrantsPage>(`/accounts/users/me/secrets/${secretId}/access`, {
+            query: {
+                page_size: options.pageSize ?? 100,
+                continuation_token: options.continuationToken,
+            },
+            action: "list user secret proxy access",
+        });
+    }
+
+    async grantUserSecretProxyAccess(secretId: string, serviceAccountId: string): Promise<void> {
+        await this.request(`/accounts/users/me/secrets/${secretId}/access:grant-proxy`, {
+            method: "POST",
+            json: { subject: { type: "service_account", id: serviceAccountId } },
+            action: "grant user secret proxy access",
+            responseType: "void",
+        });
+    }
+
+    async revokeUserSecretProxyAccess(secretId: string, serviceAccountId: string): Promise<void> {
+        await this.request(`/accounts/users/me/secrets/${secretId}/access:revoke-proxy`, {
+            method: "POST",
+            json: { subject: { type: "service_account", id: serviceAccountId } },
+            action: "revoke user secret proxy access",
+            responseType: "void",
+        });
+    }
+
+    async createServiceAccountSecret(
+        projectId: string,
+        serviceAccountId: string,
+        input: Required<Pick<SecretInput, "name">> & Omit<SecretInput, "projectId" | "name">,
+    ): Promise<Secret> {
+        return await this.request<Secret>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets`, {
+            method: "POST",
+            json: this.secretPayload(input),
+            action: "create service account secret",
+        });
+    }
+
+    async listServiceAccountSecrets(projectId: string, serviceAccountId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<SecretsPage> {
+        return await this.request<SecretsPage>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets`, {
+            query: {
+                page_size: options.pageSize ?? 100,
+                continuation_token: options.continuationToken,
+                filter: options.filter,
+            },
+            action: "list service account secrets",
+        });
+    }
+
+    async searchServiceAccountSecrets(projectId: string, serviceAccountId: string, input: SecretSearchInput = {}): Promise<SecretsPage> {
+        return await this.request<SecretsPage>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets:search`, {
+            method: "POST",
+            json: this.secretSearchPayload(input),
+            action: "search service account secrets",
+        });
+    }
+
+    async getServiceAccountSecret(projectId: string, serviceAccountId: string, secretId: string, options: { includeValue?: boolean } = {}): Promise<Secret> {
+        return await this.request<Secret>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets/${secretId}`, {
+            query: {
+                include_value: options.includeValue ? "true" : undefined,
+            },
+            action: "get service account secret",
+        });
+    }
+
+    async updateServiceAccountSecret(projectId: string, serviceAccountId: string, secretId: string, input: SecretInput): Promise<Secret> {
+        return await this.request<Secret>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets/${secretId}`, {
+            method: "PATCH",
+            json: this.secretPayload(input),
+            action: "update service account secret",
+        });
+    }
+
+    async deleteServiceAccountSecret(projectId: string, serviceAccountId: string, secretId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets/${secretId}`, {
+            method: "DELETE",
+            action: "delete service account secret",
+            responseType: "void",
+        });
+    }
+
+    async listServiceAccountSecretVersions(projectId: string, serviceAccountId: string, secretId: string): Promise<SecretVersion[]> {
+        const page = await this.request<SecretVersionsPage>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets/${secretId}/versions`, {
+            action: "list service account secret versions",
+        });
+        return page.versions;
+    }
+
+    async createServiceAccountSecretVersion(projectId: string, serviceAccountId: string, secretId: string, input: SecretVersionInput): Promise<SecretVersion> {
+        return await this.request<SecretVersion>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/secrets/${secretId}/versions`, {
+            method: "POST",
+            json: this.secretVersionPayload(input),
+            action: "create service account secret version",
+        });
+    }
+
+    async listServiceAccountPullSecrets(projectId: string, serviceAccountId: string): Promise<Secret[]> {
+        const page = await this.request<SecretsPage>(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/pull-secrets`, {
+            action: "list service account pull secrets",
+        });
+        return page.secrets;
+    }
+
+    async addServiceAccountPullSecret(projectId: string, serviceAccountId: string, secretId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/pull-secrets/${secretId}`, {
+            method: "PUT",
+            action: "add service account pull secret",
+            responseType: "void",
+        });
+    }
+
+    async removeServiceAccountPullSecret(projectId: string, serviceAccountId: string, secretId: string): Promise<void> {
+        await this.request(`/accounts/projects/${projectId}/service-accounts/${serviceAccountId}/pull-secrets/${secretId}`, {
+            method: "DELETE",
+            action: "remove service account pull secret",
+            responseType: "void",
+        });
+    }
+
     // Billing -----------------------------------------------------------------
 
     async getPricing(): Promise<Record<string, unknown>> {
@@ -2001,6 +2198,29 @@ export class Meshagent {
         );
         const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
         return sessions.map((item) => this.parseRoomSession(item));
+    }
+
+    async createAgent(params: {
+        projectId: string;
+        configuration: Record<string, unknown>;
+        ifNotExists?: boolean;
+        permissions?: unknown[] | null;
+    }): Promise<ManagedAgent> {
+        const body: Record<string, unknown> = {
+            configuration: params.configuration,
+            if_not_exists: params.ifNotExists ?? false,
+        };
+        if (params.permissions != null) {
+            body.permissions = params.permissions;
+        }
+        return await this.request<ManagedAgent>(
+            `/accounts/projects/${params.projectId}/agents`,
+            {
+                method: "POST",
+                json: body,
+                action: "create agent",
+            },
+        );
     }
 
     async listSessionEvents(projectId: string, sessionId: string): Promise<Record<string, unknown>[]> {
@@ -2513,7 +2733,7 @@ export class Meshagent {
         const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/services/${serviceId}`, {
             action: "fetch room service",
         });
-        return data as ServiceSpec;
+        return normalizeServiceSpec(data as ServiceSpec);
     }
 
     async listRoomServices(projectId: string, roomName: string): Promise<ServiceSpec[]> {
@@ -2524,7 +2744,7 @@ export class Meshagent {
             },
         );
         const services = Array.isArray(data?.services) ? data.services : [];
-        return services as ServiceSpec[];
+        return services.map((service) => normalizeServiceSpec(service as ServiceSpec));
     }
 
     async deleteRoomService(projectId: string, roomName: string, serviceId: string): Promise<void> {
@@ -2551,7 +2771,7 @@ export class Meshagent {
         const data = await this.request(`/accounts/projects/${projectId}/services/${serviceId}`, {
             action: "fetch service",
         });
-        return data as ServiceSpec;
+        return normalizeServiceSpec(data as ServiceSpec);
     }
 
     async listServices(projectId: string): Promise<ServiceSpec[]> {
@@ -2559,404 +2779,13 @@ export class Meshagent {
             action: "list services",
         });
         const services = Array.isArray(data?.services) ? data.services : [];
-        return services as ServiceSpec[];
+        return services.map((service) => normalizeServiceSpec(service as ServiceSpec));
     }
 
     async deleteService(projectId: string, serviceId: string): Promise<void> {
         await this.request(`/accounts/projects/${projectId}/services/${serviceId}`, {
             method: "DELETE",
             action: "delete service",
-            responseType: "void",
-        });
-    }
-
-    // Secrets -----------------------------------------------------------------
-
-    async createProjectSecret(params: {
-        projectId: string;
-        name: string;
-        type: string;
-        data: Uint8Array | ArrayBuffer | Buffer;
-    }): Promise<string> {
-        const { projectId, name, type, data } = params;
-        const payload = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/secrets`, {
-            method: "POST",
-            json: {
-                name,
-                type,
-                data_base64: bytesToBase64(normalizeBinary(data)),
-            },
-            action: "create project secret",
-        });
-        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
-            throw new RoomException("Invalid create project secret response payload");
-        }
-        return payload.id;
-    }
-
-    async updateProjectSecret(params: {
-        projectId: string;
-        secretId: string;
-        name: string;
-        type: string;
-        data: Uint8Array | ArrayBuffer | Buffer;
-    }): Promise<void> {
-        const { projectId, secretId, name, type, data } = params;
-        await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
-            method: "PUT",
-            json: {
-                name,
-                type,
-                data_base64: bytesToBase64(normalizeBinary(data)),
-            },
-            action: "update project secret",
-            responseType: "void",
-        });
-    }
-
-    async getProjectSecret(projectId: string, secretId: string): Promise<ManagedSecret> {
-        const data = await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
-            action: "fetch project secret",
-        });
-        return this.parseManagedSecret(data);
-    }
-
-    async listProjectSecrets(projectId: string, params: { view?: "my" | "all" } = {}): Promise<ManagedSecretInfo[]> {
-        const search = new URLSearchParams();
-        if (params.view) {
-            search.set("view", params.view);
-        }
-        const query = search.toString();
-        const data = await this.request<{ secrets?: unknown[] }>(`/accounts/projects/${projectId}/secrets${query ? `?${query}` : ""}`, {
-            action: "list project secrets",
-        });
-        const secrets = Array.isArray(data?.secrets) ? data.secrets : [];
-        return secrets.map((item) => this.parseManagedSecretInfo(item));
-    }
-
-    async deleteProjectSecret(projectId: string, secretId: string): Promise<void> {
-        await this.request(`/accounts/projects/${projectId}/secrets/${secretId}`, {
-            method: "DELETE",
-            action: "delete project secret",
-            responseType: "void",
-        });
-    }
-
-    async createRoomSecret(params: {
-        projectId: string;
-        roomName: string;
-        data: Uint8Array | ArrayBuffer | Buffer;
-        secretId?: string;
-        name?: string;
-        type?: string;
-        delegatedTo?: string;
-        forIdentity?: string;
-    }): Promise<string> {
-        const { projectId, roomName, data, secretId, name, type, delegatedTo, forIdentity } = params;
-        const payload = await this.request<{ id?: unknown }>(
-            `/accounts/projects/${projectId}/rooms/${roomName}/secrets`,
-            {
-                method: "POST",
-                json: {
-                    data_base64: bytesToBase64(normalizeBinary(data)),
-                    secret_id: secretId,
-                    name,
-                    type,
-                    delegated_to: delegatedTo,
-                    for_identity: forIdentity,
-                },
-                action: "create room secret",
-            },
-        );
-        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
-            throw new RoomException("Invalid create room secret response payload");
-        }
-        return payload.id;
-    }
-
-    async updateRoomSecret(params: {
-        projectId: string;
-        roomName: string;
-        secretId: string;
-        data: Uint8Array | ArrayBuffer | Buffer;
-        name?: string;
-        type?: string;
-        delegatedTo?: string;
-        forIdentity?: string;
-    }): Promise<void> {
-        const { projectId, roomName, secretId, data, name, type, delegatedTo, forIdentity } = params;
-        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/secrets/${secretId}`, {
-            method: "PUT",
-            json: {
-                data_base64: bytesToBase64(normalizeBinary(data)),
-                name,
-                type,
-                delegated_to: delegatedTo,
-                for_identity: forIdentity,
-            },
-            action: "update room secret",
-            responseType: "void",
-        });
-    }
-
-    async getRoomSecret(params: {
-        projectId: string;
-        roomName: string;
-        secretId: string;
-        delegatedTo?: string;
-        forIdentity?: string;
-    }): Promise<ManagedSecret> {
-        const { projectId, roomName, secretId, delegatedTo, forIdentity } = params;
-        const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/secrets/${secretId}`, {
-            query: {
-                delegated_to: delegatedTo,
-                for_identity: forIdentity,
-            },
-            action: "fetch room secret",
-        });
-        return this.parseManagedSecret(data);
-    }
-
-    async listRoomSecrets(params: {
-        projectId: string;
-        roomName: string;
-        forIdentity?: string;
-    }): Promise<ManagedSecretInfo[]> {
-        const { projectId, roomName, forIdentity } = params;
-        const data = await this.request<{ secrets?: unknown[] }>(
-            `/accounts/projects/${projectId}/rooms/${roomName}/secrets`,
-            {
-                query: {
-                    for_identity: forIdentity,
-                },
-                action: "list room secrets",
-            },
-        );
-        const secrets = Array.isArray(data?.secrets) ? data.secrets : [];
-        return secrets.map((item) => this.parseManagedSecretInfo(item));
-    }
-
-    async deleteRoomSecret(params: {
-        projectId: string;
-        roomName: string;
-        secretId: string;
-        delegatedTo?: string;
-        forIdentity?: string;
-    }): Promise<void> {
-        const { projectId, roomName, secretId, delegatedTo, forIdentity } = params;
-        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/secrets/${secretId}`, {
-            method: "DELETE",
-            query: {
-                delegated_to: delegatedTo,
-                for_identity: forIdentity,
-            },
-            action: "delete room secret",
-            responseType: "void",
-        });
-    }
-
-    async createSecret(projectId: string, secret: SecretLike): Promise<void> {
-        await this.createProjectSecret({
-            projectId,
-            name: secret.name,
-            type: secret.type,
-            data: encoder.encode(JSON.stringify(this.toSecretPayload(secret).data)),
-        });
-    }
-
-    async updateSecret(projectId: string, secret: SecretLike): Promise<void> {
-        if (!secret.id) {
-            throw new RoomException("Secret id is required to update a secret");
-        }
-        await this.updateProjectSecret({
-            projectId,
-            secretId: secret.id,
-            name: secret.name,
-            type: secret.type,
-            data: encoder.encode(JSON.stringify(this.toSecretPayload(secret).data)),
-        });
-    }
-
-    async deleteSecret(projectId: string, secretId: string): Promise<void> {
-        await this.deleteProjectSecret(projectId, secretId);
-    }
-
-    async listSecrets(projectId: string): Promise<SecretLike[]> {
-        const secretInfos = await this.listProjectSecrets(projectId);
-        const secrets = await Promise.all(
-            secretInfos.map(async (secretInfo) => {
-                const secret = await this.getProjectSecret(projectId, secretInfo.id);
-                return this.parseSecretPayload(secret, secret.data);
-            }),
-        );
-        return secrets;
-    }
-
-    async createProjectExternalOAuthRegistration(params: {
-        projectId: string;
-        oauth: OAuthClientConfig;
-        clientId: string;
-        clientSecret?: string | null;
-        delegatedTo?: string | null;
-        connector?: ConnectorRef | null;
-    }): Promise<string> {
-        const { projectId, oauth, clientId, clientSecret, delegatedTo, connector } = params;
-        const payload = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/external-oauth`, {
-            method: "POST",
-            json: {
-                oauth,
-                client_id: clientId,
-                client_secret: clientSecret,
-                delegated_to: delegatedTo,
-                connector: this.serializeConnectorRef(connector),
-            },
-            action: "create project external oauth registration",
-        });
-        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
-            throw new RoomException("Invalid create project external oauth registration response payload");
-        }
-        return payload.id;
-    }
-
-    async updateProjectExternalOAuthRegistration(params: {
-        projectId: string;
-        registrationId: string;
-        oauth: OAuthClientConfig;
-        clientId: string;
-        clientSecret?: string | null;
-        delegatedTo?: string | null;
-        connector?: ConnectorRef | null;
-    }): Promise<void> {
-        const { projectId, registrationId, oauth, clientId, clientSecret, delegatedTo, connector } = params;
-        await this.request(`/accounts/projects/${projectId}/external-oauth/${registrationId}`, {
-            method: "PUT",
-            json: {
-                oauth,
-                client_id: clientId,
-                client_secret: clientSecret,
-                delegated_to: delegatedTo,
-                connector: this.serializeConnectorRef(connector),
-            },
-            action: "update project external oauth registration",
-            responseType: "void",
-        });
-    }
-
-    async listProjectExternalOAuthRegistrations(params: {
-        projectId: string;
-        delegatedTo?: string | null;
-    }): Promise<ExternalOAuthClientRegistration[]> {
-        const { projectId, delegatedTo } = params;
-        const data = await this.request<{ registrations?: unknown[] }>(`/accounts/projects/${projectId}/external-oauth`, {
-            query: {
-                delegated_to: delegatedTo,
-            },
-            action: "list project external oauth registrations",
-        });
-        const registrations = Array.isArray(data?.registrations) ? data.registrations : [];
-        return registrations.map((item) => this.parseExternalOAuthClientRegistration(item));
-    }
-
-    async deleteProjectExternalOAuthRegistration(params: {
-        projectId: string;
-        registrationId: string;
-        delegatedTo?: string | null;
-    }): Promise<void> {
-        const { projectId, registrationId, delegatedTo } = params;
-        await this.request(`/accounts/projects/${projectId}/external-oauth/${registrationId}`, {
-            method: "DELETE",
-            query: {
-                delegated_to: delegatedTo,
-            },
-            action: "delete project external oauth registration",
-            responseType: "void",
-        });
-    }
-
-    async createRoomExternalOAuthRegistration(params: {
-        projectId: string;
-        roomName: string;
-        oauth: OAuthClientConfig;
-        clientId: string;
-        clientSecret?: string | null;
-        delegatedTo?: string | null;
-        connector?: ConnectorRef | null;
-    }): Promise<string> {
-        const { projectId, roomName, oauth, clientId, clientSecret, delegatedTo, connector } = params;
-        const payload = await this.request<{ id?: unknown }>(`/accounts/projects/${projectId}/rooms/${roomName}/external-oauth`, {
-            method: "POST",
-            json: {
-                oauth,
-                client_id: clientId,
-                client_secret: clientSecret,
-                delegated_to: delegatedTo,
-                connector: this.serializeConnectorRef(connector),
-            },
-            action: "create room external oauth registration",
-        });
-        if (!payload || typeof payload !== "object" || typeof payload.id !== "string") {
-            throw new RoomException("Invalid create room external oauth registration response payload");
-        }
-        return payload.id;
-    }
-
-    async updateRoomExternalOAuthRegistration(params: {
-        projectId: string;
-        roomName: string;
-        registrationId: string;
-        oauth: OAuthClientConfig;
-        clientId: string;
-        clientSecret?: string | null;
-        delegatedTo?: string | null;
-        connector?: ConnectorRef | null;
-    }): Promise<void> {
-        const { projectId, roomName, registrationId, oauth, clientId, clientSecret, delegatedTo, connector } = params;
-        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/external-oauth/${registrationId}`, {
-            method: "PUT",
-            json: {
-                oauth,
-                client_id: clientId,
-                client_secret: clientSecret,
-                delegated_to: delegatedTo,
-                connector: this.serializeConnectorRef(connector),
-            },
-            action: "update room external oauth registration",
-            responseType: "void",
-        });
-    }
-
-    async listRoomExternalOAuthRegistrations(params: {
-        projectId: string;
-        roomName: string;
-        delegatedTo?: string | null;
-    }): Promise<ExternalOAuthClientRegistration[]> {
-        const { projectId, roomName, delegatedTo } = params;
-        const data = await this.request<{ registrations?: unknown[] }>(
-            `/accounts/projects/${projectId}/rooms/${roomName}/external-oauth`,
-            {
-                query: {
-                    delegated_to: delegatedTo,
-                },
-                action: "list room external oauth registrations",
-            },
-        );
-        const registrations = Array.isArray(data?.registrations) ? data.registrations : [];
-        return registrations.map((item) => this.parseExternalOAuthClientRegistration(item));
-    }
-
-    async deleteRoomExternalOAuthRegistration(params: {
-        projectId: string;
-        roomName: string;
-        registrationId: string;
-        delegatedTo?: string | null;
-    }): Promise<void> {
-        const { projectId, roomName, registrationId, delegatedTo } = params;
-        await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/external-oauth/${registrationId}`, {
-            method: "DELETE",
-            query: {
-                delegated_to: delegatedTo,
-            },
-            action: "delete room external oauth registration",
             responseType: "void",
         });
     }
@@ -3292,6 +3121,7 @@ export class Meshagent {
     }
 
     async getResourcePolicyPage(projectId: string, params: { resourceType: string; resourceId: string; pageSize?: number; continuationToken?: string }): Promise<ResourcePolicyPage> {
+        this.validateResourcePolicyType(params.resourceType);
         const data = await this.request<any>(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy`, {
             method: "GET",
             query: { page_size: params.pageSize ?? 50, continuation_token: params.continuationToken },
@@ -3318,6 +3148,7 @@ export class Meshagent {
     }
 
     async grantResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; subject: AccessSubject; roles: string[]; inviteRedirectUrl?: string }): Promise<void> {
+        this.validateResourcePolicyType(params.resourceType);
         await this.request(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy:grant`, {
             method: "POST",
             json: {
@@ -3330,6 +3161,7 @@ export class Meshagent {
     }
 
     async revokeResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; subject: AccessSubject }): Promise<void> {
+        this.validateResourcePolicyType(params.resourceType);
         await this.request(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy:revoke`, {
             method: "POST",
             json: {
@@ -3337,6 +3169,12 @@ export class Meshagent {
             },
             action: "revoke resource policy",
         });
+    }
+
+    private validateResourcePolicyType(resourceType: string): void {
+        if (resourceType === "agent") {
+            throw new Error("managed agent resource policies are not supported; use agent run_as instead");
+        }
     }
 
     // OAuth Clients -----------------------------------------------------------

@@ -157,5 +157,55 @@ describe("toolkit config", () => {
             ]);
             expect(connectors[1].server.serverUrl).to.equal("https://mcp.example.com:443/root/remote");
         });
+
+        it("routes proxy-backed MCP endpoints through proxy-request", () => {
+            const services: ServiceSpec[] = [
+                {
+                    version: "v1",
+                    kind: "Service",
+                    metadata: { name: "external-mcp" },
+                    external: { url: "https://mcp.example.com" },
+                    ports: [
+                        {
+                            num: 443,
+                            endpoints: [
+                                {
+                                    path: "/mcp",
+                                    mcp: {
+                                        label: "Proxy MCP",
+                                        use_proxy_secret: "secret-123",
+                                        oauth: {
+                                            client_id: "client-id",
+                                            authorization_endpoint: "https://auth.example.com/authorize",
+                                            token_endpoint: "https://auth.example.com/token",
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ];
+
+            const connectors = mcpConnectorsFromRoomServices({
+                services,
+                meshagentProxyConfig: {
+                    apiUrl: "https://api.meshagent.test/",
+                    apiKey: "ma-test-key",
+                    user: "user@example.com",
+                },
+            });
+
+            const connector = connectors[0];
+            const proxyUrl = new URL(connector.server.serverUrl ?? "");
+            expect(proxyUrl.origin + proxyUrl.pathname).to.equal("https://api.meshagent.test/proxy-request");
+            expect(proxyUrl.searchParams.get("url")).to.equal("https://mcp.example.com:443/mcp");
+            expect(proxyUrl.searchParams.get("secret-id")).to.equal("secret-123");
+            expect(proxyUrl.searchParams.get("user")).to.equal("user@example.com");
+            expect(connector.server.headers?.map((header) => header.toJson())).to.deep.equal([
+                { name: "Authorization", value: "Bearer ma-test-key" },
+            ]);
+            expect(connector.oauth).to.equal(undefined);
+        });
     });
 });

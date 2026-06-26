@@ -101,7 +101,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     operation: string;
     input: Record<string, unknown>;
   }): Promise<void> {
-    await this.client.invoke({
+    await this.client.invokeContent({
       toolkit: "messaging",
       tool: operation,
       input: new JsonContent({ json: input }),

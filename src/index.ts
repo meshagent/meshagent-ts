@@ -24,7 +24,7 @@ export * from './runtime.js';
 export * from './schema.js';
 export * from './storage-client.js';
 export * from './services-client.js';
-export * from './secrets-client.js';
+export * from './sqlite-client.js';
 export * from './stream-controller.js';
 export * from './sync-client.js';
 export * from './api_keys.js';

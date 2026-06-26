@@ -1,10 +1,6 @@
 import { expect } from "chai";
 
-import {
-    ConnectorRef,
-    Meshagent,
-    OAuthClientConfig,
-} from "../index.js";
+import { Meshagent } from "../index.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
     return {
@@ -46,6 +42,149 @@ describe("meshagent_client_secret_test", () => {
                     url: "http://example.test/accounts/projects/by-key/team%2Fapp",
                 },
             ]);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    it("uses v2 user and service account secret endpoints", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
+        const secret = {
+            id: "secret-1",
+            project_id: "proj_123",
+            owner_user_id: "user-1",
+            type: "oauth",
+            name: "github",
+            http_only: true,
+            metadata: { service: "github" },
+            annotations: { "meshagent.io/secret.service": "github" },
+            current_version_id: "version-1",
+            value_base64: "dmFsdWU=",
+            created_at: "2026-06-01T00:00:00Z",
+            updated_at: "2026-06-01T00:00:00Z",
+        };
+        const version = {
+            id: "version-1",
+            secret_id: "secret-1",
+            version: 1,
+            encryption_key_id: "key-1",
+            value_sha256: "BQ==",
+            created_at: "2026-06-01T00:00:00Z",
+        };
+
+        globalThis.fetch = (async (url, init) => {
+            if (typeof url !== "string") {
+                throw new Error("expected string url");
+            }
+
+            calls.push({
+                method: init?.method ?? "GET",
+                url,
+                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
+            });
+
+            if (url.endsWith("/versions")) {
+                return jsonResponse((init?.method ?? "GET") === "POST" ? version : { versions: [version] });
+            }
+            if (url.endsWith("/access")) {
+                return jsonResponse({
+                    access_grants: [{ subject: { type: "service_account", id: "sa-1" }, roles: ["use_proxy"] }],
+                    continuation_token: null,
+                });
+            }
+            if (url.endsWith("/pull-secrets")) {
+                return jsonResponse({ secrets: [secret], continuation_token: null });
+            }
+            if ((init?.method ?? "GET") === "PUT" || (init?.method ?? "GET") === "DELETE") {
+                return jsonResponse({}, 204);
+            }
+            if (url.includes(":search") || url.endsWith("/secrets")) {
+                return jsonResponse((init?.method ?? "GET") === "GET" ? { secrets: [secret], continuation_token: "next" } : secret);
+            }
+            return jsonResponse(secret);
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+
+            await client.createUserSecret({
+                projectId: "proj_123",
+                name: "github",
+                type: "oauth",
+                httpOnly: true,
+                metadata: { service: "github" },
+                annotations: { "meshagent.io/secret.service": "github" },
+            });
+            await client.listUserSecrets({ pageSize: 10, continuationToken: "cursor", filter: "github" });
+            await client.searchUserSecrets({ name: "github", httpOnly: true, pageSize: 5 });
+            await client.createUserSecretVersion("secret-1", {
+                value: new Uint8Array([1, 2, 3]),
+                setCurrent: false,
+            });
+            const fetchedUserSecret = await client.getUserSecret("secret-1", { includeValue: true });
+            await client.listUserSecretProxyAccess("secret-1");
+            await client.grantUserSecretProxyAccess("secret-1", "sa-1");
+            await client.revokeUserSecretProxyAccess("secret-1", "sa-1");
+            await client.createServiceAccountSecret("proj_123", "sa-1", { name: "pull", type: "opaque" });
+            const fetchedServiceAccountSecret = await client.getServiceAccountSecret("proj_123", "sa-1", "secret-1", { includeValue: true });
+            await client.listServiceAccountPullSecrets("proj_123", "sa-1");
+            await client.addServiceAccountPullSecret("proj_123", "sa-1", "secret-1");
+            await client.removeServiceAccountPullSecret("proj_123", "sa-1", "secret-1");
+
+            expect(calls[0]).to.deep.include({
+                method: "POST",
+                url: "http://example.test/accounts/users/me/secrets",
+            });
+            expect(calls[0].body).to.deep.include({
+                project_id: "proj_123",
+                name: "github",
+                type: "oauth",
+                http_only: true,
+            });
+            expect(calls[1]).to.deep.include({
+                method: "GET",
+                url: "http://example.test/accounts/users/me/secrets?page_size=10&continuation_token=cursor&filter=github",
+            });
+            expect(calls[2].url).to.equal("http://example.test/accounts/users/me/secrets:search");
+            expect(calls[2].body).to.deep.equal({
+                page_size: 5,
+                name: "github",
+                http_only: true,
+            });
+            expect(calls[3].body).to.deep.equal({
+                value_base64: "AQID",
+                set_current: false,
+            });
+            expect(fetchedUserSecret.value_base64).to.equal("dmFsdWU=");
+            expect(calls[4]).to.deep.include({
+                method: "GET",
+                url: "http://example.test/accounts/users/me/secrets/secret-1?include_value=true",
+            });
+            expect(calls[6].body).to.deep.equal({
+                subject: { type: "service_account", id: "sa-1" },
+            });
+            expect(calls[8]).to.deep.include({
+                method: "POST",
+                url: "http://example.test/accounts/projects/proj_123/service-accounts/sa-1/secrets",
+            });
+            expect(fetchedServiceAccountSecret.value_base64).to.equal("dmFsdWU=");
+            expect(calls[9]).to.deep.include({
+                method: "GET",
+                url: "http://example.test/accounts/projects/proj_123/service-accounts/sa-1/secrets/secret-1?include_value=true",
+            });
+            expect(calls[10]).to.deep.include({
+                method: "GET",
+                url: "http://example.test/accounts/projects/proj_123/service-accounts/sa-1/pull-secrets",
+            });
+            expect(calls[11]).to.deep.include({
+                method: "PUT",
+                url: "http://example.test/accounts/projects/proj_123/service-accounts/sa-1/pull-secrets/secret-1",
+            });
+            expect(calls[12]).to.deep.include({
+                method: "DELETE",
+                url: "http://example.test/accounts/projects/proj_123/service-accounts/sa-1/pull-secrets/secret-1",
+            });
         } finally {
             globalThis.fetch = originalFetch;
         }
@@ -224,48 +363,6 @@ describe("meshagent_client_secret_test", () => {
             expect(calls).to.have.length(1);
             expect(calls[0].method).to.equal("GET");
             expect(calls[0].url).to.equal("http://example.test/accounts/projects/proj_123/rooms?page_size=50&view=all");
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    it("listProjectSecrets sends view query when provided", async () => {
-        const originalFetch = globalThis.fetch;
-        const calls: Array<{ method: string; url: string }> = [];
-
-        globalThis.fetch = (async (url, init) => {
-            if (typeof url !== "string") {
-                throw new Error("expected string url");
-            }
-
-            calls.push({
-                method: init?.method ?? "GET",
-                url,
-            });
-
-            return jsonResponse({
-                secrets: [
-                    {
-                        id: "secret-1",
-                        name: "registry",
-                        type: "docker",
-                    },
-                ],
-            });
-        }) as typeof fetch;
-
-        try {
-            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
-
-            const secrets = await client.listProjectSecrets("proj_123", { view: "my" });
-
-            expect(secrets[0].id).to.equal("secret-1");
-            expect(calls).to.deep.equal([
-                {
-                    method: "GET",
-                    url: "http://example.test/accounts/projects/proj_123/secrets?view=my",
-                },
-            ]);
         } finally {
             globalThis.fetch = originalFetch;
         }
@@ -510,6 +607,51 @@ describe("meshagent_client_secret_test", () => {
         }
     });
 
+    it("managed agent policy methods are rejected client-side", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: string[] = [];
+
+        globalThis.fetch = (async (url) => {
+            calls.push(String(url));
+            return jsonResponse({});
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+            const expectedMessage = /managed agent resource policies are not supported/;
+
+            for (const action of [
+                () => client.grantResourcePolicy("proj_123", {
+                    resourceType: "agent",
+                    resourceId: "agent-1",
+                    subject: { type: "user", id: "user-1" },
+                    roles: ["manager"],
+                }),
+                () => client.getResourcePolicyPage("proj_123", {
+                    resourceType: "agent",
+                    resourceId: "agent-1",
+                }),
+                () => client.revokeResourcePolicy("proj_123", {
+                    resourceType: "agent",
+                    resourceId: "agent-1",
+                    subject: { type: "user", id: "user-1" },
+                }),
+            ]) {
+                try {
+                    await action();
+                    throw new Error("expected managed agent resource policy call to fail");
+                } catch (error) {
+                    expect(error).to.be.instanceOf(Error);
+                    expect((error as Error).message).to.match(expectedMessage);
+                }
+            }
+
+            expect(calls).to.deep.equal([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it("access evaluator methods post subject resource and relation payloads", async () => {
         const originalFetch = globalThis.fetch;
         const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
@@ -700,276 +842,20 @@ describe("meshagent_client_secret_test", () => {
         }
     });
 
-    it("createProjectSecret sends a base64 payload", async () => {
-        const originalFetch = globalThis.fetch;
-        const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
+    it("external oauth registration methods are removed from the client", () => {
+        const removed = [
+            "createProjectExternalOAuthRegistration",
+            "updateProjectExternalOAuthRegistration",
+            "listProjectExternalOAuthRegistrations",
+            "deleteProjectExternalOAuthRegistration",
+            "createRoomExternalOAuthRegistration",
+            "updateRoomExternalOAuthRegistration",
+            "listRoomExternalOAuthRegistrations",
+            "deleteRoomExternalOAuthRegistration",
+        ];
 
-        globalThis.fetch = (async (url, init) => {
-            if (typeof url !== "string") {
-                throw new Error("expected string url");
-            }
-
-            calls.push({
-                method: init?.method ?? "GET",
-                url,
-                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
-            });
-
-            return jsonResponse({ id: "secret-1" });
-        }) as typeof fetch;
-
-        try {
-            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
-
-            const secretId = await client.createProjectSecret({
-                projectId: "proj_123",
-                name: "registry",
-                type: "docker",
-                data: new TextEncoder().encode('{"server":"registry.example.com"}'),
-            });
-
-            expect(secretId).to.equal("secret-1");
-            expect(calls).to.deep.equal([
-                {
-                    method: "POST",
-                    url: "http://example.test/accounts/projects/proj_123/secrets",
-                    body: {
-                        name: "registry",
-                        type: "docker",
-                        data_base64: "eyJzZXJ2ZXIiOiJyZWdpc3RyeS5leGFtcGxlLmNvbSJ9",
-                    },
-                },
-            ]);
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    it("listSecrets compatibility wrapper fetches managed secret payloads", async () => {
-        const originalFetch = globalThis.fetch;
-        const calls: Array<{ method: string; url: string }> = [];
-
-        globalThis.fetch = (async (url, init) => {
-            if (typeof url !== "string") {
-                throw new Error("expected string url");
-            }
-
-            calls.push({
-                method: init?.method ?? "GET",
-                url,
-            });
-
-            if (url.endsWith("/accounts/projects/proj_123/secrets")) {
-                return jsonResponse({
-                    secrets: [
-                        {
-                            id: "secret-1",
-                            name: "registry",
-                            type: "docker",
-                            delegated_to: null,
-                        },
-                    ],
-                });
-            }
-
-            if (url.endsWith("/accounts/projects/proj_123/secrets/secret-1")) {
-                return jsonResponse({
-                    id: "secret-1",
-                    name: "registry",
-                    type: "docker",
-                    data_base64: "eyJzZXJ2ZXIiOiJyZWdpc3RyeS5leGFtcGxlLmNvbSIsInVzZXJuYW1lIjoiYWxpY2UiLCJwYXNzd29yZCI6InNlY3JldCIsImVtYWlsIjoibm9uZUBleGFtcGxlLmNvbSJ9",
-                });
-            }
-
-            throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
-        }) as typeof fetch;
-
-        try {
-            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
-
-            const secrets = await client.listSecrets("proj_123");
-
-            expect(secrets).to.have.length(1);
-            expect(secrets[0]).to.deep.equal({
-                id: "secret-1",
-                name: "registry",
-                type: "docker",
-                server: "registry.example.com",
-                username: "alice",
-                password: "secret",
-                email: "none@example.com",
-            });
-            expect(calls).to.deep.equal([
-                {
-                    method: "GET",
-                    url: "http://example.test/accounts/projects/proj_123/secrets",
-                },
-                {
-                    method: "GET",
-                    url: "http://example.test/accounts/projects/proj_123/secrets/secret-1",
-                },
-            ]);
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    it("room secret and external oauth methods pass query parameters", async () => {
-        const originalFetch = globalThis.fetch;
-        const calls: Array<{ method: string; url: string }> = [];
-
-        globalThis.fetch = (async (url, init) => {
-            if (typeof url !== "string") {
-                throw new Error("expected string url");
-            }
-
-            calls.push({
-                method: init?.method ?? "GET",
-                url,
-            });
-
-            if (url === "http://example.test/accounts/projects/proj_123/rooms/room-a/secrets/secret-1?delegated_to=agent&for_identity=agent") {
-                return jsonResponse({
-                    id: "secret-1",
-                    name: "api-key",
-                    type: "application/octet-stream",
-                    delegated_to: "agent",
-                    data_base64: "c2VjcmV0",
-                });
-            }
-
-            if (url === "http://example.test/accounts/projects/proj_123/rooms/room-a/external-oauth?delegated_to=agent") {
-                return jsonResponse({
-                    registrations: [
-                        {
-                            id: "registration-1",
-                            delegated_to: "agent",
-                            connector: null,
-                            oauth: {
-                                authorization_endpoint: "https://auth.example.com/authorize",
-                                token_endpoint: "https://auth.example.com/token",
-                                client_id: "client-id",
-                                client_secret: null,
-                                scopes: ["openid"],
-                            },
-                            client_id: "client-id",
-                            client_secret: "client-secret",
-                        },
-                    ],
-                });
-            }
-
-            if (url === "http://example.test/accounts/projects/proj_123/rooms/room-a/external-oauth/registration-1?delegated_to=agent") {
-                return jsonResponse({});
-            }
-
-            throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
-        }) as typeof fetch;
-
-        try {
-            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
-
-            const secret = await client.getRoomSecret({
-                projectId: "proj_123",
-                roomName: "room-a",
-                secretId: "secret-1",
-                delegatedTo: "agent",
-                forIdentity: "agent",
-            });
-            const registrations = await client.listRoomExternalOAuthRegistrations({
-                projectId: "proj_123",
-                roomName: "room-a",
-                delegatedTo: "agent",
-            });
-            await client.deleteRoomExternalOAuthRegistration({
-                projectId: "proj_123",
-                roomName: "room-a",
-                registrationId: "registration-1",
-                delegatedTo: "agent",
-            });
-
-            expect(new TextDecoder().decode(secret.data)).to.equal("secret");
-            expect(registrations[0].id).to.equal("registration-1");
-            expect(calls).to.deep.equal([
-                {
-                    method: "GET",
-                    url: "http://example.test/accounts/projects/proj_123/rooms/room-a/secrets/secret-1?delegated_to=agent&for_identity=agent",
-                },
-                {
-                    method: "GET",
-                    url: "http://example.test/accounts/projects/proj_123/rooms/room-a/external-oauth?delegated_to=agent",
-                },
-                {
-                    method: "DELETE",
-                    url: "http://example.test/accounts/projects/proj_123/rooms/room-a/external-oauth/registration-1?delegated_to=agent",
-                },
-            ]);
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    it("createProjectExternalOAuthRegistration serializes connector payloads", async () => {
-        const originalFetch = globalThis.fetch;
-        const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
-
-        globalThis.fetch = (async (url, init) => {
-            if (typeof url !== "string") {
-                throw new Error("expected string url");
-            }
-
-            calls.push({
-                method: init?.method ?? "GET",
-                url,
-                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
-            });
-
-            return jsonResponse({ id: "registration-1" });
-        }) as typeof fetch;
-
-        try {
-            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
-            const connector: ConnectorRef = {
-                openaiConnectorId: "connector-1",
-                serverUrl: "https://connector.example.com",
-                clientSecretId: "secret-1",
-            };
-            const oauth: OAuthClientConfig = {
-                authorization_endpoint: "https://auth.example.com/authorize",
-                token_endpoint: "https://auth.example.com/token",
-                client_id: "configured-client-id",
-                scopes: ["openid"],
-            };
-
-            const registrationId = await client.createProjectExternalOAuthRegistration({
-                projectId: "proj_123",
-                oauth,
-                clientId: "client-id",
-                clientSecret: "client-secret",
-                delegatedTo: "agent",
-                connector,
-            });
-
-            expect(registrationId).to.equal("registration-1");
-            expect(calls).to.deep.equal([
-                {
-                    method: "POST",
-                    url: "http://example.test/accounts/projects/proj_123/external-oauth",
-                    body: {
-                        oauth,
-                        client_id: "client-id",
-                        client_secret: "client-secret",
-                        delegated_to: "agent",
-                        connector: {
-                            openai_connector_id: "connector-1",
-                            server_url: "https://connector.example.com",
-                            client_secret_id: "secret-1",
-                        },
-                    },
-                },
-            ]);
-        } finally {
-            globalThis.fetch = originalFetch;
+        for (const method of removed) {
+            expect(Object.prototype.hasOwnProperty.call(Meshagent.prototype, method)).to.equal(false);
         }
     });
 });

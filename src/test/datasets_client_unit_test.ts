@@ -109,7 +109,7 @@ class FakeDatasetsRoom {
   public searchTable: Table = tableFromArrays({ id: Int32Array.from([1]) });
   public sqlTable: Table = tableFromArrays({ id: Int32Array.from([1]), payload: ["sql-result"] });
 
-  public async invoke(params: InvokeParams): Promise<Content> {
+  public async invokeContent(params: InvokeParams): Promise<Content> {
     this.invokeCalls.push(params);
 
     switch (params.tool) {

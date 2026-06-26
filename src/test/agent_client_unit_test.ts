@@ -26,7 +26,7 @@ class FakeRoom {
   public readonly invokeCalls: InvokeParams[] = [];
   public readonly invokeToolCalls: InvokeToolCallParams[] = [];
 
-  public async invoke(params: InvokeParams): Promise<Content> {
+  public async invokeContent(params: InvokeParams): Promise<Content> {
     this.invokeCalls.push(params);
     return new JsonContent({ json: { legacy: true } });
   }

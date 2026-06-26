@@ -29,7 +29,7 @@ export class QueuesClient {
   }
 
   private async _invoke(operation: string, arguments_: Record<string, any>): Promise<Content> {
-    return await this.client.invoke({
+    return await this.client.invokeContent({
       toolkit: "queues",
       tool: operation,
       arguments: arguments_,

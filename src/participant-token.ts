@@ -1,6 +1,5 @@
 import { decodeJwt, jwtVerify, SignJWT } from "jose";
 import type { JWTPayload } from "jose";
-import type { ConnectorRef, OAuthClientConfig } from "./meshagent-client.js";
 import { parseApiKey } from "./api_keys.js";
 import { __version__ } from "./version.js";
 
@@ -427,6 +426,300 @@ export class DatasetGrant {
                 ? obj.tables.map((tableGrant) => TableGrant.fromJSON(tableGrant))
                 : undefined,
             listTables: obj.list_tables ?? obj.listTables,
+        });
+    }
+}
+
+export class SqliteTableGrant {
+    public database: string;
+    public table: string;
+    public namespace?: StringList;
+    public write: boolean;
+    public read: boolean;
+    public alter: boolean;
+
+    constructor({
+        database,
+        table,
+        namespace,
+        write,
+        read,
+        alter,
+    }: {
+        database: string;
+        table: string;
+        namespace?: StringList;
+        write?: boolean;
+        read?: boolean;
+        alter?: boolean;
+    }) {
+        this.database = database;
+        this.table = table;
+        this.namespace = namespace;
+        this.write = write ?? true;
+        this.read = read ?? true;
+        this.alter = alter ?? false;
+    }
+
+    toJSON(): Record<string, any> {
+        const json: Record<string, any> = {
+            database: this.database,
+            table: this.table,
+        };
+        if (this.namespace !== undefined) {
+            json["namespace"] = this.namespace;
+        }
+        if (this.write !== true) {
+            json["write"] = this.write;
+        }
+        if (this.read !== true) {
+            json["read"] = this.read;
+        }
+        if (this.alter !== false) {
+            json["alter"] = this.alter;
+        }
+        return json;
+    }
+
+    static fromJSON(obj: unknown): SqliteTableGrant {
+        if (!isRecord(obj) || typeof obj.database !== "string" || typeof obj.table !== "string") {
+            throw new Error("SqliteTableGrant requires database and table");
+        }
+
+        return new SqliteTableGrant({
+            database: obj.database,
+            table: obj.table,
+            namespace: asStringList(obj.namespace),
+            write: obj.write,
+            read: obj.read,
+            alter: obj.alter,
+        });
+    }
+}
+
+export class SqliteDatabaseGrant {
+    public name: string;
+    public namespace?: StringList;
+    public createTable: boolean;
+    public drop: boolean;
+    public inspect: boolean;
+    public listTables: boolean;
+    public execute: boolean;
+    public tables?: SqliteTableGrant[];
+
+    constructor({
+        name,
+        namespace,
+        createTable,
+        drop,
+        inspect,
+        listTables,
+        execute,
+        tables,
+    }: {
+        name: string;
+        namespace?: StringList;
+        createTable?: boolean;
+        drop?: boolean;
+        inspect?: boolean;
+        listTables?: boolean;
+        execute?: boolean;
+        tables?: SqliteTableGrant[];
+    }) {
+        this.name = name;
+        this.namespace = namespace;
+        this.createTable = createTable ?? true;
+        this.drop = drop ?? false;
+        this.inspect = inspect ?? true;
+        this.listTables = listTables ?? true;
+        this.execute = execute ?? true;
+        this.tables = tables;
+    }
+
+    toJSON(): Record<string, any> {
+        const json: Record<string, any> = { name: this.name };
+        if (this.namespace !== undefined) {
+            json["namespace"] = this.namespace;
+        }
+        if (this.createTable !== true) {
+            json["create_table"] = this.createTable;
+        }
+        if (this.drop !== false) {
+            json["drop"] = this.drop;
+        }
+        if (this.inspect !== true) {
+            json["inspect"] = this.inspect;
+        }
+        if (this.listTables !== true) {
+            json["list_tables"] = this.listTables;
+        }
+        if (this.execute !== true) {
+            json["execute"] = this.execute;
+        }
+        if (this.tables !== undefined) {
+            json["tables"] = this.tables.map((tableGrant) => tableGrant.toJSON());
+        }
+        return json;
+    }
+
+    static fromJSON(obj: unknown): SqliteDatabaseGrant {
+        if (!isRecord(obj) || typeof obj.name !== "string") {
+            throw new Error("SqliteDatabaseGrant requires a name");
+        }
+
+        return new SqliteDatabaseGrant({
+            name: obj.name,
+            namespace: asStringList(obj.namespace),
+            createTable: obj.create_table ?? obj.createTable,
+            drop: obj.drop,
+            inspect: obj.inspect,
+            listTables: obj.list_tables ?? obj.listTables,
+            execute: obj.execute,
+            tables: Array.isArray(obj.tables)
+                ? obj.tables.map((tableGrant) => SqliteTableGrant.fromJSON(tableGrant))
+                : undefined,
+        });
+    }
+}
+
+export class SqliteGrant {
+    public databases?: SqliteDatabaseGrant[];
+    public createDatabase: boolean;
+    public listDatabases: boolean;
+
+    constructor({
+        databases,
+        createDatabase,
+        listDatabases,
+    }: {
+        databases?: SqliteDatabaseGrant[];
+        createDatabase?: boolean;
+        listDatabases?: boolean;
+    } = {}) {
+        this.databases = databases;
+        this.createDatabase = createDatabase ?? true;
+        this.listDatabases = listDatabases ?? true;
+    }
+
+    private matchingDatabases(database: string, namespace?: StringList): SqliteDatabaseGrant[] {
+        if (this.databases === undefined) {
+            return [];
+        }
+
+        return this.databases.filter((databaseGrant) => {
+            if (databaseGrant.name !== database) {
+                return false;
+            }
+            if (databaseGrant.namespace === undefined) {
+                return true;
+            }
+            return namespacesEqual(databaseGrant.namespace, namespace);
+        });
+    }
+
+    private matchingTables(database: string, table: string, namespace?: StringList): SqliteTableGrant[] {
+        return this.matchingDatabases(database, namespace)
+            .flatMap((databaseGrant) => databaseGrant.tables ?? [])
+            .filter((tableGrant) => {
+                if (tableGrant.database !== database || tableGrant.table !== table) {
+                    return false;
+                }
+                if (tableGrant.namespace === undefined) {
+                    return true;
+                }
+                return namespacesEqual(tableGrant.namespace, namespace);
+            });
+    }
+
+    canCreateDatabase(): boolean {
+        return this.createDatabase;
+    }
+
+    canListDatabases(): boolean {
+        return this.listDatabases;
+    }
+
+    canDropDatabase(database: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingDatabases(database, namespace).some((databaseGrant) => databaseGrant.drop);
+    }
+
+    canInspectDatabase(database: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingDatabases(database, namespace).some((databaseGrant) => databaseGrant.inspect);
+    }
+
+    canListTables(database: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingDatabases(database, namespace).some((databaseGrant) => databaseGrant.listTables);
+    }
+
+    canCreateTable(database: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingDatabases(database, namespace).some((databaseGrant) => databaseGrant.createTable);
+    }
+
+    canExecute(database: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingDatabases(database, namespace).some((databaseGrant) => databaseGrant.execute);
+    }
+
+    canWrite(database: string, table: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingTables(database, table, namespace).some((tableGrant) => tableGrant.write);
+    }
+
+    canRead(database: string, table: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingTables(database, table, namespace).some((tableGrant) => tableGrant.read);
+    }
+
+    canAlter(database: string, table: string, namespace?: StringList): boolean {
+        if (this.databases === undefined) {
+            return true;
+        }
+        return this.matchingTables(database, table, namespace).some((tableGrant) => tableGrant.alter);
+    }
+
+    toJSON(): Record<string, any> {
+        const json: Record<string, any> = {};
+        if (this.databases !== undefined) {
+            json["databases"] = this.databases.map((databaseGrant) => databaseGrant.toJSON());
+        }
+        if (this.createDatabase !== true) {
+            json["create_database"] = this.createDatabase;
+        }
+        if (this.listDatabases !== true) {
+            json["list_databases"] = this.listDatabases;
+        }
+        return json;
+    }
+
+    static fromJSON(obj: unknown): SqliteGrant {
+        if (!isRecord(obj)) {
+            return new SqliteGrant();
+        }
+
+        return new SqliteGrant({
+            databases: Array.isArray(obj.databases)
+                ? obj.databases.map((databaseGrant) => SqliteDatabaseGrant.fromJSON(databaseGrant))
+                : undefined,
+            createDatabase: obj.create_database ?? obj.createDatabase,
+            listDatabases: obj.list_databases ?? obj.listDatabases,
         });
     }
 }
@@ -1087,88 +1380,16 @@ export class AdminGrant {
     }
 }
 
-export class OAuthEndpoint {
-    public endpoint: string;
-    public clientId: string;
-
-    constructor({ endpoint, clientId }: { endpoint: string; clientId: string }) {
-        this.endpoint = endpoint;
-        this.clientId = clientId;
-    }
-
-    toJSON(): Record<string, any> {
-        return {
-            endpoint: this.endpoint,
-            client_id: this.clientId,
-        };
-    }
-
-    static fromJSON(obj: unknown): OAuthEndpoint {
-        if (!isRecord(obj) || typeof obj.endpoint !== "string") {
-            throw new Error("OAuthEndpoint requires an endpoint");
-        }
-
-        const clientId = obj.client_id ?? obj.clientId;
-        if (typeof clientId !== "string") {
-            throw new Error("OAuthEndpoint requires a client_id");
-        }
-
-        return new OAuthEndpoint({
-            endpoint: obj.endpoint,
-            clientId,
-        });
-    }
-}
-
 export class SecretsGrant {
-    public requestOauthToken?: OAuthEndpoint[];
-
-    constructor({ requestOauthToken }: { requestOauthToken?: OAuthEndpoint[] } = {}) {
-        this.requestOauthToken = requestOauthToken;
-    }
-
-    canRequestOauthToken({
-        connector,
-        oauth,
-    }: {
-        connector?: ConnectorRef | null;
-        oauth?: OAuthClientConfig | null;
-    } = {}): boolean {
-        void connector;
-
-        if (this.requestOauthToken === undefined) {
-            return true;
+    constructor(options: Record<string, never> = {}) {
+        const keys = Object.keys(options);
+        if (keys.length > 0) {
+            throw new Error(`unsupported SecretsGrant fields: ${keys.join(", ")}`);
         }
-
-        const authorizationEndpoint = typeof oauth?.authorization_endpoint === "string"
-            ? oauth.authorization_endpoint.trim()
-            : "";
-        const clientId = typeof oauth?.client_id === "string"
-            ? oauth.client_id.trim()
-            : "";
-
-        if (authorizationEndpoint === "" || clientId === "") {
-            return false;
-        }
-
-        return this.requestOauthToken.some((endpointGrant) => (
-            (
-                endpointGrant.endpoint === authorizationEndpoint
-                || (
-                    endpointGrant.endpoint.endsWith("*")
-                    && authorizationEndpoint.startsWith(endpointGrant.endpoint.slice(0, -1))
-                )
-            )
-            && endpointGrant.clientId === clientId
-        ));
     }
 
     toJSON(): Record<string, any> {
-        const json: Record<string, any> = {};
-        if (this.requestOauthToken !== undefined) {
-            json["request_oauth_token"] = this.requestOauthToken.map((endpointGrant) => endpointGrant.toJSON());
-        }
-        return json;
+        return {};
     }
 
     static fromJSON(obj: unknown): SecretsGrant {
@@ -1176,12 +1397,11 @@ export class SecretsGrant {
             return new SecretsGrant();
         }
 
-        const requestOauthToken = obj.request_oauth_token ?? obj.requestOauthToken;
-        return new SecretsGrant({
-            requestOauthToken: Array.isArray(requestOauthToken)
-                ? requestOauthToken.map((endpointGrant) => OAuthEndpoint.fromJSON(endpointGrant))
-                : undefined,
-        });
+        const keys = Object.keys(obj);
+        if (keys.length > 0) {
+            throw new Error(`unsupported SecretsGrant fields: ${keys.join(", ")}`);
+        }
+        return new SecretsGrant();
     }
 }
 
@@ -1291,6 +1511,7 @@ export class ApiScope {
     public queues?: QueuesGrant;
     public messaging?: MessagingGrant;
     public dataset?: DatasetGrant;
+    public sqlite?: SqliteGrant;
     public memory?: MemoryGrant;
     public sync?: SyncGrant;
     public storage?: StorageGrant;
@@ -1308,6 +1529,7 @@ export class ApiScope {
         queues,
         messaging,
         dataset,
+        sqlite,
         memory,
         sync,
         storage,
@@ -1324,6 +1546,7 @@ export class ApiScope {
         queues?: QueuesGrant;
         messaging?: MessagingGrant;
         dataset?: DatasetGrant;
+        sqlite?: SqliteGrant;
         memory?: MemoryGrant;
         sync?: SyncGrant;
         storage?: StorageGrant;
@@ -1340,6 +1563,7 @@ export class ApiScope {
         this.queues = queues;
         this.messaging = messaging;
         this.dataset = dataset;
+        this.sqlite = sqlite;
         this.memory = memory;
         this.sync = sync;
         this.storage = storage;
@@ -1359,6 +1583,7 @@ export class ApiScope {
             queues: new QueuesGrant(),
             messaging: new MessagingGrant(),
             dataset: new DatasetGrant(),
+            sqlite: new SqliteGrant(),
             memory: new MemoryGrant(),
             sync: new SyncGrant(),
             storage: new StorageGrant(),
@@ -1376,6 +1601,7 @@ export class ApiScope {
             queues: new QueuesGrant(),
             messaging: new MessagingGrant(),
             dataset: new DatasetGrant(),
+            sqlite: new SqliteGrant(),
             memory: new MemoryGrant(),
             sync: new SyncGrant(),
             storage: new StorageGrant(),
@@ -1383,7 +1609,6 @@ export class ApiScope {
             developer: new DeveloperGrant(),
             agents: new AgentsGrant(),
             llm: new LLMGrant(),
-            secrets: new SecretsGrant(),
             services: new ServicesGrant(),
         });
     }
@@ -1394,6 +1619,7 @@ export class ApiScope {
             queues: new QueuesGrant(),
             messaging: new MessagingGrant(),
             dataset: new DatasetGrant(),
+            sqlite: new SqliteGrant(),
             memory: new MemoryGrant(),
             sync: new SyncGrant(),
             storage: new StorageGrant(),
@@ -1402,7 +1628,6 @@ export class ApiScope {
             agents: new AgentsGrant(),
             llm: new LLMGrant(),
             admin: new AdminGrant(),
-            secrets: new SecretsGrant(),
             tunnels: new TunnelsGrant(),
             services: new ServicesGrant(),
         });
@@ -1421,6 +1646,9 @@ export class ApiScope {
         }
         if (this.dataset !== undefined) {
             json["dataset"] = this.dataset.toJSON();
+        }
+        if (this.sqlite !== undefined) {
+            json["sqlite"] = this.sqlite.toJSON();
         }
         if (this.memory !== undefined) {
             json["memory"] = this.memory.toJSON();
@@ -1470,6 +1698,7 @@ export class ApiScope {
             queues: obj.queues ? QueuesGrant.fromJSON(obj.queues) : undefined,
             messaging: obj.messaging ? MessagingGrant.fromJSON(obj.messaging) : undefined,
             dataset: rawDataset ? DatasetGrant.fromJSON(rawDataset) : undefined,
+            sqlite: obj.sqlite ? SqliteGrant.fromJSON(obj.sqlite) : undefined,
             memory: obj.memory ? MemoryGrant.fromJSON(obj.memory) : undefined,
             sync: obj.sync ? SyncGrant.fromJSON(obj.sync) : undefined,
             storage: obj.storage ? StorageGrant.fromJSON(obj.storage) : undefined,
