@@ -281,6 +281,18 @@ class FakeMemoryServicesServer {
                 state: "running",
                 container_id: "ctr-1",
                 restart_count: 2,
+                last_start_error: "container.environment.token.identity is required",
+                last_start_error_at: 124,
+                events: [
+                  {
+                    type: "Warning",
+                    reason: "FailedStart",
+                    message: "Unable to start service svc-1: container.environment.token.identity is required",
+                    count: 2,
+                    first_timestamp: 123,
+                    last_timestamp: 124,
+                  },
+                ],
               },
             ],
           },
@@ -450,6 +462,10 @@ describe("memory_services_client_test", () => {
       expect(services.services[0]?.id).to.equal("svc-1");
       expect(services.serviceStates["svc-1"]?.containerId).to.equal("ctr-1");
       expect(services.serviceStates["svc-1"]?.restartCount).to.equal(2);
+      expect(services.serviceStates["svc-1"]?.lastStartError).to.equal("container.environment.token.identity is required");
+      expect(services.serviceStates["svc-1"]?.lastStartErrorAt).to.equal(124);
+      expect(services.serviceStates["svc-1"]?.events[0]?.reason).to.equal("FailedStart");
+      expect(services.serviceStates["svc-1"]?.events[0]?.message).to.contain("token.identity");
 
       await harness.room.services.restart({ serviceId: "svc-1" });
 

@@ -12,6 +12,18 @@ export interface ServiceRuntimeState {
   restartCount: number;
   lastExitCode?: number;
   lastExitAt?: number;
+  lastStartError?: string;
+  lastStartErrorAt?: number;
+  events: ServiceRuntimeEvent[];
+}
+
+export interface ServiceRuntimeEvent {
+  type: string;
+  reason: string;
+  message: string;
+  count: number;
+  firstTimestamp: number;
+  lastTimestamp: number;
 }
 
 export interface ListServicesResult {
@@ -38,6 +50,7 @@ function parseServiceRuntimeState(value: unknown): ServiceRuntimeState {
 
   const state = value["state"];
   const containerId = value["container_id"];
+  const eventsRaw = value["events"];
 
   return {
     serviceId: value["service_id"],
@@ -48,6 +61,24 @@ function parseServiceRuntimeState(value: unknown): ServiceRuntimeState {
     restartCount: toOptionalInteger(value["restart_count"]) ?? 0,
     lastExitCode: toOptionalInteger(value["last_exit_code"]),
     lastExitAt: toOptionalNumber(value["last_exit_at"]),
+    lastStartError: typeof value["last_start_error"] === "string" ? value["last_start_error"] : undefined,
+    lastStartErrorAt: toOptionalNumber(value["last_start_error_at"]),
+    events: Array.isArray(eventsRaw) ? eventsRaw.map((event) => parseServiceRuntimeEvent(event)) : [],
+  };
+}
+
+function parseServiceRuntimeEvent(value: unknown): ServiceRuntimeEvent {
+  if (!isRecord(value)) {
+    throw new RoomServerException("unexpected return type from services.list");
+  }
+
+  return {
+    type: typeof value["type"] === "string" ? value["type"] : "Normal",
+    reason: typeof value["reason"] === "string" ? value["reason"] : "Unknown",
+    message: typeof value["message"] === "string" ? value["message"] : "",
+    count: toOptionalInteger(value["count"]) ?? 1,
+    firstTimestamp: toOptionalNumber(value["first_timestamp"]) ?? 0,
+    lastTimestamp: toOptionalNumber(value["last_timestamp"]) ?? 0,
   };
 }
 

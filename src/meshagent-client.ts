@@ -473,6 +473,7 @@ export interface ContainerSpec {
     working_dir?: string | null;
     image: string;
     run_as?: ServiceRunAs | null;
+    pull_secret?: SecretValue | null;
     environment?: EnvironmentVariable[] | null;
     storage?: ContainerMountSpec;
     on_demand?: boolean | null;
@@ -711,6 +712,14 @@ function validateServiceSpec(service: ServiceSpec): void {
             continue;
         }
         const unsupportedFields = Object.keys(secret).filter((key) => key !== "id");
+        if (unsupportedFields.length > 0) {
+            throw new Error(`unsupported SecretValue fields: ${unsupportedFields.join(", ")}`);
+        }
+    }
+
+    const pullSecret = container.pull_secret;
+    if (pullSecret != null) {
+        const unsupportedFields = Object.keys(pullSecret).filter((key) => key !== "id");
         if (unsupportedFields.length > 0) {
             throw new Error(`unsupported SecretValue fields: ${unsupportedFields.join(", ")}`);
         }

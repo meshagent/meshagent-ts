@@ -103,6 +103,38 @@ describe("service_spec_test", () => {
         }
     });
 
+    it("supports pull_secret by id and rejects name-based pull secrets", async () => {
+        const service: ServiceSpec = {
+            version: "v1",
+            kind: "Service",
+            metadata: { name: "pull-secret-service" },
+            container: {
+                image: "meshagent/example",
+                pull_secret: { id: "pull-secret-1" },
+            },
+        };
+
+        expect(service.container?.pull_secret).to.deep.equal({ id: "pull-secret-1" });
+
+        const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+        const invalidService = {
+            version: "v1",
+            kind: "Service",
+            metadata: { name: "pull-secret-service" },
+            container: {
+                image: "meshagent/example",
+                pull_secret: { id: "pull-secret-1", name: "pull-secret-name" },
+            },
+        } as unknown as ServiceSpec;
+
+        try {
+            await client.createService("project-1", invalidService);
+            throw new Error("expected createService to reject");
+        } catch (error) {
+            expect((error as Error).message).to.equal("unsupported SecretValue fields: name");
+        }
+    });
+
     it("rejects legacy string run_as at the client boundary", async () => {
         const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
         const service = {
