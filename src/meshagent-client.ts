@@ -1776,11 +1776,12 @@ export class Meshagent {
 
     // Service accounts --------------------------------------------------------
 
-    async listServiceAccounts(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string } = {}): Promise<ServiceAccountsPage> {
+    async listServiceAccounts(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string; view?: string } = {}): Promise<ServiceAccountsPage> {
         const params = new URLSearchParams();
         if (options.pageSize !== undefined) params.set("page_size", String(options.pageSize));
         if (options.continuationToken !== undefined) params.set("continuation_token", options.continuationToken);
         if (options.filter !== undefined) params.set("filter", options.filter);
+        if (options.view !== undefined) params.set("view", options.view);
         const query = params.toString();
         return await this.request(`/accounts/projects/${projectId}/service-accounts${query ? `?${query}` : ""}`, {
             action: "list service accounts",
