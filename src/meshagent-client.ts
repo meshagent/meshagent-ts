@@ -264,7 +264,6 @@ export interface SecretVersion {
     id: string;
     secret_id: string;
     version: number;
-    encryption_key_id: string;
     value_sha256?: string | null;
     created_by_user_id?: string | null;
     created_by_service_account_id?: string | null;

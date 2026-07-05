@@ -3,6 +3,8 @@ import { JsonContent, EmptyContent } from "./response.js";
 import { RoomClient } from "./room-client.js";
 import { RoomServerException } from "./room-server-client.js";
 
+export type ServicePortNum = NonNullable<ServiceSpec["ports"]>[number]["num"];
+
 export interface ServiceRuntimeState {
   serviceId: string;
   state: string;
@@ -14,7 +16,20 @@ export interface ServiceRuntimeState {
   lastExitAt?: number;
   lastStartError?: string;
   lastStartErrorAt?: number;
+  status: ServiceRuntimeStatus;
   events: ServiceRuntimeEvent[];
+}
+
+export interface ServiceRuntimeStatus {
+  ports: ServicePortRuntimeState[];
+}
+
+export interface ServicePortRuntimeState {
+  num: ServicePortNum;
+  liveness?: string;
+  livenessStatus: "not_configured" | "not_ready" | "ready";
+  lastCheckedAt?: number;
+  lastError?: string;
 }
 
 export interface ServiceRuntimeEvent {
@@ -43,6 +58,37 @@ function toOptionalInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
+function parseServiceRuntimeStatus(value: unknown): ServiceRuntimeStatus {
+  if (!isRecord(value)) {
+    return { ports: [] };
+  }
+  const portsRaw = value["ports"];
+  return {
+    ports: Array.isArray(portsRaw) ? portsRaw.map((port) => parseServicePortRuntimeState(port)) : [],
+  };
+}
+
+function parseServicePortRuntimeState(value: unknown): ServicePortRuntimeState {
+  if (!isRecord(value)) {
+    throw new RoomServerException("unexpected return type from services.list");
+  }
+  const num = value["num"];
+  if (num !== "*" && typeof num !== "number") {
+    throw new RoomServerException("unexpected return type from services.list");
+  }
+  const liveness = value["liveness"];
+  const livenessStatus = value["liveness_status"];
+  const lastError = value["last_error"];
+  return {
+    num,
+    liveness: typeof liveness === "string" ? liveness : undefined,
+    livenessStatus:
+      livenessStatus === "not_ready" || livenessStatus === "ready" ? livenessStatus : "not_configured",
+    lastCheckedAt: toOptionalNumber(value["last_checked_at"]),
+    lastError: typeof lastError === "string" ? lastError : undefined,
+  };
+}
+
 function parseServiceRuntimeState(value: unknown): ServiceRuntimeState {
   if (!isRecord(value) || typeof value["service_id"] !== "string") {
     throw new RoomServerException("unexpected return type from services.list");
@@ -63,6 +109,7 @@ function parseServiceRuntimeState(value: unknown): ServiceRuntimeState {
     lastExitAt: toOptionalNumber(value["last_exit_at"]),
     lastStartError: typeof value["last_start_error"] === "string" ? value["last_start_error"] : undefined,
     lastStartErrorAt: toOptionalNumber(value["last_start_error_at"]),
+    status: parseServiceRuntimeStatus(value["status"]),
     events: Array.isArray(eventsRaw) ? eventsRaw.map((event) => parseServiceRuntimeEvent(event)) : [],
   };
 }

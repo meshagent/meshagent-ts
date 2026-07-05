@@ -68,7 +68,6 @@ describe("meshagent_client_secret_test", () => {
             id: "version-1",
             secret_id: "secret-1",
             version: 1,
-            encryption_key_id: "key-1",
             value_sha256: "BQ==",
             created_at: "2026-06-01T00:00:00Z",
         };
