@@ -40,6 +40,7 @@ function sqliteRoomName(participant: string): string {
 }
 
 const sqliteIntegrationDescribe = getEnvVar("MESHAGENT_PROJECT_ID") && getEnvVar("MESHAGENT_KEY_ID") && getEnvVar("MESHAGENT_SECRET")
+  && getEnvVar("RUN_MESHAGENT_SQLITE_LITESTREAM_TESTS") === "1"
   ? describe
   : describe.skip;
 
