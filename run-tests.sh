@@ -23,12 +23,14 @@ if $SETUP_SERVER; then
     export MESHAGENT_PROJECT_ID="fc1e793c-b556-496b-bf07-8182b844e058"
     export MESHAGENT_KEY_ID="fa3f839c-cdaa-47a5-9612-ae3e99899fb9"
     SERVER_STORAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/meshagent-ts-room-server.XXXXXX")"
+    SQLITE_STORAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/meshagent-ts-sqlite.XXXXXX")"
     export MESHAGENT_SERVER_CLI_FILES_STORAGE_PATH="$SERVER_STORAGE_DIR"
+    export SQLITE_ROOM_STORAGE="file://$SQLITE_STORAGE_DIR"
 
     cargo run --manifest-path "../../rust/Cargo.toml" -p room-server-cli &
     CLI_PID=$!
     # When this script exits (for any reason), kill the background job
-    trap 'kill $CLI_PID 2>/dev/null || true; rm -rf "$SERVER_STORAGE_DIR"' EXIT
+    trap 'kill $CLI_PID 2>/dev/null || true; rm -rf "$SERVER_STORAGE_DIR" "$SQLITE_STORAGE_DIR"' EXIT
 
     SERVER_READY=false
     for _ in $(seq 1 180); do

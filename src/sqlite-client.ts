@@ -58,6 +58,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   if (globalScope.Buffer) {
     return globalScope.Buffer.from(bytes).toString("base64");
@@ -306,6 +310,22 @@ export class SqliteDatabaseClient {
     return this.client.createTableFromData({ ...params, database: this.database, namespace: this.namespace });
   }
 
+  public async createTableFromArrowTable(params: {
+    name: string;
+    table: Table;
+    mode?: SqliteCreateMode;
+  }): Promise<void> {
+    return this.client.createTableFromArrowTable({ ...params, database: this.database, namespace: this.namespace });
+  }
+
+  public async createTableFromArrowBatches(params: {
+    name: string;
+    batches: ArrowTableChunks;
+    mode?: SqliteCreateMode;
+  }): Promise<void> {
+    return this.client.createTableFromArrowBatches({ ...params, database: this.database, namespace: this.namespace });
+  }
+
   public async dropTable(params: { name: string; ignoreMissing?: boolean }): Promise<void> {
     return this.client.dropTable({ ...params, database: this.database, namespace: this.namespace });
   }
@@ -322,12 +342,20 @@ export class SqliteDatabaseClient {
     return this.client.addColumns({ ...params, database: this.database, namespace: this.namespace });
   }
 
+  public async addColumnsWithSchema(params: { table: string; schema: Schema }): Promise<void> {
+    return this.client.addColumnsWithSchema({ ...params, database: this.database, namespace: this.namespace });
+  }
+
   public async dropColumns(params: { table: string; columns: string[] }): Promise<void> {
     return this.client.dropColumns({ ...params, database: this.database, namespace: this.namespace });
   }
 
   public async insert(params: { table: string; records: Table }): Promise<void> {
     return this.client.insert({ ...params, database: this.database, namespace: this.namespace });
+  }
+
+  public async insertTable(params: { table: string; records: Table }): Promise<void> {
+    return this.client.insertTable({ ...params, database: this.database, namespace: this.namespace });
   }
 
   public async update(params: { table: string; where: string; values: DatasetRecord; params?: unknown }): Promise<number> {
@@ -474,10 +502,10 @@ export class SqliteClient {
 
   public async listDatabases({ namespace }: { namespace?: string[] } = {}): Promise<string[]> {
     const response = await this.invoke("list_databases", { namespace: namespace ?? null });
-    if (!(response instanceof JsonContent) || !Array.isArray(response.json.databases)) {
+    if (!(response instanceof JsonContent) || !isStringArray(response.json.databases)) {
       throw this.unexpectedResponseError("list_databases");
     }
-    return response.json.databases as string[];
+    return response.json.databases;
   }
 
   public async createDatabase({ name, namespace, mode = "create" }: {
@@ -517,10 +545,10 @@ export class SqliteClient {
 
   public async listTables({ database, namespace }: { database: string; namespace?: string[] }): Promise<string[]> {
     const response = await this.invoke("list_tables", { database, namespace: namespace ?? null });
-    if (!(response instanceof JsonContent) || !Array.isArray(response.json.tables)) {
+    if (!(response instanceof JsonContent) || !isStringArray(response.json.tables)) {
       throw this.unexpectedResponseError("list_tables");
     }
-    return response.json.tables as string[];
+    return response.json.tables;
   }
 
   private async createTable({
@@ -586,6 +614,26 @@ export class SqliteClient {
     });
   }
 
+  public async createTableFromArrowTable({ database, name, table, mode = "create", namespace }: {
+    database: string;
+    name: string;
+    table: Table;
+    mode?: SqliteCreateMode;
+    namespace?: string[];
+  }): Promise<void> {
+    return this.createTableWithSchema({ database, name, schema: table.schema, data: table, mode, namespace });
+  }
+
+  public async createTableFromArrowBatches({ database, name, batches, mode = "create", namespace }: {
+    database: string;
+    name: string;
+    batches: ArrowTableChunks;
+    mode?: SqliteCreateMode;
+    namespace?: string[];
+  }): Promise<void> {
+    return this.createTable({ database, name, data: batches, mode, namespace });
+  }
+
   public async dropTable({ database, name, ignoreMissing = false, namespace }: {
     database: string;
     name: string;
@@ -642,6 +690,15 @@ export class SqliteClient {
     }
   }
 
+  public async addColumnsWithSchema({ database, table, schema, namespace }: {
+    database: string;
+    table: string;
+    schema: Schema;
+    namespace?: string[];
+  }): Promise<void> {
+    return this.addColumns({ database, table, newColumns: schema, namespace });
+  }
+
   public async dropColumns({ database, table, columns, namespace }: {
     database: string;
     table: string;
@@ -661,6 +718,15 @@ export class SqliteClient {
     namespace?: string[];
   }): Promise<void> {
     await this.insertStream({ database, table, chunks: [records], namespace });
+  }
+
+  public async insertTable({ database, table, records, namespace }: {
+    database: string;
+    table: string;
+    records: Table;
+    namespace?: string[];
+  }): Promise<void> {
+    await this.insert({ database, table, records, namespace });
   }
 
   public async insertStream({ database, table, chunks, namespace }: {

@@ -17,6 +17,7 @@ import "./schema_test";
 import "./service_spec_test";
 import "./storage_client_test";
 import "./sqlite_client_unit_test";
+import "./sqlite_client_test";
 import "./keys_test";
 import "./managed_agents_client_test";
 import "./container_client_test";

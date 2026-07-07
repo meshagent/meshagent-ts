@@ -1,17 +1,20 @@
 import { expect } from "chai";
 
 import {
+  Binary,
   Field,
+  Float64,
   Int32,
   Schema,
   Table,
   Utf8,
   tableFromArrays,
   tableToIPC,
+  vectorFromArray,
 } from "apache-arrow";
 import { DatasetJson } from "../datasets-client.js";
 import { SqliteClient } from "../sqlite-client.js";
-import { BinaryContent, Content, ControlContent, EmptyContent, JsonContent } from "../response.js";
+import { BinaryContent, Content, ControlContent, EmptyContent, ErrorContent, JsonContent } from "../response.js";
 
 type InvokeParams = {
   toolkit: string;
@@ -34,9 +37,15 @@ class FakeSqliteRoom {
   public inspectSchema: Schema = new Schema([Field.new("id", new Int32())]);
   public searchTable: Table = tableFromArrays({ id: Int32Array.from([1]) });
   public sqlTable: Table = tableFromArrays({ id: Int32Array.from([1]), payload: ["sql-result"] });
+  public malformedResponses: Record<string, Content> = {};
+  public streamChunks: Record<string, Content[]> = {};
 
   public async invokeContent(params: InvokeParams): Promise<Content> {
     this.invokeCalls.push(params);
+    const malformed = this.malformedResponses[params.tool];
+    if (malformed) {
+      return malformed;
+    }
 
     switch (params.tool) {
       case "list_databases":
@@ -99,7 +108,8 @@ class FakeSqliteRoom {
     this.writeStarts[tool].push(start.value.headers);
 
     while (true) {
-      yield new BinaryContent({ data: new Uint8Array(), headers: { kind: "pull" } });
+      const override = this.streamChunks[tool]?.shift();
+      yield override ?? new BinaryContent({ data: new Uint8Array(), headers: { kind: "pull" } });
       const chunk = await iterator.next();
       if (chunk.done) {
         yield new ControlContent({ method: "close" });
@@ -139,6 +149,12 @@ class FakeSqliteRoom {
       }
       this.readPulls[tool].push(pull.value.headers);
 
+      const override = this.streamChunks[tool]?.shift();
+      if (override) {
+        yield override;
+        continue;
+      }
+
       if (this.readPulls[tool].length === 1) {
         yield new BinaryContent({
           data: tableToIPC(tool === "search" ? this.searchTable : this.sqlTable, "stream"),
@@ -151,6 +167,16 @@ class FakeSqliteRoom {
       return;
     }
   }
+}
+
+async function expectRejects(task: Promise<unknown>, message: string): Promise<void> {
+  try {
+    await task;
+  } catch (error) {
+    expect((error as Error).message).to.contain(message);
+    return;
+  }
+  throw new Error(`expected rejection containing ${message}`);
 }
 
 describe("sqlite_client_unit_test", () => {
@@ -183,13 +209,14 @@ describe("sqlite_client_unit_test", () => {
     const table = tableFromArrays({ id: Int32Array.from([1]), payload: ["hello"] });
     const db = client.database("app", { namespace: ["team"] });
 
-    await db.createTableWithSchema({ name: "records", schema: table.schema, data: table });
-    await db.insert({ table: "records", records: table });
+    await db.createTableFromArrowTable({ name: "records", table });
+    await db.insertTable({ table: "records", records: table });
     expect(await db.listTables()).to.deep.equal(["records"]);
 
     room.inspectSchema = new Schema([Field.new("payload", new Utf8())]);
     const schema = await db.inspect({ table: "records" });
     expect(schema.fields.map((field) => field.name)).to.deep.equal(["payload"]);
+    await db.addColumnsWithSchema({ table: "records", schema });
 
     const searchRows = await db.searchTable({ table: "records", where: { payload: new DatasetJson({ kind: "demo" }) }, select: ["payload"] });
     expect(searchRows.getChild("id")?.get(0)).to.equal(1);
@@ -204,6 +231,14 @@ describe("sqlite_client_unit_test", () => {
     expect(room.writeStarts["insert"]).to.deep.equal([
       { kind: "start", database: "app", table: "records", namespace: ["team"] },
     ]);
+    const addColumnsCall = room.invokeCalls.find((call) => call.tool === "add_columns");
+    expect(addColumnsCall?.input).to.be.instanceOf(BinaryContent);
+    expect((addColumnsCall?.input as BinaryContent).headers).to.deep.equal({
+      database: "app",
+      table: "records",
+      namespace: ["team"],
+      content_type: "application/vnd.apache.arrow.stream",
+    });
     expect(room.readStarts["search"]).to.deep.equal([
       {
         kind: "start",
@@ -298,5 +333,92 @@ describe("sqlite_client_unit_test", () => {
       params: null,
       namespace: ["team"],
     });
+  });
+
+  it("rejects malformed typed sqlite responses", async () => {
+    const room = new FakeSqliteRoom();
+    const client = new SqliteClient({ room });
+
+    room.malformedResponses.list_databases = new EmptyContent();
+    await expectRejects(client.listDatabases(), "unexpected return type from sqlite.list_databases");
+
+    room.malformedResponses.list_databases = new JsonContent({ json: { databases: ["app", 3] } });
+    await expectRejects(client.listDatabases(), "unexpected return type from sqlite.list_databases");
+
+    room.malformedResponses.list_tables = new JsonContent({ json: { tables: ["records", 3] } });
+    await expectRejects(client.listTables({ database: "app" }), "unexpected return type from sqlite.list_tables");
+
+    room.malformedResponses.inspect_database = new JsonContent({ json: { name: "app", tables: "1" } });
+    await expectRejects(client.inspectDatabase({ name: "app" }), "unexpected return type from sqlite.inspect_database");
+
+    room.malformedResponses.count = new JsonContent({ json: { count: "3" } });
+    await expectRejects(client.count({ database: "app", table: "records" }), "unexpected return type from sqlite.count");
+
+    room.malformedResponses.open_sql_query = new BinaryContent({
+      data: tableToIPC(new Table(room.sqlTable.schema), "stream"),
+      headers: { kind: "query" },
+    });
+    await expectRejects(
+      client.openSqlQuery({ database: "app", query: "SELECT * FROM records" }),
+      "unexpected return type from sqlite.open_sql_query",
+    );
+
+    room.malformedResponses.execute_sql = new JsonContent({ json: { kind: "statement", rows_affected: "3" } });
+    await expectRejects(
+      client.executeSql({ database: "app", query: "DELETE FROM records" }),
+      "unexpected return type from sqlite.execute_sql",
+    );
+
+    room.malformedResponses.execute_sql_statement = new JsonContent({ json: { rows_affected: "3" } });
+    await expectRejects(
+      client.executeSqlStatement({ database: "app", query: "DELETE FROM records" }),
+      "unexpected return type from sqlite.execute_sql_statement",
+    );
+
+    room.malformedResponses.cancel_sql_query = new JsonContent({ json: { status: "done" } });
+    await expectRejects(client.cancelSqlQuery({ queryId: "sql-query-1" }), "unexpected return type from sqlite.cancel_sql_query");
+  });
+
+  it("propagates sqlite stream errors and rejects malformed stream chunks", async () => {
+    const room = new FakeSqliteRoom();
+    const client = new SqliteClient({ room });
+    const table = tableFromArrays({ id: Int32Array.from([1]) });
+
+    room.streamChunks.create_table = [new JsonContent({ json: { kind: "pull" } })];
+    await expectRejects(
+      client.createTableFromData({ database: "app", name: "records", data: table }),
+      "unexpected return type from sqlite.create_table",
+    );
+
+    room.streamChunks.create_table = [new ErrorContent({ text: "create failed", code: 400 })];
+    await expectRejects(client.createTableFromData({ database: "app", name: "records", data: table }), "create failed");
+
+    room.streamChunks.search = [new BinaryContent({ data: new Uint8Array(), headers: { kind: "pull" } })];
+    await expectRejects(client.searchTable({ database: "app", table: "records" }), "unexpected return type from sqlite.search");
+
+    room.streamChunks.read_sql_query = [new ErrorContent({ text: "read failed", code: 400 })];
+    await expectRejects(client.sqlTable({ database: "app", query: "SELECT * FROM records" }), "read failed");
+  });
+
+  it("decodes float, binary, and null Arrow values from sqlite streams", async () => {
+    const room = new FakeSqliteRoom();
+    const client = new SqliteClient({ room });
+    room.searchTable = new Table({
+      id: vectorFromArray([1, 2], new Int32()),
+      score: vectorFromArray([1.5, null], new Float64()),
+      payload: vectorFromArray([Uint8Array.from([1, 2, 3]), null], new Binary()),
+    });
+    room.sqlTable = room.searchTable;
+
+    const searchRows = await client.searchTable({ database: "app", table: "metrics" });
+    expect(searchRows.getChild("score")?.get(0)).to.equal(1.5);
+    expect(searchRows.getChild("score")?.get(1)).to.equal(null);
+    expect(Array.from(searchRows.getChild("payload")?.get(0) as Uint8Array)).to.deep.equal([1, 2, 3]);
+    expect(searchRows.getChild("payload")?.get(1)).to.equal(null);
+
+    const sqlRows = await client.sqlTable({ database: "app", query: "SELECT id, score, payload FROM metrics" });
+    expect(sqlRows.schema.fields.map((field) => field.name)).to.deep.equal(["id", "score", "payload"]);
+    expect(sqlRows.getChild("score")?.get(0)).to.equal(1.5);
+    expect(Array.from(sqlRows.getChild("payload")?.get(0) as Uint8Array)).to.deep.equal([1, 2, 3]);
   });
 });
