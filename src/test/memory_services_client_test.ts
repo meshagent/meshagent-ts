@@ -457,7 +457,7 @@ describe("memory_services_client_test", () => {
         ],
       });
 
-      const services = await harness.room.services.listWithState();
+      const services = await harness.room.services.list();
       expect(services.services).to.have.length(1);
       expect(services.services[0]?.id).to.equal("svc-1");
       expect(services.serviceStates["svc-1"]?.containerId).to.equal("ctr-1");

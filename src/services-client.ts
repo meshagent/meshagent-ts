@@ -156,11 +156,7 @@ export class ServicesClient {
     return new RoomServerException(`unexpected return type from services.${operation}`);
   }
 
-  public async list(): Promise<ServiceSpec[]> {
-    return (await this.listWithState()).services;
-  }
-
-  public async listWithState(): Promise<ListServicesResult> {
+  public async list(): Promise<ListServicesResult> {
     const response = await this.room.invokeContent({
       toolkit: "services",
       tool: "list",
