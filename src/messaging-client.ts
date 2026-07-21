@@ -49,6 +49,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   private readonly _messageQueue: QueuedRoomMessage[] = [];
   private _messageQueued: Completer<void> | null = null;
   private _sendTask: Promise<void> | null = null;
+  private readonly _sendOperations = new Set<Promise<void>>();
   private _messageQueueClosed = false;
   private _desiredEnabled = false;
   private _online = false;
@@ -146,6 +147,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     if (sendTask != null) {
       await sendTask;
     }
+    await Promise.all(this._sendOperations);
 
     this._desiredEnabled = false;
     this._clearCurrentConnectionState();
@@ -316,34 +318,49 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
         continue;
       }
 
-      try {
-        await this._invoke({
-          operation: "send",
-          input: this._messageInput({
-            toParticipantId: resolvedTo.id,
-            type: message.type,
-            message: message.message,
-            attachment: message.attachment,
-          }),
-        });
-        if (message.completer != null && !message.completer.completed) {
-          message.completer.complete();
-        }
-      } catch (error) {
-        if (error instanceof RoomServerException) {
-          const wrapped = this.client._coerceMessageSendError(error);
-          if (wrapped.message === "the participant was not found") {
-            this._markParticipantOffline(message.to);
-            this._dropQueuedMessage({ message, error: wrapped });
-            continue;
-          }
-          this._dropQueuedMessage({ message, error: wrapped });
-          continue;
-        }
+      // Preserve queue-order dispatch without making the next message wait for
+      // this request's round trip.
+      const operation = this._sendQueuedMessage({ message, resolvedTo });
+      this._sendOperations.add(operation);
+      void operation.then(
+        () => this._sendOperations.delete(operation),
+        () => this._sendOperations.delete(operation),
+      );
+    }
+  }
 
-        if (message.completer != null && !message.completer.completed) {
-          message.completer.completeError(error);
+  private async _sendQueuedMessage({
+    message,
+    resolvedTo,
+  }: {
+    message: QueuedRoomMessage;
+    resolvedTo: Participant;
+  }): Promise<void> {
+    try {
+      await this._invoke({
+        operation: "send",
+        input: this._messageInput({
+          toParticipantId: resolvedTo.id,
+          type: message.type,
+          message: message.message,
+          attachment: message.attachment,
+        }),
+      });
+      if (message.completer != null && !message.completer.completed) {
+        message.completer.complete();
+      }
+    } catch (error) {
+      if (error instanceof RoomServerException) {
+        const wrapped = this.client._coerceMessageSendError(error);
+        if (wrapped.message === "the participant was not found") {
+          this._markParticipantOffline(message.to);
         }
+        this._dropQueuedMessage({ message, error: wrapped });
+        return;
+      }
+
+      if (message.completer != null && !message.completer.completed) {
+        message.completer.completeError(error);
       }
     }
   }
