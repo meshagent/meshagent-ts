@@ -13,6 +13,33 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("managed_agents_client_test", () => {
+    it("connectAgent normalizes a legacy messages URL", async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async (url, init) => {
+            expect(url).to.equal("http://example.test/accounts/projects/proj_123/agents/planner/connect");
+            expect(init?.method).to.equal("POST");
+            return jsonResponse({
+                jwt: "agent-token",
+                agent_name: "planner",
+                project_id: "proj_123",
+                agent_url: "wss://api.example.test/base/accounts/projects/proj_123/agents/planner/messages?thread=one",
+            });
+        }) as typeof fetch;
+
+        try {
+            const meshagent = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+            const connection = await meshagent.connectAgent("proj_123", "planner");
+            expect(connection).to.deep.equal({
+                jwt: "agent-token",
+                agentName: "planner",
+                projectId: "proj_123",
+                agentUrl: "wss://api.example.test/base/agents/proj_123/planner/messages?thread=one",
+            });
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it("createAgent omits null permissions", async () => {
         const originalFetch = globalThis.fetch;
         let body: Record<string, unknown> | undefined;

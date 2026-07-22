@@ -84,6 +84,13 @@ export interface RoomConnectionInfo {
     roomUrl: string;
 }
 
+export interface AgentConnectionInfo {
+    jwt: string;
+    agentName: string;
+    projectId: string;
+    agentUrl: string;
+}
+
 export class RoomSession {
     public readonly id: string;
     public readonly roomId?: string | null;
@@ -1642,6 +1649,26 @@ export class Meshagent {
         return { jwt, roomName: roomNameValue, projectId: projectIdValue, roomUrl: roomUrlValue };
     }
 
+    private parseAgentConnectionInfo(data: any): AgentConnectionInfo {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid agent connection payload");
+        }
+        const { jwt, agent_name: agentNameRaw, agentName, project_id: projectIdRaw, projectId, agent_url: agentUrlRaw, agentUrl } = data as any;
+        const agentNameValue = typeof agentName === "string" ? agentName : agentNameRaw;
+        const projectIdValue = typeof projectId === "string" ? projectId : projectIdRaw;
+        const agentUrlValue = typeof agentUrl === "string" ? agentUrl : agentUrlRaw;
+        if (typeof jwt !== "string" || typeof agentNameValue !== "string" || typeof projectIdValue !== "string" || typeof agentUrlValue !== "string") {
+            throw new RoomException("Invalid agent connection payload: missing fields");
+        }
+        const parsedUrl = new URL(agentUrlValue);
+        const legacySuffix = `/accounts/projects/${encodeURIComponent(projectIdValue)}/agents/${encodeURIComponent(agentNameValue)}/messages`;
+        if (parsedUrl.pathname.endsWith(legacySuffix)) {
+            const prefix = parsedUrl.pathname.slice(0, -legacySuffix.length);
+            parsedUrl.pathname = `${prefix}/agents/${encodeURIComponent(projectIdValue)}/${encodeURIComponent(agentNameValue)}/messages`;
+        }
+        return { jwt, agentName: agentNameValue, projectId: projectIdValue, agentUrl: parsedUrl.toString() };
+    }
+
     private encodePathComponent(value: string): string {
         return encodeURIComponent(value);
     }
@@ -2971,6 +2998,18 @@ export class Meshagent {
             action: "connect room",
         });
         return this.parseRoomConnectionInfo(data);
+    }
+
+    async connectAgent(projectId: string, agentName: string): Promise<AgentConnectionInfo> {
+        const data = await this.request(
+            `/accounts/projects/${projectId}/agents/${encodeURIComponent(agentName)}/connect`,
+            {
+                method: "POST",
+                json: {},
+                action: "connect agent",
+            },
+        );
+        return this.parseAgentConnectionInfo(data);
     }
 
     async listRooms(
