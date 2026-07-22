@@ -98,14 +98,17 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   private async _invoke({
     operation,
     input,
+    afterSend,
   }: {
     operation: string;
     input: Record<string, unknown>;
+    afterSend?: () => void;
   }): Promise<void> {
     await this.client.invokeContent({
       toolkit: "messaging",
       tool: operation,
       input: new JsonContent({ json: input }),
+      afterSend,
     });
   }
 
@@ -320,21 +323,35 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
 
       // Preserve queue-order dispatch without making the next message wait for
       // this request's round trip.
-      const operation = this._sendQueuedMessage({ message, resolvedTo });
+      const dispatched = new Completer<void>();
+      const operation = this._sendQueuedMessage({
+        message,
+        resolvedTo,
+        afterSend: () => dispatched.resolve(),
+      });
       this._sendOperations.add(operation);
       void operation.then(
-        () => this._sendOperations.delete(operation),
-        () => this._sendOperations.delete(operation),
+        () => {
+          this._sendOperations.delete(operation);
+          if (!dispatched.completed) dispatched.resolve();
+        },
+        () => {
+          this._sendOperations.delete(operation);
+          if (!dispatched.completed) dispatched.resolve();
+        },
       );
+      await dispatched.fut;
     }
   }
 
   private async _sendQueuedMessage({
     message,
     resolvedTo,
+    afterSend,
   }: {
     message: QueuedRoomMessage;
     resolvedTo: Participant;
+    afterSend: () => void;
   }): Promise<void> {
     try {
       await this._invoke({
@@ -345,6 +362,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
           message: message.message,
           attachment: message.attachment,
         }),
+        afterSend,
       });
       if (message.completer != null && !message.completer.completed) {
         message.completer.complete();

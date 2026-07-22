@@ -1541,6 +1541,7 @@ export class RoomClient {
     type: string,
     request: RequestHeader,
     data?: Uint8Array,
+    afterSend?: () => void,
   ): Promise<Content> {
     this._raiseIfTerminal();
     if (this._entered && !this._connected && !this._allowDisconnectedRequests) {
@@ -1553,6 +1554,7 @@ export class RoomClient {
 
     try {
       await this._protocolInstance.send(type, packMessage(request, data), requestId);
+      afterSend?.();
       return await completer.fut;
     } catch (error) {
       this._pendingRequests.delete(requestId);
@@ -1661,6 +1663,7 @@ export class RoomClient {
     input?: InvokeInput;
     participantId?: string;
     onBehalfOfId?: string;
+    afterSend?: () => void;
   }): Promise<Content> {
     const output = await this.invokeToolCall({
       toolkit: params.toolkit,
@@ -1668,6 +1671,7 @@ export class RoomClient {
       input: this._normalizeInvokeInput(params.input ?? params.arguments),
       participantId: params.participantId,
       onBehalfOfId: params.onBehalfOfId,
+      afterSend: params.afterSend,
     });
     if (output.kind !== "content") {
       throw new RoomServerException("unexpected streamed output from " + params.toolkit + "." + params.tool);
@@ -1682,6 +1686,7 @@ export class RoomClient {
     streamInput?: boolean;
     participantId?: string;
     onBehalfOfId?: string;
+    afterSend?: () => void;
   }): Promise<{ kind: "content"; content: Content; inputClosed?: Promise<void> } | { kind: "stream"; stream: AsyncIterable<Content>; inputClosed?: Promise<void> }> {
     const toolCallId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const controller = new StreamController<Content>();
@@ -1718,7 +1723,7 @@ export class RoomClient {
 
     try {
       const response = await Promise.race([
-        this.sendRequest("room.invoke_tool", request, requestData),
+        this.sendRequest("room.invoke_tool", request, requestData, params.afterSend),
         preOpenError.fut,
       ]);
       this._toolCallPreOpenErrors.delete(toolCallId);

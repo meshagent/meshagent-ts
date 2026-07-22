@@ -26,6 +26,7 @@ class FakeRoom {
   public readonly protocol = new FakeProtocol();
   public readonly invocations: Array<{toolkit: string; tool: string; input: Record<string, any>}> = [];
   public sendResponseGate: Promise<void> | null = null;
+  public firstSendDispatchGate: Promise<void> | null = null;
   public isConnected = true;
   public _allowDisconnectedRequests = false;
   public localParticipant = null;
@@ -34,12 +35,24 @@ class FakeRoom {
     toolkit: string;
     tool: string;
     input: unknown;
+    afterSend?: () => void;
   }): Promise<void> {
+    const input = params.input instanceof JsonContent
+      ? params.input.json
+      : (params.input as Record<string, any>);
+    if (
+      params.tool === "send"
+      && JSON.parse(input["message_json"] as string).index === 1
+      && this.firstSendDispatchGate != null
+    ) {
+      await this.firstSendDispatchGate;
+    }
     this.invocations.push({
       toolkit: params.toolkit,
       tool: params.tool,
-      input: params.input instanceof JsonContent ? params.input.json : (params.input as Record<string, any>),
+      input,
     });
+    params.afterSend?.();
     if (params.tool === "send" && this.sendResponseGate != null) {
       await this.sendResponseGate;
     }
@@ -140,6 +153,10 @@ describe("messaging participant presence", () => {
     room.sendResponseGate = new Promise<void>((resolve) => {
       releaseResponses = resolve;
     });
+    let releaseFirstDispatch!: () => void;
+    room.firstSendDispatchGate = new Promise<void>((resolve) => {
+      releaseFirstDispatch = resolve;
+    });
     const client = new MessagingClient({ room: room as never });
     client.start();
     (client as any)._onParticipantEnabled(participantEnabledMessage());
@@ -148,6 +165,9 @@ describe("messaging participant presence", () => {
     client.sendMessageNowait({ to: remote, type: "delta", message: { index: 1 } });
     client.sendMessageNowait({ to: remote, type: "delta", message: { index: 2 } });
 
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(room.invocations.filter((invocation) => invocation.tool === "send")).to.be.empty;
+    releaseFirstDispatch();
     await waitUntil(() => room.invocations.length === 2);
     expect(room.invocations.map((invocation) => JSON.parse(invocation.input["message_json"]).index))
       .to.deep.equal([1, 2]);
