@@ -156,10 +156,9 @@ async function waitUntil(condition: () => boolean): Promise<void> {
 }
 
 describe("room_client_stream_test", () => {
-  it("messaging stream serializes chunk sends without waiting for responses", async () => {
+  it("messaging stream latency does not wait for chunk responses", async () => {
     const pair = new ProtocolPair();
     let toolCallId: string | undefined;
-    let firstLiveResponse: { protocol: Protocol; messageId: number } | undefined;
     const liveIndexes: number[] = [];
 
     pair.serverProtocol.start({
@@ -190,14 +189,12 @@ describe("room_client_stream_test", () => {
           payload.length > 0 ? payload : undefined,
         ));
         if (content instanceof ControlContent) {
-          await protocol.send("__response__", new EmptyContent().pack(), messageId);
           return;
         }
 
         expect(content).to.be.instanceOf(JsonContent);
         const json = (content as JsonContent).json;
         if ("to_participant_id" in json) {
-          await protocol.send("__response__", new EmptyContent().pack(), messageId);
           await sendToolCallResponseChunk({
             protocol,
             toolCallId,
@@ -210,11 +207,6 @@ describe("room_client_stream_test", () => {
 
         const message = JSON.parse(json["message_json"] as string) as { index: number };
         liveIndexes.push(message.index);
-        if (message.index === 1) {
-          firstLiveResponse = { protocol, messageId };
-          return;
-        }
-        await protocol.send("__response__", new EmptyContent().pack(), messageId);
       },
     });
 
@@ -238,13 +230,8 @@ describe("room_client_stream_test", () => {
         message: { index: 2 },
       });
 
-      await waitUntil(() => liveIndexes.length === 1);
-      expect(liveIndexes).to.deep.equal([1]);
-      await firstLiveResponse!.protocol.send(
-        "__response__",
-        new EmptyContent().pack(),
-        firstLiveResponse!.messageId,
-      );
+      await waitUntil(() => liveIndexes.length === 2);
+      expect(liveIndexes).to.deep.equal([1, 2]);
       await Promise.all([first, second]);
       expect(liveIndexes).to.deep.equal([1, 2]);
 
@@ -288,12 +275,10 @@ describe("room_client_stream_test", () => {
           payload.length > 0 ? payload : undefined,
         ));
         if (content instanceof ControlContent) {
-          await protocol.send("__response__", new EmptyContent().pack(), messageId);
           return;
         }
         const json = (content as JsonContent).json;
         if ("to_participant_id" in json) {
-          await protocol.send("__response__", new EmptyContent().pack(), messageId);
           await sendToolCallResponseChunk({
             protocol,
             toolCallId,
@@ -315,11 +300,15 @@ describe("room_client_stream_test", () => {
           }
           return;
         }
-        await protocol.send(
-          "__response__",
-          new ErrorContent({ text: "client disconnected" }).pack(),
-          messageId,
-        );
+        await sendToolCallResponseChunk({
+          protocol,
+          toolCallId,
+          chunk: new ControlContent({
+            method: "close",
+            statusCode: 1007,
+            message: "client disconnected",
+          }),
+        });
       },
     });
 
@@ -334,10 +323,13 @@ describe("room_client_stream_test", () => {
         type: "test",
         message: { open: true },
       });
-      await expectRoomServerException(
-        failed.sendMessage({ type: "test", message: { index: 1 } }),
-        "client disconnected",
-      );
+      const failureEvent = failed[Symbol.asyncIterator]().next();
+      await failed.sendMessage({ type: "test", message: { index: 1 } });
+      const failure = await failureEvent;
+      expect(failure.value?.kind).to.equal("closed");
+      expect(
+        failure.value?.kind === "closed" ? failure.value.message : undefined,
+      ).to.contain("client disconnected");
       expect(failed.closed).to.equal(true);
       await failed.close();
 
@@ -352,6 +344,32 @@ describe("room_client_stream_test", () => {
       await disconnected.close();
       await expectRoomServerException(
         disconnected.sendMessage({ type: "test", message: {} }),
+        "closed",
+      );
+
+      const duplicateAcceptance = await room.messaging.stream({
+        to: room.localParticipant!,
+        type: "test",
+        message: { open: true },
+      });
+      const duplicateEvent = duplicateAcceptance[Symbol.asyncIterator]().next();
+      await sendToolCallResponseChunk({
+        protocol: pair.serverProtocol,
+        toolCallId: toolCallId!,
+        chunk: new JsonContent({
+          json: { kind: "accepted", stream_id: "duplicate" },
+        }),
+      });
+      const duplicateFailure = await duplicateEvent;
+      expect(duplicateFailure.value?.kind).to.equal("closed");
+      expect(
+        duplicateFailure.value?.kind === "closed"
+          ? duplicateFailure.value.message
+          : undefined,
+      ).to.contain("unexpected chunk");
+      expect(duplicateAcceptance.closed).to.equal(true);
+      await expectRoomServerException(
+        duplicateAcceptance.sendMessage({ type: "late", message: {} }),
         "closed",
       );
     } finally {
@@ -443,10 +461,13 @@ describe("room_client_stream_test", () => {
   it("invokeTool stream emits error when request chunk send fails after open", async () => {
     const pair = new ProtocolPair();
     let sawTextChunk = false;
+    let toolCallId: string | undefined;
 
     pair.serverProtocol.start({
       onMessage: async (protocol, messageId, type, data) => {
         if (type === "room.invoke_tool") {
+          const [request] = unpackMessage(data!);
+          toolCallId = request["tool_call_id"] as string;
           await protocol.send("__response__", new ControlContent({ method: "open" }).pack(), messageId);
           return;
         }
@@ -458,10 +479,18 @@ describe("room_client_stream_test", () => {
         const chunk = message["chunk"] as Record<string, unknown>;
         if (chunk["type"] === "text") {
           sawTextChunk = true;
-          await protocol.send("__response__", new ErrorContent({ text: "schema mismatch" }).pack(), messageId);
-          return;
+          if (toolCallId != null) {
+            await sendToolCallResponseChunk({
+              protocol,
+              toolCallId,
+              chunk: new ControlContent({
+                method: "close",
+                statusCode: 1007,
+                message: "schema mismatch",
+              }),
+            });
+          }
         }
-        await protocol.send("__response__", new EmptyContent().pack(), messageId);
       },
     });
 
@@ -513,7 +542,6 @@ describe("room_client_stream_test", () => {
           return;
         }
 
-        await protocol.send("__response__", new EmptyContent().pack(), messageId);
         if (sentFailureChunks || toolCallId == null) {
           return;
         }
@@ -582,7 +610,6 @@ describe("room_client_stream_test", () => {
           return;
         }
 
-        await protocol.send("__response__", new EmptyContent().pack(), messageId);
         if (sentClose || toolCallId == null) {
           return;
         }
@@ -712,8 +739,6 @@ describe("room_client_stream_test", () => {
         ));
         requestChunks.push(chunk);
 
-        await protocol.send("__response__", new EmptyContent().pack(), messageId);
-
         if (!toolCallId || invokeMessageId == null) {
           return;
         }
@@ -836,8 +861,6 @@ describe("room_client_stream_test", () => {
           payload.length > 0 ? payload : undefined,
         ));
         requestChunks.push(chunk);
-
-        await protocol.send("__response__", new EmptyContent().pack(), messageId);
 
         if (!toolCallId) {
           return;

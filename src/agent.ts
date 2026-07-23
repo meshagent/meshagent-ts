@@ -623,10 +623,10 @@ class _RemoteToolkitWrapper {
         }
     }
 
-    private async _sendToolCallResponseChunk(messageId: number, toolCallId: string, chunk: Content): Promise<boolean> {
+    private _sendToolCallResponseChunk(messageId: number, toolCallId: string, chunk: Content): boolean {
         const [header, payload] = unpackMessage(chunk.pack());
         try {
-            await this.client.protocol.send(
+            this.client.protocol.sendNowait(
                 "room.tool_call_response_chunk",
                 packMessage({ tool_call_id: toolCallId, chunk: header }, payload.length > 0 ? payload : undefined),
                 { id: messageId },
@@ -730,9 +730,9 @@ class _RemoteToolkitWrapper {
                 if (!await this._sendToolCallResponse(messageId, new ControlContent({ method: "open" }))) return;
                 for await (const chunk of output.stream) {
                     this.toolkit.validateOutputContent(tool, chunk);
-                    if (!await this._sendToolCallResponseChunk(messageId, toolCallId, chunk)) return;
+                    if (!this._sendToolCallResponseChunk(messageId, toolCallId, chunk)) return;
                 }
-                await this._sendToolCallResponseChunk(messageId, toolCallId, new ControlContent({ method: "close" }));
+                this._sendToolCallResponseChunk(messageId, toolCallId, new ControlContent({ method: "close" }));
                 return;
             }
             throw new Error(`tool ${toolName} returned unsupported output`);
@@ -742,9 +742,9 @@ class _RemoteToolkitWrapper {
                 return;
             }
             if (!(error instanceof InvalidToolDataException)) {
-                await this._sendToolCallResponseChunk(messageId, toolCallId, new ErrorContent({ text: String(error) }));
+                this._sendToolCallResponseChunk(messageId, toolCallId, new ErrorContent({ text: String(error) }));
             }
-            await this._sendToolCallResponseChunk(messageId, toolCallId, new ControlContent({
+            this._sendToolCallResponseChunk(messageId, toolCallId, new ControlContent({
                 method: "close",
                 statusCode: error instanceof InvalidToolDataException ? ControlCloseStatus.INVALID_DATA : undefined,
                 message: error instanceof InvalidToolDataException ? error.message : undefined,

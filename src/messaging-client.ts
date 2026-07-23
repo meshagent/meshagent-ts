@@ -2,7 +2,7 @@ import { Completer } from "./completer.js";
 import { EventEmitter } from "./event-emitter.js";
 import { Participant, RemoteParticipant } from "./participant.js";
 import { Protocol } from "./protocol.js";
-import { BinaryContent, Content, JsonContent } from "./response.js";
+import { BinaryContent, Content, ControlContent, JsonContent } from "./response.js";
 import { RoomClient } from "./room-client.js";
 import { RoomMessage, RoomMessageEvent } from "./room-event.js";
 import { RoomServerException } from "./room-server-client.js";
@@ -119,6 +119,8 @@ class MessagingStreamInput {
   }
 }
 
+type MessagingStreamState = "accepted" | "terminal";
+
 export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
   public readonly streamId: string;
   public readonly remoteParticipantId: string;
@@ -128,7 +130,7 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
   private readonly onClosed: () => void;
   private readonly events: MessagingStreamEvent[] = [];
   private eventSignal: Completer<void> | null = null;
-  private _closed = false;
+  private state: MessagingStreamState = "accepted";
 
   constructor({
     streamId,
@@ -151,17 +153,25 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
     this.output = output;
     this.inputDone = Promise.resolve(inputClosed).catch((error: unknown) => {
       this.input.fail(error);
+      this.push({
+        kind: "closed",
+        streamId: this.streamId,
+        reason: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      void this.output.return?.();
+      this.finish();
     });
     this.onClosed = onClosed;
     void this.consumeOutput();
   }
 
   public get closed(): boolean {
-    return this._closed;
+    return this.state === "terminal";
   }
 
   private push(event: MessagingStreamEvent): void {
-    if (this._closed) {
+    if (this.state !== "accepted") {
       return;
     }
     this.events.push(event);
@@ -170,10 +180,10 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
   }
 
   private finish(): void {
-    if (this._closed) {
+    if (this.state === "terminal") {
       return;
     }
-    this._closed = true;
+    this.state = "terminal";
     this.input.close();
     this.eventSignal?.resolve();
     this.eventSignal = null;
@@ -185,6 +195,14 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
       while (true) {
         const next = await this.output.next();
         if (next.done) {
+          return;
+        }
+        if (next.value instanceof ControlContent && next.value.method === "close") {
+          this.push({
+            kind: "client_disconnected",
+            streamId: this.streamId,
+            participantId: this.remoteParticipantId,
+          });
           return;
         }
         if (!(next.value instanceof JsonContent)) {
@@ -225,6 +243,8 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
             message: typeof value["message"] === "string" ? value["message"] : undefined,
           });
           return;
+        } else {
+          throw new RoomServerException("unexpected chunk from messaging.stream");
         }
       }
     } catch (error) {
@@ -263,7 +283,7 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
     message: MessagePayload;
     attachment?: Uint8Array;
   }): void {
-    if (this._closed) {
+    if (this.state !== "accepted") {
       throw new RoomServerException("the messaging stream is closed");
     }
     void this.input.enqueue(this.content(params));
@@ -274,11 +294,14 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
     message: MessagePayload;
     attachment?: Uint8Array;
   }): Promise<void> {
+    if (this.state !== "accepted") {
+      throw new RoomServerException("the messaging stream is closed");
+    }
     await this.input.enqueue(this.content(params), { wait: true });
   }
 
   public async close(): Promise<void> {
-    if (this._closed) {
+    if (this.state === "terminal") {
       await this.inputDone;
       return;
     }
@@ -292,7 +315,7 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
   }
 
   public clientDisconnected(participantId: string): void {
-    if (this._closed) {
+    if (this.state === "terminal") {
       return;
     }
     this.push({
@@ -305,7 +328,7 @@ export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
 
   public async *[Symbol.asyncIterator](): AsyncIterator<MessagingStreamEvent> {
     while (true) {
-      while (this.events.length === 0 && !this._closed) {
+      while (this.events.length === 0 && this.state !== "terminal") {
         this.eventSignal ??= new Completer<void>();
         await this.eventSignal.fut;
       }
