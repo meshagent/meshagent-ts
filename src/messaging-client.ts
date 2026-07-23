@@ -2,7 +2,7 @@ import { Completer } from "./completer.js";
 import { EventEmitter } from "./event-emitter.js";
 import { Participant, RemoteParticipant } from "./participant.js";
 import { Protocol } from "./protocol.js";
-import { BinaryContent, JsonContent } from "./response.js";
+import { BinaryContent, Content, JsonContent } from "./response.js";
 import { RoomClient } from "./room-client.js";
 import { RoomMessage, RoomMessageEvent } from "./room-event.js";
 import { RoomServerException } from "./room-server-client.js";
@@ -10,7 +10,9 @@ import { splitMessageHeader, splitMessagePayload } from "./utils.js";
 
 const globalScope = globalThis as typeof globalThis & {
   Buffer?: {
-    from(data: Uint8Array): { toString(encoding: string): string };
+    from(data: Uint8Array | string, encoding?: string): Uint8Array & {
+      toString(encoding: string): string;
+    };
   };
   btoa?: (data: string) => string;
 };
@@ -31,7 +33,290 @@ function bytesToBase64(bytes: Uint8Array): string {
   return globalScope.btoa(binary);
 }
 
+function base64ToBytes(value: string): Uint8Array {
+  if (globalScope.Buffer != null) {
+    return new Uint8Array(globalScope.Buffer.from(value, "base64") as unknown as Uint8Array);
+  }
+  const atob = (globalThis as typeof globalThis & { atob?: (data: string) => string }).atob;
+  if (atob == null) {
+    throw new Error("base64 decoding is not available in this runtime");
+  }
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
 type MessagePayload = Record<string, unknown>;
+
+export type MessagingStreamEvent =
+  | { kind: "message"; message: RoomMessage }
+  | { kind: "client_disconnected"; streamId: string; participantId: string }
+  | { kind: "closed"; streamId: string; reason: string; message?: string };
+
+interface MessagingStreamInputItem {
+  content: Content;
+  sent?: Completer<void>;
+}
+
+class MessagingStreamInput {
+  private readonly items: MessagingStreamInputItem[] = [];
+  private signal: Completer<void> | null = null;
+  private active: MessagingStreamInputItem | null = null;
+  private closed = false;
+  private error: unknown = null;
+
+  public enqueue(content: Content, { wait = false }: { wait?: boolean } = {}): Promise<void> {
+    if (this.closed) {
+      return Promise.reject(this.error ?? new RoomServerException("the messaging stream is closed"));
+    }
+    const sent = wait ? new Completer<void>() : undefined;
+    this.items.push({ content, sent });
+    this.signal?.resolve();
+    this.signal = null;
+    return sent?.fut ?? Promise.resolve();
+  }
+
+  public close(error: unknown = new RoomServerException("the messaging stream is closed")): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.error = error;
+    this.active?.sent?.reject(error);
+    this.active = null;
+    for (const item of this.items.splice(0)) {
+      item.sent?.reject(error);
+    }
+    this.signal?.resolve();
+    this.signal = null;
+  }
+
+  public fail(error: unknown): void {
+    this.close(error);
+  }
+
+  public async *stream(): AsyncIterable<Content> {
+    try {
+      while (true) {
+        while (this.items.length === 0 && !this.closed) {
+          this.signal ??= new Completer<void>();
+          await this.signal.fut;
+        }
+        const item = this.items.shift();
+        if (item == null) {
+          return;
+        }
+        this.active = item;
+        yield item.content;
+        item.sent?.resolve();
+        this.active = null;
+      }
+    } finally {
+      if (this.active != null && this.closed) {
+        this.active.sent?.reject(this.error ?? new RoomServerException("the messaging stream is closed"));
+        this.active = null;
+      }
+    }
+  }
+}
+
+export class MessagingStream implements AsyncIterable<MessagingStreamEvent> {
+  public readonly streamId: string;
+  public readonly remoteParticipantId: string;
+  private readonly input: MessagingStreamInput;
+  private readonly output: AsyncIterator<Content>;
+  private readonly inputDone: Promise<void>;
+  private readonly onClosed: () => void;
+  private readonly events: MessagingStreamEvent[] = [];
+  private eventSignal: Completer<void> | null = null;
+  private _closed = false;
+
+  constructor({
+    streamId,
+    remoteParticipantId,
+    input,
+    output,
+    inputClosed,
+    onClosed,
+  }: {
+    streamId: string;
+    remoteParticipantId: string;
+    input: MessagingStreamInput;
+    output: AsyncIterator<Content>;
+    inputClosed?: Promise<void>;
+    onClosed: () => void;
+  }) {
+    this.streamId = streamId;
+    this.remoteParticipantId = remoteParticipantId;
+    this.input = input;
+    this.output = output;
+    this.inputDone = Promise.resolve(inputClosed).catch((error: unknown) => {
+      this.input.fail(error);
+    });
+    this.onClosed = onClosed;
+    void this.consumeOutput();
+  }
+
+  public get closed(): boolean {
+    return this._closed;
+  }
+
+  private push(event: MessagingStreamEvent): void {
+    if (this._closed) {
+      return;
+    }
+    this.events.push(event);
+    this.eventSignal?.resolve();
+    this.eventSignal = null;
+  }
+
+  private finish(): void {
+    if (this._closed) {
+      return;
+    }
+    this._closed = true;
+    this.input.close();
+    this.eventSignal?.resolve();
+    this.eventSignal = null;
+    void this.inputDone.finally(this.onClosed);
+  }
+
+  private async consumeOutput(): Promise<void> {
+    try {
+      while (true) {
+        const next = await this.output.next();
+        if (next.done) {
+          return;
+        }
+        if (!(next.value instanceof JsonContent)) {
+          throw new RoomServerException("unexpected chunk from messaging.stream");
+        }
+        const value = next.value.json;
+        const kind = value["kind"];
+        if (kind === "message") {
+          const type = value["type"];
+          const message = value["message"];
+          if (typeof type !== "string" || typeof message !== "object" || message == null || Array.isArray(message)) {
+            throw new RoomServerException("invalid message chunk from messaging.stream");
+          }
+          const encodedAttachment = value["attachment_base64"];
+          this.push({
+            kind: "message",
+            message: new RoomMessage({
+              fromParticipantId: this.remoteParticipantId,
+              type,
+              message: message as MessagePayload,
+              attachment: typeof encodedAttachment === "string" && encodedAttachment !== ""
+                ? base64ToBytes(encodedAttachment)
+                : undefined,
+            }),
+          });
+        } else if (kind === "client_disconnected" && typeof value["participant_id"] === "string") {
+          this.push({
+            kind,
+            streamId: this.streamId,
+            participantId: value["participant_id"],
+          });
+          return;
+        } else if (kind === "closed") {
+          this.push({
+            kind,
+            streamId: this.streamId,
+            reason: typeof value["reason"] === "string" ? value["reason"] : "closed",
+            message: typeof value["message"] === "string" ? value["message"] : undefined,
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      this.input.fail(error);
+      this.push({
+        kind: "closed",
+        streamId: this.streamId,
+        reason: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.finish();
+    }
+  }
+
+  private content({
+    type,
+    message,
+    attachment,
+  }: {
+    type: string;
+    message: MessagePayload;
+    attachment?: Uint8Array;
+  }): JsonContent {
+    return new JsonContent({
+      json: {
+        type,
+        message_json: JSON.stringify(message),
+        ...(attachment == null ? {} : { attachment_base64: bytesToBase64(attachment) }),
+      },
+    });
+  }
+
+  public sendMessageNowait(params: {
+    type: string;
+    message: MessagePayload;
+    attachment?: Uint8Array;
+  }): void {
+    if (this._closed) {
+      throw new RoomServerException("the messaging stream is closed");
+    }
+    void this.input.enqueue(this.content(params));
+  }
+
+  public async sendMessage(params: {
+    type: string;
+    message: MessagePayload;
+    attachment?: Uint8Array;
+  }): Promise<void> {
+    await this.input.enqueue(this.content(params), { wait: true });
+  }
+
+  public async close(): Promise<void> {
+    if (this._closed) {
+      await this.inputDone;
+      return;
+    }
+    this.input.close();
+    try {
+      await this.inputDone;
+    } finally {
+      await this.output.return?.();
+      this.finish();
+    }
+  }
+
+  public clientDisconnected(participantId: string): void {
+    if (this._closed) {
+      return;
+    }
+    this.push({
+      kind: "client_disconnected",
+      streamId: this.streamId,
+      participantId,
+    });
+    this.finish();
+  }
+
+  public async *[Symbol.asyncIterator](): AsyncIterator<MessagingStreamEvent> {
+    while (true) {
+      while (this.events.length === 0 && !this._closed) {
+        this.eventSignal ??= new Completer<void>();
+        await this.eventSignal.fut;
+      }
+      const event = this.events.shift();
+      if (event == null) {
+        return;
+      }
+      yield event;
+    }
+  }
+}
 
 interface QueuedRoomMessage {
   to: Participant;
@@ -50,6 +335,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   private _messageQueued: Completer<void> | null = null;
   private _sendTask: Promise<void> | null = null;
   private readonly _sendOperations = new Set<Promise<void>>();
+  private readonly _streams = new Set<MessagingStream>();
   private _messageQueueClosed = false;
   private _desiredEnabled = false;
   private _online = false;
@@ -151,6 +437,7 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
       await sendTask;
     }
     await Promise.all(this._sendOperations);
+    await Promise.all([...this._streams].map(async (stream) => stream.close()));
 
     this._desiredEnabled = false;
     this._clearCurrentConnectionState();
@@ -223,6 +510,9 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
   }
 
   public _onRoomDisconnect({ reason: _reason }: { reason: string | null }): void {
+    for (const stream of [...this._streams]) {
+      stream.clientDisconnected(this.client.localParticipant?.id ?? stream.remoteParticipantId);
+    }
     this._clearCurrentConnectionState();
   }
 
@@ -481,6 +771,62 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     }
   }
 
+  public async stream({
+    to,
+    type,
+    message,
+    attachment,
+  }: {
+    to: Participant;
+    type: string;
+    message: MessagePayload;
+    attachment?: Uint8Array;
+  }): Promise<MessagingStream> {
+    const input = new MessagingStreamInput();
+    void input.enqueue(new JsonContent({
+      json: {
+        to_participant_id: to.id,
+        type,
+        message_json: JSON.stringify(message),
+        ...(attachment == null ? {} : { attachment_base64: bytesToBase64(attachment) }),
+      },
+    }));
+    const outputResult = await this.client.invokeToolCall({
+      toolkit: "messaging",
+      tool: "stream",
+      input: input.stream(),
+      streamInput: true,
+    });
+    if (outputResult.kind !== "stream") {
+      input.close();
+      throw new RoomServerException("unexpected return type from messaging.stream");
+    }
+    const outputIterable = outputResult.stream;
+    const output = outputIterable[Symbol.asyncIterator]();
+    const accepted = await output.next();
+    if (
+      accepted.done
+      || !(accepted.value instanceof JsonContent)
+      || accepted.value.json["kind"] !== "accepted"
+      || typeof accepted.value.json["stream_id"] !== "string"
+    ) {
+      input.close();
+      await output.return?.();
+      throw new RoomServerException("messaging.stream did not acknowledge acceptance");
+    }
+    let stream: MessagingStream;
+    stream = new MessagingStream({
+      streamId: accepted.value.json["stream_id"],
+      remoteParticipantId: to.id,
+      input,
+      output,
+      inputClosed: outputResult.inputClosed,
+      onClosed: () => this._streams.delete(stream),
+    });
+    this._streams.add(stream);
+    return stream;
+  }
+
   public getParticipants(): RemoteParticipant[] {
     return this.remoteParticipants;
   }
@@ -606,6 +952,9 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     this._wakeMessageQueue();
     this._drainQueuedMessages({ error });
     this._desiredEnabled = false;
+    for (const stream of [...this._streams]) {
+      stream.clientDisconnected(this.client.localParticipant?.id ?? stream.remoteParticipantId);
+    }
     this._clearCurrentConnectionState();
     this.client.protocol.removeHandler("messaging.send", this._messageHandler);
     super.dispose();

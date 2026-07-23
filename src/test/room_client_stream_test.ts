@@ -145,7 +145,221 @@ async function collectStreamResult(stream: AsyncIterable<Content>): Promise<{
   }
 }
 
+async function waitUntil(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error("condition was not met before timeout");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("room_client_stream_test", () => {
+  it("messaging stream serializes chunk sends without waiting for responses", async () => {
+    const pair = new ProtocolPair();
+    let toolCallId: string | undefined;
+    let firstLiveResponse: { protocol: Protocol; messageId: number } | undefined;
+    const liveIndexes: number[] = [];
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data) {
+          return;
+        }
+        if (type === "room.invoke_tool") {
+          const [request] = unpackMessage(data);
+          expect(request["toolkit"]).to.equal("messaging");
+          expect(request["tool"]).to.equal("stream");
+          toolCallId = request["tool_call_id"] as string;
+          await protocol.send(
+            "__response__",
+            new ControlContent({ method: "open" }).pack(),
+            messageId,
+          );
+          return;
+        }
+        if (type !== "room.tool_call_request_chunk" || toolCallId == null) {
+          return;
+        }
+
+        const [request, payload] = unpackMessage(data);
+        const chunk = request["chunk"] as Record<string, unknown>;
+        const content = unpackContent(packMessage(
+          chunk,
+          payload.length > 0 ? payload : undefined,
+        ));
+        if (content instanceof ControlContent) {
+          await protocol.send("__response__", new EmptyContent().pack(), messageId);
+          return;
+        }
+
+        expect(content).to.be.instanceOf(JsonContent);
+        const json = (content as JsonContent).json;
+        if ("to_participant_id" in json) {
+          await protocol.send("__response__", new EmptyContent().pack(), messageId);
+          await sendToolCallResponseChunk({
+            protocol,
+            toolCallId,
+            chunk: new JsonContent({
+              json: { kind: "accepted", stream_id: "stream-1" },
+            }),
+          });
+          return;
+        }
+
+        const message = JSON.parse(json["message_json"] as string) as { index: number };
+        liveIndexes.push(message.index);
+        if (message.index === 1) {
+          firstLiveResponse = { protocol, messageId };
+          return;
+        }
+        await protocol.send("__response__", new EmptyContent().pack(), messageId);
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const stream = await room.messaging.stream({
+        to: room.localParticipant!,
+        type: "meshagent.chat.thread.subscribe",
+        message: { type: "thread.open", thread_id: "thread-1" },
+      });
+      const first = stream.sendMessage({
+        type: "agent-message",
+        message: { index: 1 },
+      });
+      const second = stream.sendMessage({
+        type: "agent-message",
+        message: { index: 2 },
+      });
+
+      await waitUntil(() => liveIndexes.length === 1);
+      expect(liveIndexes).to.deep.equal([1]);
+      await firstLiveResponse!.protocol.send(
+        "__response__",
+        new EmptyContent().pack(),
+        firstLiveResponse!.messageId,
+      );
+      await Promise.all([first, second]);
+      expect(liveIndexes).to.deep.equal([1, 2]);
+
+      await stream.close();
+      expect(stream.closed).to.equal(true);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("messaging stream surfaces chunk failures and remote disconnects", async () => {
+    const pair = new ProtocolPair();
+    let toolCallId: string | undefined;
+    let streamNumber = 0;
+
+    pair.serverProtocol.start({
+      onMessage: async (protocol, messageId, type, data) => {
+        if (!data) {
+          return;
+        }
+        if (type === "room.invoke_tool") {
+          const [request] = unpackMessage(data);
+          toolCallId = request["tool_call_id"] as string;
+          streamNumber += 1;
+          await protocol.send(
+            "__response__",
+            new ControlContent({ method: "open" }).pack(),
+            messageId,
+          );
+          return;
+        }
+        if (type !== "room.tool_call_request_chunk" || toolCallId == null) {
+          return;
+        }
+
+        const [request, payload] = unpackMessage(data);
+        const chunk = request["chunk"] as Record<string, unknown>;
+        const content = unpackContent(packMessage(
+          chunk,
+          payload.length > 0 ? payload : undefined,
+        ));
+        if (content instanceof ControlContent) {
+          await protocol.send("__response__", new EmptyContent().pack(), messageId);
+          return;
+        }
+        const json = (content as JsonContent).json;
+        if ("to_participant_id" in json) {
+          await protocol.send("__response__", new EmptyContent().pack(), messageId);
+          await sendToolCallResponseChunk({
+            protocol,
+            toolCallId,
+            chunk: new JsonContent({
+              json: { kind: "accepted", stream_id: `stream-${streamNumber}` },
+            }),
+          });
+          if (streamNumber === 2) {
+            await sendToolCallResponseChunk({
+              protocol,
+              toolCallId,
+              chunk: new JsonContent({
+                json: {
+                  kind: "client_disconnected",
+                  participant_id: "remote-1",
+                },
+              }),
+            });
+          }
+          return;
+        }
+        await protocol.send(
+          "__response__",
+          new ErrorContent({ text: "client disconnected" }).pack(),
+          messageId,
+        );
+      },
+    });
+
+    const room = new RoomClient({ protocolFactory: () => pair.clientProtocolFactory() });
+    const start = room.start();
+    await sendRoomReady(pair.serverProtocol);
+    await start;
+
+    try {
+      const failed = await room.messaging.stream({
+        to: room.localParticipant!,
+        type: "test",
+        message: { open: true },
+      });
+      await expectRoomServerException(
+        failed.sendMessage({ type: "test", message: { index: 1 } }),
+        "client disconnected",
+      );
+      expect(failed.closed).to.equal(true);
+      await failed.close();
+
+      const disconnected = await room.messaging.stream({
+        to: room.localParticipant!,
+        type: "test",
+        message: { open: true },
+      });
+      const event = await disconnected[Symbol.asyncIterator]().next();
+      expect(event.value?.kind).to.equal("client_disconnected");
+      expect(disconnected.closed).to.equal(true);
+      await disconnected.close();
+      await expectRoomServerException(
+        disconnected.sendMessage({ type: "test", message: {} }),
+        "closed",
+      );
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
   it("invokeTool fails fast when server returns invoke response error", async () => {
     const pair = new ProtocolPair();
 
