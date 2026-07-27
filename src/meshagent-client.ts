@@ -52,9 +52,10 @@ export type ProjectRole =
     | "billing_manager"
     | "group_manager";
 export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
+export type RoomRole = "site_user" | ResourceRole;
 export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
 export type SecretRole = "use_proxy";
-export type AccessRole = ProjectRole | ResourceRole | FeedRole | SecretRole | "list";
+export type AccessRole = ProjectRole | RoomRole | FeedRole | SecretRole | "list";
 export type AccessSubjectType = "user" | "group" | "agent" | "service_account" | "userset";
 export type AccessResourceType = "project" | "room" | "agent" | "group" | "repository" | "feed" | "secret";
 
@@ -1479,6 +1480,7 @@ export class Meshagent {
         const parsedDirectRoles = Array.isArray((data as any).direct_roles)
             ? (data as any).direct_roles.filter((item: unknown): item is AccessRole =>
                   item === "member" ||
+                  item === "site_user" ||
                   item === "viewer" ||
                   item === "operator" ||
                   item === "developer" ||
