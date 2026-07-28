@@ -1845,6 +1845,10 @@ export class ParticipantToken {
         this.grants.push(new ParticipantGrant({ name: "room", scope: roomName }));
     }
 
+    addSiteGrant(roomName: string): void {
+        this.grants.push(new ParticipantGrant({ name: "site", scope: roomName }));
+    }
+
     addApiGrant(grant: ApiScope): void {
         for (const existingGrant of this.grants) {
             if (existingGrant.name === "api") {

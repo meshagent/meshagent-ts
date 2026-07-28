@@ -329,11 +329,13 @@ describe("ParticipantToken", () => {
         });
         token.addRoleGrant("moderator");
         token.addRoomGrant("main");
+        token.addSiteGrant("main");
 
         const clone = ParticipantToken.fromJson(token.toJson());
         expect(clone.name).to.equal(token.name);
         expect(clone.role).to.equal("moderator");
         expect(clone.grantScope("room")).to.equal("main");
+        expect(clone.grantScope("site")).to.equal("main");
         expect(clone.extra).to.deep.equal({ meshagent_bootstrap: true, custom: "value" });
     });
 

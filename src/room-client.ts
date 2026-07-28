@@ -1543,6 +1543,16 @@ export class RoomClient {
     data?: Uint8Array,
     afterSend?: () => void,
   ): Promise<Content> {
+    const response = this._dispatchRequest(type, request, data);
+    afterSend?.();
+    return await response;
+  }
+
+  private _dispatchRequest(
+    type: string,
+    request: RequestHeader,
+    data?: Uint8Array,
+  ): Promise<Content> {
     this._raiseIfTerminal();
     if (this._entered && !this._connected && !this._allowDisconnectedRequests) {
       throw this._disconnectedError({ baseMessage: "room connection is disconnected" });
@@ -1553,9 +1563,8 @@ export class RoomClient {
     this._pendingRequests.set(requestId, completer);
 
     try {
-      await this._protocolInstance.send(type, packMessage(request, data), requestId);
-      afterSend?.();
-      return await completer.fut;
+      this._protocolInstance.sendNowait(type, packMessage(request, data), { id: requestId });
+      return completer.fut;
     } catch (error) {
       this._pendingRequests.delete(requestId);
       throw error;
@@ -1704,7 +1713,6 @@ export class RoomClient {
     let requestTask: Promise<void> | undefined;
     if (params.streamInput === true) {
       request["arguments"] = { type: "control", method: "open" };
-      requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input as AsyncIterable<Content>);
     } else {
       const input = params.input as Content;
       const packed = input.pack();
@@ -1720,10 +1728,22 @@ export class RoomClient {
     if (params.onBehalfOfId != null) {
       request["on_behalf_of_id"] = params.onBehalfOfId;
     }
+    const responseRequest = this._dispatchRequest(
+      "room.invoke_tool",
+      request,
+      requestData,
+    );
+    params.afterSend?.();
+    if (params.streamInput === true) {
+      requestTask = this._streamInvokeToolRequestChunks(
+        toolCallId,
+        params.input as AsyncIterable<Content>,
+      );
+    }
 
     try {
       const response = await Promise.race([
-        this.sendRequest("room.invoke_tool", request, requestData, params.afterSend),
+        responseRequest,
         preOpenError.fut,
       ]);
       this._toolCallPreOpenErrors.delete(toolCallId);
@@ -1784,9 +1804,10 @@ export class RoomClient {
     if (params.onBehalfOfId != null) {
       request["on_behalf_of_id"] = params.onBehalfOfId;
     }
+    const responseRequest = this._dispatchRequest("room.invoke_tool", request);
     const requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input);
     try {
-      const response = await this.sendRequest("room.invoke_tool", request);
+      const response = await responseRequest;
       await requestTask;
       if (response instanceof ControlContent && response.method === "open") {
         throw new RoomServerException(`unexpected return type from ${params.toolkit}.${params.tool}`);
@@ -1824,6 +1845,7 @@ export class RoomClient {
     if (params.onBehalfOfId != null) {
       request["on_behalf_of_id"] = params.onBehalfOfId;
     }
+    const responseRequest = this._dispatchRequest("room.invoke_tool", request);
     const requestTask = this._streamInvokeToolRequestChunks(toolCallId, params.input);
     void requestTask.catch((error: unknown) => {
       const stream = this._toolCallStreams.get(toolCallId);
@@ -1838,7 +1860,7 @@ export class RoomClient {
     let response: Content;
     try {
       response = await Promise.race([
-        this.sendRequest("room.invoke_tool", request),
+        responseRequest,
         preOpenError.fut,
       ]);
     } catch (error) {
@@ -1861,17 +1883,23 @@ export class RoomClient {
     };
   }
 
-  private async _sendToolCallRequestChunk(toolCallId: string, chunk: Content): Promise<void> {
+  private _dispatchToolCallRequestChunk(
+    toolCallId: string,
+    chunk: Content,
+  ): void {
+    this._raiseIfTerminal();
+    if (this._entered && !this._connected && !this._allowDisconnectedRequests) {
+      throw this._disconnectedError({ baseMessage: "room connection is disconnected" });
+    }
     const packed = chunk.pack();
     const request: Record<string, unknown> = {
       tool_call_id: toolCallId,
       chunk: JSON.parse(splitMessageHeader(packed)),
     };
     const payload = splitMessagePayload(packed);
-    await this.sendRequest(
+    this._protocolInstance.sendNowait(
       "room.tool_call_request_chunk",
-      request,
-      payload.length > 0 ? payload : undefined,
+      packMessage(request, payload.length > 0 ? payload : undefined),
     );
   }
 
@@ -1879,13 +1907,12 @@ export class RoomClient {
     toolCallId: string,
     input: AsyncIterable<Content>,
   ): Promise<void> {
-    await Promise.resolve();
     try {
       for await (const item of input) {
-        await this._sendToolCallRequestChunk(toolCallId, item);
+        this._dispatchToolCallRequestChunk(toolCallId, item);
       }
     } finally {
-      await this._sendToolCallRequestChunk(
+      this._dispatchToolCallRequestChunk(
         toolCallId,
         new ControlContent({ method: "close" }),
       );
