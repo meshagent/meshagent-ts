@@ -10,6 +10,7 @@ export * from './document.js';
 export * from './meshagent-client.js';
 export * from './messaging-client.js';
 export * from './memory-client.js';
+export * from './mounts-client.js';
 export * from './oauth-scopes.js';
 export * from './participant-token.js';
 export * from './participant.js';

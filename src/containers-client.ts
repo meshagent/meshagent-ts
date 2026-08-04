@@ -89,6 +89,7 @@ export interface RoomContainer {
   state: string;
   private: boolean;
   serviceId?: string;
+  mounts?: ContainerMountSpec;
   stats?: RoomContainerStats;
   exitStatus?: ContainerExitStatus;
 }
@@ -122,6 +123,58 @@ export interface BuildLogsSession {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseContainerMountSpec(value: unknown): ContainerMountSpec | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new RoomServerException("unexpected return type from containers.list");
+  }
+  const readMounts = (
+    field: string,
+    validate: (mount: Record<string, unknown>) => boolean,
+  ): Record<string, unknown>[] | undefined => {
+    const raw = value[field];
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (!Array.isArray(raw) || !raw.every((mount) => isRecord(mount) && validate(mount))) {
+      throw new RoomServerException("unexpected return type from containers.list");
+    }
+    return raw;
+  };
+  const optionalMountFieldsAreValid = (mount: Record<string, unknown>): boolean =>
+    (mount["subpath"] === undefined || mount["subpath"] === null || typeof mount["subpath"] === "string")
+    && (mount["read_only"] === undefined || typeof mount["read_only"] === "boolean");
+  return {
+    room: readMounts(
+      "room",
+      (mount) => typeof mount["path"] === "string" && optionalMountFieldsAreValid(mount),
+    ) as ContainerMountSpec["room"],
+    volumes: readMounts(
+      "volumes",
+      (mount) => typeof mount["name"] === "string"
+        && typeof mount["path"] === "string"
+        && optionalMountFieldsAreValid(mount),
+    ) as ContainerMountSpec["volumes"],
+    empty_dirs: readMounts(
+      "empty_dirs",
+      (mount) => typeof mount["path"] === "string"
+        && (mount["read_only"] === undefined || typeof mount["read_only"] === "boolean"),
+    ) as ContainerMountSpec["empty_dirs"],
+    configs: readMounts(
+      "configs",
+      (mount) => mount["path"] === undefined || mount["path"] === null || typeof mount["path"] === "string",
+    ) as ContainerMountSpec["configs"],
+    files: readMounts(
+      "files",
+      (mount) => typeof mount["path"] === "string"
+        && (mount["read_only"] === undefined || typeof mount["read_only"] === "boolean")
+        && (mount["text"] === undefined || mount["text"] === null || typeof mount["text"] === "string"),
+    ) as ContainerMountSpec["files"],
+  };
 }
 
 function toStringMapList(values: Record<string, string>): Array<{ key: string; value: string }> {
@@ -1179,6 +1232,7 @@ export class ContainersClient {
       const imageIdRaw = entry["image_id"];
       const portsRaw = entry["ports"];
       const serviceIdRaw = entry["service_id"];
+      const mountsRaw = entry["mounts"];
       const statsRaw = entry["stats"];
       const exitStatusRaw = entry["exit_status"];
       if (
@@ -1245,6 +1299,7 @@ export class ContainersClient {
         state,
         private: privateFlag,
         serviceId: typeof serviceIdRaw === "string" ? serviceIdRaw : undefined,
+        mounts: parseContainerMountSpec(mountsRaw),
         stats,
         exitStatus,
       });

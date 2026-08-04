@@ -5,6 +5,7 @@ import { DeveloperClient } from "./developer-client.js";
 import { EventEmitter, type EventHandler, type EventName } from "./event-emitter.js";
 import { MessagingClient } from "./messaging-client.js";
 import { MemoryClient } from "./memory-client.js";
+import { MountsClient } from "./mounts-client.js";
 import { LocalParticipant } from "./participant.js";
 import {
   Protocol,
@@ -322,6 +323,7 @@ export class RoomClient {
   public readonly containers: ContainersClient;
   public readonly memory: MemoryClient;
   public readonly services: ServicesClient;
+  public readonly mounts: MountsClient;
 
   public _protocolInstance: Protocol;
   public _entered = false;
@@ -396,6 +398,7 @@ export class RoomClient {
     this.containers = new ContainersClient({ room: this });
     this.memory = new MemoryClient({ room: this });
     this.services = new ServicesClient({ room: this });
+    this.mounts = new MountsClient(this);
   }
 
   public static withIAP({

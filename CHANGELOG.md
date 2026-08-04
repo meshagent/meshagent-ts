@@ -1,4 +1,5 @@
 ## [0.47.1]
+- Changed room mount discovery to return typed room/container consumers without exposing internal source paths, and added typed container mount specs to listed containers.
 - Added duplex messaging stream subscriptions and replay-state alignment in the TypeScript chat clients, bringing the NodeJS SDK in line with the new streaming model.
 - Reworked messaging and room client flow control so dispatch ordering, close behavior, and presence updates stay consistent under streaming loads.
 - Expanded stream and presence test coverage for the new messaging behavior.

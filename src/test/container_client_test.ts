@@ -123,6 +123,19 @@ class FakeContainersServer {
 
     if (type === "room.invoke_tool") {
       const [header, payload] = unpackMessage(data);
+      if (header["toolkit"] === "mounts" && header["tool"] === "list") {
+        await protocol.send("__response__", new JsonContent({
+          json: {
+            volumes: [{
+              id: "zero-id",
+              name: "zero",
+              required: false,
+              consumers: [{ kind: "container", container_id: "container-1" }],
+            }],
+          },
+        }).pack(), messageId);
+        return;
+      }
       if (header["toolkit"] !== "containers") {
         return;
       }
@@ -257,6 +270,9 @@ class FakeContainersServer {
                 state: "RUNNING",
                 private: false,
                 service_id: null,
+                mounts: {
+                  volumes: [{ name: "zero", path: "/mnt/zero", read_only: false }],
+                },
                 stats: {
                   cpu_usage_nano_cores: 125000000,
                   memory_usage_bytes: 67108864,
@@ -508,6 +524,9 @@ describe("container_client_test", () => {
       expect(containers[0].id).to.equal("container-1");
       expect(containers[0].imageId).to.equal("sha256:demo");
       expect(containers[0].ports).to.deep.equal([{ containerPort: 80, hostPort: 8080 }]);
+      expect(containers[0].mounts?.volumes).to.deep.equal([
+        { name: "zero", path: "/mnt/zero", read_only: false },
+      ]);
       expect(containers[0].stats).to.deep.equal({
         cpuUsageNanoCores: 125000000,
         memoryUsageBytes: 67108864,
@@ -520,6 +539,10 @@ describe("container_client_test", () => {
         message: "container exited",
         oomKilled: false,
       });
+      const mounts = await harness.room.mounts.list();
+      expect(mounts[0].consumers).to.deep.equal([
+        { kind: "container", containerId: "container-1" },
+      ]);
       expect(await harness.room.containers.waitForExit({ containerId: "container-1" })).to.equal(0);
       expect(await harness.room.containers.waitForExitStatus({ containerId: "container-1" })).to.deep.equal({
         exitCode: 0,

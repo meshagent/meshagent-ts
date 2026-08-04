@@ -355,6 +355,13 @@ export interface RoomStorageMountSpec {
     read_only?: boolean;
 }
 
+export interface VolumeStorageMountSpec {
+    name: string;
+    path: string;
+    subpath?: string | null;
+    read_only?: boolean;
+}
+
 export interface EmptyDirMountSpec {
     path: string;
     read_only?: boolean;
@@ -372,6 +379,7 @@ export interface FileMountSpec {
 
 export interface ContainerMountSpec {
     room?: RoomStorageMountSpec[];
+    volumes?: VolumeStorageMountSpec[];
     empty_dirs?: EmptyDirMountSpec[];
     configs?: ConfigMountSpec[];
     files?: FileMountSpec[];
