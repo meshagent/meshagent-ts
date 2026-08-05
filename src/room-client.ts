@@ -344,6 +344,7 @@ export class RoomClient {
   private _localParticipantReady = new Completer<void>();
   private _connected = false;
   private _closing = false;
+  private _dismissed = false;
   private _localParticipant: LocalParticipant | null = null;
   private _lifecycleTask: Promise<void> | null = null;
   private _terminalState: RoomClientTerminalState | null = null;
@@ -1208,7 +1209,7 @@ export class RoomClient {
     let firstAttempt = true;
     let retryCount = 0;
 
-    while (!this._closing) {
+    while (!this._closing && !this._dismissed) {
       if (firstAttempt) {
         firstAttempt = false;
         if (this._reconnectTimeout == null) {
@@ -1358,7 +1359,7 @@ export class RoomClient {
         return;
       }
 
-      if (closeKind !== ProtocolCloseKind.ERROR) {
+      if (closeKind !== ProtocolCloseKind.ERROR || this._dismissed) {
         this._setTerminalState({ state });
       }
 
@@ -1372,7 +1373,7 @@ export class RoomClient {
       await this._failPendingWork({ state });
       await this._closeProtocol(protocol);
 
-      if (closeKind === ProtocolCloseKind.ERROR) {
+      if (closeKind === ProtocolCloseKind.ERROR && !this._dismissed) {
         if (this._reconnectTimeout === 0) {
           if (closeReason == null) {
             console.warn("room connection lost; automatic reconnect disabled");
@@ -1400,6 +1401,14 @@ export class RoomClient {
       this._invokeTerminalCallbacks({ useErrorCallback: false });
       return;
     }
+  }
+
+  public _dismiss(): void {
+    if (this._closing || this._dismissed) {
+      return;
+    }
+    this._dismissed = true;
+    this._protocolInstance.dispose();
   }
 
   public dispose(): void {

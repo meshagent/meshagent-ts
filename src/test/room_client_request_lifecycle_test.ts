@@ -831,6 +831,48 @@ describe("room_client_request_lifecycle", () => {
     pair2.dispose();
   });
 
+  it("dismiss message closes the room without reconnecting", async () => {
+    const pair = new ProtocolPair();
+    let protocolFactoryCalls = 0;
+    const room = new RoomClient({
+      protocolFactory: () => {
+        protocolFactoryCalls += 1;
+        return pair.clientProtocolFactory();
+      },
+    });
+    let receivedDismiss = false;
+    room.messaging.on("message", (event) => {
+      if (event.message.type === "dismiss") {
+        receivedDismiss = true;
+      }
+    });
+
+    try {
+      pair.serverProtocol.start({ onMessage: async () => {} });
+      const start = room.start();
+      await sendRoomReady(pair.serverProtocol);
+      await start;
+
+      await pair.serverProtocol.send(
+        "messaging.send",
+        packMessage({
+          from_participant_id: "studio",
+          type: "dismiss",
+          message: {},
+        }),
+      );
+      await room.waitForClose();
+
+      expect(receivedDismiss).to.equal(true);
+      expect(room.isClosed).to.equal(true);
+      expect(room.isConnected).to.equal(false);
+      expect(protocolFactoryCalls).to.equal(1);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
   it("fails in-flight requests when the room is disposed", async () => {
     const pair = new ProtocolPair();
     let requestReceived = false;

@@ -910,8 +910,14 @@ export class MessagingClient extends EventEmitter<RoomMessageEvent> {
     }
 
     const event = new RoomMessageEvent({ message });
-    this.client.emit(event);
-    this.emit("message", event);
+    try {
+      this.client.emit(event);
+      this.emit("message", event);
+    } finally {
+      if (message.type === "dismiss") {
+        this.client._dismiss();
+      }
+    }
   }
 
   private _onParticipantEnabled(message: RoomMessage): void {
