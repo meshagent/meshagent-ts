@@ -1,3 +1,9 @@
+## [0.48.0]
+- Reworked the TS/JS agent chat stack to preserve ordered threaded messages and support injected-message threads across chat clients and process handling.
+- Added chat feed widgets and virtual scrolling to the React/Tailwind UI, improving large-thread performance.
+- Aligned `meshagent-agents-ts` with the Dart agents implementation and refreshed the shared chat/message contracts.
+- Removed the LiveKit dependency from the React package and updated shared package dependencies for the new chat stack.
+
 ## [0.47.1]
 - Changed room mount discovery to return typed room/container consumers without exposing internal source paths, and added typed container mount specs to listed containers.
 - Added duplex messaging stream subscriptions and replay-state alignment in the TypeScript chat clients, bringing the NodeJS SDK in line with the new streaming model.
