@@ -53,6 +53,7 @@ export type ProjectRole =
     | "group_manager";
 export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
 export type RoomRole = "site_user" | "guest" | ResourceRole;
+export type ProjectSettingsDocumentName = "openai" | "anthropic" | "otel" | "admission" | "room" | "room_roles";
 export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
 export type SecretRole = "use_proxy";
 export type AccessRole = ProjectRole | RoomRole | FeedRole | SecretRole | "list";
@@ -921,6 +922,7 @@ interface RequestOptions {
     headers?: Record<string, string>;
     action: string;
     responseType?: "json" | "text" | "arrayBuffer" | "void";
+    returnUndefinedOnNotFound?: boolean;
 }
 
 function toFetchBody(body: RequestBody): string | ArrayBuffer | undefined {
@@ -975,7 +977,7 @@ export class Meshagent {
     }
 
     private async request<T = unknown>(path: string, options: RequestOptions): Promise<T> {
-        const { method = "GET", query, json, body, headers, action, responseType = "json" } = options;
+        const { method = "GET", query, json, body, headers, action, responseType = "json", returnUndefinedOnNotFound = false } = options;
         const url = this.buildUrl(path, query);
 
         const finalHeaders: Record<string, string> = {};
@@ -1006,6 +1008,10 @@ export class Meshagent {
             headers: finalHeaders,
             body: toFetchBody(requestBody),
         });
+
+        if (response.status === 404 && returnUndefinedOnNotFound) {
+            return undefined as T;
+        }
 
         if (!response.ok) {
             let message: string;
@@ -1713,10 +1719,10 @@ export class Meshagent {
 
     // Projects & users --------------------------------------------------------
 
-    async createProject(name: string, settings?: Record<string, unknown>): Promise<Record<string, unknown>> {
+    async createProject(name: string): Promise<Record<string, unknown>> {
         return await this.request(`/accounts/projects`, {
             method: "POST",
-            json: { name, settings },
+            json: { name },
             action: "create project",
         });
     }
@@ -1747,11 +1753,29 @@ export class Meshagent {
         });
     }
 
-    async updateProjectSettings(projectId: string, settings: Record<string, unknown>): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/projects/${projectId}/settings`, {
+    private projectSettingsDocumentPath(name: ProjectSettingsDocumentName): string {
+        return name === "room_roles" ? "room-roles" : name;
+    }
+
+    async getProjectSettingsDocument(projectId: string, name: ProjectSettingsDocumentName): Promise<Record<string, unknown> | undefined> {
+        return await this.request(`/accounts/projects/${projectId}/settings/${this.projectSettingsDocumentPath(name)}`, {
+            action: `get ${name} project settings`,
+            returnUndefinedOnNotFound: true,
+        });
+    }
+
+    async setProjectSettingsDocument(projectId: string, name: ProjectSettingsDocumentName, document: Record<string, unknown>): Promise<Record<string, unknown>> {
+        return await this.request(`/accounts/projects/${projectId}/settings/${this.projectSettingsDocumentPath(name)}`, {
             method: "PUT",
-            json: settings,
-            action: "update project settings",
+            json: document,
+            action: `set ${name} project settings`,
+        });
+    }
+
+    async deleteProjectSettingsDocument(projectId: string, name: ProjectSettingsDocumentName): Promise<Record<string, unknown>> {
+        return await this.request(`/accounts/projects/${projectId}/settings/${this.projectSettingsDocumentPath(name)}`, {
+            method: "DELETE",
+            action: `delete ${name} project settings`,
         });
     }
 
