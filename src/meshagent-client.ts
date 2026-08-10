@@ -52,7 +52,7 @@ export type ProjectRole =
     | "billing_manager"
     | "group_manager";
 export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
-export type RoomRole = "site_user" | ResourceRole;
+export type RoomRole = "site_user" | "guest" | ResourceRole;
 export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
 export type SecretRole = "use_proxy";
 export type AccessRole = ProjectRole | RoomRole | FeedRole | SecretRole | "list";
