@@ -1,5 +1,6 @@
 ## [0.48.1]
 - Stability
+- Added typed room-content route targets with subpath, CORS, index serving, IAP, and Brotli-by-default compression options.
 
 ## [0.48.0]
 - Reworked the TS/JS agent chat stack to preserve ordered threaded messages and support injected-message threads across chat clients and process handling.

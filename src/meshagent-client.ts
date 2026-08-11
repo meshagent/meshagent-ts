@@ -653,12 +653,33 @@ export interface RouteBackend {
     agent?: RouteBackendTarget | null;
 }
 
-export interface RoutePathSpec {
+export interface RouteCorsRule {
+    allowedOrigins: string[];
+    allowedMethods?: string[];
+    allowedHeaders?: string[];
+    exposeHeaders?: string[];
+    maxAgeSeconds?: number;
+    allowCredentials?: boolean;
+}
+
+export interface RouteContentSpec {
+    subpath?: string;
+    cors?: RouteCorsRule[];
+    index?: boolean;
+    iap?: boolean;
+    compression?: "brotli" | "gzip" | "none";
+}
+
+interface RoutePathBase {
     path?: string;
     pathType?: "prefix" | "exact";
     stripPrefix?: boolean;
-    targetPort: string | number;
 }
+
+export type RoutePathSpec = RoutePathBase & (
+    | { targetPort: string | number; targetContent?: never }
+    | { targetContent: RouteContentSpec; targetPort?: never }
+);
 
 export interface RouteSpec {
     version: "v1";

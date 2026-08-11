@@ -1,6 +1,6 @@
 import { expect } from "chai";
 
-import { Meshagent, ServiceSpec, ServiceTemplateSpec } from "../index.js";
+import { Meshagent, RouteSpec, ServiceSpec, ServiceTemplateSpec } from "../index.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
     return {
@@ -13,6 +13,32 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("service_spec_test", () => {
+    it("types room-content route website options", () => {
+        const route: RouteSpec = {
+            version: "v1",
+            kind: "Route",
+            metadata: { name: "docs.example.com" },
+            domain: "docs.example.com",
+            backend: { room: { name: "docs-room" } },
+            paths: [{
+                path: "/docs",
+                targetContent: {
+                    subpath: "sites/docs",
+                    index: true,
+                    iap: true,
+                    compression: "brotli",
+                    cors: [{
+                        allowedOrigins: ["https://app.example.com"],
+                        allowedHeaders: ["Authorization"],
+                        exposeHeaders: ["ETag"],
+                    }],
+                },
+            }],
+        };
+
+        expect(route.paths?.[0]?.targetContent?.compression).to.equal("brotli");
+    });
+
     it("types secret values without legacy identity", () => {
         const service: ServiceSpec = {
             version: "v1",
