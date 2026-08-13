@@ -48,12 +48,13 @@ export type ProjectRole =
     | "llm_logger_inventory"
     | "llm_logger_manager"
     | "llm_proxy_user"
+    | "llm_quota_manager"
     | "usage_reporter"
     | "billing_manager"
     | "group_manager";
 export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
 export type RoomRole = "site_user" | "guest" | ResourceRole;
-export type ProjectSettingsDocumentName = "openai" | "anthropic" | "otel" | "admission" | "room" | "room_roles";
+export type ProjectSettingsDocumentName = "openai" | "anthropic" | "otel" | "admission" | "room" | "room_roles" | "router";
 export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
 export type SecretRole = "use_proxy";
 export type AccessRole = ProjectRole | RoomRole | FeedRole | SecretRole | "list";
@@ -62,13 +63,27 @@ export type AccessResourceType = "project" | "room" | "agent" | "group" | "repos
 
 export interface AccessSubject {
     type: AccessSubjectType;
-    id: string;
+    id?: string | null;
     name?: string | null;
     firstName?: string | null;
     lastName?: string | null;
     email?: string | null;
     objectType?: "project" | null;
-    relation?: "member" | "developer" | "agent" | null;
+    relation?: "member" | "developer" | "agent" | "service_account" | null;
+}
+
+export type LlmProvider = "openai" | "anthropic";
+
+export interface LlmDelegation {
+    id: string;
+    token: string;
+    expiresAt: string;
+    projectId: string;
+    delegator: AccessSubject;
+    subject: AccessSubject;
+    providers?: LlmProvider[] | null;
+    models?: string[] | null;
+    maxBudget: string;
 }
 
 export interface AccessResource {
@@ -1433,20 +1448,39 @@ export class Meshagent {
             lastName: typeof subject.last_name === "string" ? subject.last_name : null,
             email: typeof subject.email === "string" ? subject.email : null,
             objectType: typeof subject.object_type === "string" ? subject.object_type as "project" : null,
-            relation: typeof subject.relation === "string" ? subject.relation as "member" | "developer" | "agent" : null,
+            relation: typeof subject.relation === "string" ? subject.relation as "member" | "developer" | "agent" | "service_account" : null,
         };
     }
 
     private serializeAccessSubject(subject: AccessSubject): Record<string, unknown> {
         return {
             type: subject.type,
-            id: subject.id,
+            ...(subject.id !== undefined ? { id: subject.id } : {}),
             ...(subject.name !== undefined ? { name: subject.name } : {}),
             ...(subject.firstName !== undefined ? { first_name: subject.firstName } : {}),
             ...(subject.lastName !== undefined ? { last_name: subject.lastName } : {}),
             ...(subject.email !== undefined ? { email: subject.email } : {}),
             ...(subject.objectType !== undefined ? { object_type: subject.objectType } : {}),
             ...(subject.relation !== undefined ? { relation: subject.relation } : {}),
+        };
+    }
+
+    private parseLlmDelegation(data: any): LlmDelegation {
+        if (!data || typeof data !== "object" || typeof data.id !== "string" || typeof data.token !== "string"
+            || typeof data.expires_at !== "string" || typeof data.project_id !== "string"
+            || typeof data.max_budget !== "string") {
+            throw new RoomException("Invalid LLM delegation payload");
+        }
+        return {
+            id: data.id,
+            token: data.token,
+            expiresAt: data.expires_at,
+            projectId: data.project_id,
+            delegator: this.parseAccessSubject(data.delegator),
+            subject: this.parseAccessSubject(data.subject),
+            providers: Array.isArray(data.providers) ? data.providers as LlmProvider[] : null,
+            models: Array.isArray(data.models) ? data.models.filter((value: unknown): value is string => typeof value === "string") : null,
+            maxBudget: data.max_budget,
         };
     }
 
@@ -1577,6 +1611,9 @@ export class Meshagent {
             metadata: parsedResource.metadata ?? {},
             annotations: parsedResource.annotations ?? {},
         };
+        if (!parsedSubject.id) {
+            throw new RoomException("Invalid room grant payload: missing subject id");
+        }
         return {
             resource: parsedResource,
             subject: parsedSubject,
@@ -3065,6 +3102,29 @@ export class Meshagent {
             },
         );
         return this.parseAgentConnectionInfo(data);
+    }
+
+    async connectLlm(params: {
+        projectId: string;
+        subject: AccessSubject;
+        maxBudget: string;
+        providers?: LlmProvider[];
+        models?: string[];
+        expiresInSeconds?: number;
+    }): Promise<LlmDelegation> {
+        const data = await this.request("/llm/connect", {
+            method: "POST",
+            headers: { "Meshagent-Project-Id": params.projectId },
+            json: {
+                subject: this.serializeAccessSubject(params.subject),
+                max_budget: params.maxBudget,
+                ...(params.providers !== undefined ? { providers: params.providers } : {}),
+                ...(params.models !== undefined ? { models: params.models } : {}),
+                ...(params.expiresInSeconds !== undefined ? { expires_in_seconds: params.expiresInSeconds } : {}),
+            },
+            action: "connect LLM delegation",
+        });
+        return this.parseLlmDelegation(data);
     }
 
     async listRooms(

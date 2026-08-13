@@ -13,6 +13,112 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("meshagent_client_secret_test", () => {
+    it("connectLlm accepts a service account email and returns the capped delegation", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{
+            method: string;
+            url: string;
+            headers?: Record<string, string>;
+            body?: Record<string, unknown>;
+        }> = [];
+
+        globalThis.fetch = (async (url, init) => {
+            if (typeof url !== "string") {
+                throw new Error("expected string url");
+            }
+            calls.push({
+                method: init?.method ?? "GET",
+                url,
+                headers: init?.headers as Record<string, string> | undefined,
+                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
+            });
+            return jsonResponse({
+                id: "delegation-1",
+                token: "delegation-token",
+                expires_at: "2026-08-13T19:00:00Z",
+                project_id: "proj_123",
+                delegator: { type: "user", id: "user-1" },
+                subject: {
+                    type: "service_account",
+                    id: "service-account-1",
+                    email: "assistant@service.demo.api.meshagent.com",
+                },
+                providers: ["openai"],
+                models: ["openai/gpt-5"],
+                max_budget: "1.25",
+            });
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+            const delegation = await client.connectLlm({
+                projectId: "proj_123",
+                subject: {
+                    type: "service_account",
+                    email: "assistant@service.demo.api.meshagent.com",
+                },
+                maxBudget: "2",
+                providers: ["openai"],
+                models: ["openai/gpt-5"],
+                expiresInSeconds: 900,
+            });
+
+            expect(delegation.maxBudget).to.equal("1.25");
+            expect(delegation.subject.email).to.equal("assistant@service.demo.api.meshagent.com");
+            expect(calls).to.have.length(1);
+            expect(calls[0].url).to.equal("http://example.test/llm/connect");
+            expect(calls[0].headers).to.include({
+                Authorization: "Bearer test-token",
+                "Meshagent-Project-Id": "proj_123",
+            });
+            expect(calls[0].body).to.deep.equal({
+                subject: {
+                    type: "service_account",
+                    email: "assistant@service.demo.api.meshagent.com",
+                },
+                max_budget: "2",
+                providers: ["openai"],
+                models: ["openai/gpt-5"],
+                expires_in_seconds: 900,
+            });
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    it("IAM access methods accept group email locators without an id", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{ body?: Record<string, unknown> }> = [];
+        globalThis.fetch = (async (_url, init) => {
+            calls.push({
+                body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined,
+            });
+            return jsonResponse({ allowed: true, relation: "can_use" });
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+            await client.testAccess("proj_123", {
+                subject: {
+                    type: "group",
+                    email: "operators@group.demo.api.meshagent.com",
+                },
+                resource: { type: "room", id: "room-1" },
+                relation: "can_use",
+            });
+            expect(calls[0].body).to.deep.equal({
+                subject: {
+                    type: "group",
+                    email: "operators@group.demo.api.meshagent.com",
+                },
+                resource: { type: "room", id: "room-1" },
+                relation: "can_use",
+            });
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it("getProjectByKey requests the project key endpoint", async () => {
         const originalFetch = globalThis.fetch;
         const calls: Array<{ method: string; url: string }> = [];
