@@ -360,6 +360,7 @@ describe("service_spec_test", () => {
             expect(savedServiceJson).to.deep.equal({
                 version: "v1",
                 kind: "Service",
+                enabled: true,
                 metadata: { name: "channel-service" },
                 container: { image: "meshagent/example" },
                 agents: [
@@ -591,6 +592,7 @@ describe("service_spec_test", () => {
             const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
             const service = await client.getService("project-1", "svc-1");
 
+            expect(service.enabled).to.equal(true);
             expect(service.container?.storage?.configs).to.deep.equal([
                 { path: "/var/run/meshagent" },
             ]);

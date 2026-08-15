@@ -566,6 +566,7 @@ export interface ServiceSpec {
     version: "v1";
     kind: "Service";
     id?: string | null;
+    enabled?: boolean;
     metadata: ServiceMetadata;
     agents?: AgentSpec[] | null;
     ports?: PortSpec[];
@@ -631,7 +632,7 @@ function normalizeServiceSpec(service: ServiceSpec): ServiceSpec {
                     })),
                 },
         };
-    return { ...service, agents, container };
+    return { ...service, enabled: service.enabled ?? true, agents, container };
 }
 
 export class ServiceTemplateSpec {
@@ -830,6 +831,7 @@ function serializeServiceSpec(service: ServiceSpec): Record<string, unknown> {
 
     return pruneUndefinedValues({
         ...service,
+        enabled: service.enabled ?? true,
         container,
         agents,
     }) as Record<string, unknown>;
