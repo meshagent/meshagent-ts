@@ -2148,7 +2148,7 @@ var sortAndMergeDeleteSet = (ds) => {
       const left = dels[j - 1];
       const right = dels[i];
       if (left.clock + left.len >= right.clock) {
-        left.len = max(left.len, right.clock + right.len - left.clock);
+        dels[j - 1] = new DeleteItem(left.clock, max(left.len, right.clock + right.len - left.clock));
       } else {
         if (j < i) {
           dels[j] = right;
@@ -3674,15 +3674,19 @@ var cleanupTransactions = (transactionCleanups, i) => {
               event._path = null;
             });
             events.sort((event1, event2) => event1.path.length - event2.path.length);
-            callEventHandlerListeners(type._dEH, events, transaction);
+            fs.push(() => {
+              callEventHandlerListeners(type._dEH, events, transaction);
+            });
+          }
+        });
+        fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
+        fs.push(() => {
+          if (transaction._needFormattingCleanup) {
+            cleanupYTextAfterTransaction(transaction);
           }
         });
       });
-      fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
       callAll(fs, []);
-      if (transaction._needFormattingCleanup) {
-        cleanupYTextAfterTransaction(transaction);
-      }
     } finally {
       if (doc2.gc) {
         tryGcDeleteSet(ds, store, doc2.gcFilter);
