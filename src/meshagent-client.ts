@@ -187,7 +187,6 @@ export interface RoomLifecycleEvent {
     type: string;
     message: string;
     severity?: string | null;
-    data: Record<string, unknown>;
     createdAt: Date;
 }
 
@@ -1232,7 +1231,6 @@ export class Meshagent {
             type,
             message,
             severity,
-            data: eventData,
             created_at: createdAt,
         } = data as Record<string, unknown>;
         if (
@@ -1250,9 +1248,6 @@ export class Meshagent {
         if (severity != null && typeof severity !== "string") {
             throw new RoomException("Invalid room lifecycle event payload: severity must be a string");
         }
-        if (eventData != null && (typeof eventData !== "object" || Array.isArray(eventData))) {
-            throw new RoomException("Invalid room lifecycle event payload: data must be an object");
-        }
         return {
             id,
             roomName,
@@ -1260,7 +1255,6 @@ export class Meshagent {
             type,
             message,
             severity: severity == null ? null : severity as string,
-            data: eventData == null ? {} : eventData as Record<string, unknown>,
             createdAt: new Date(createdAt),
         };
     }

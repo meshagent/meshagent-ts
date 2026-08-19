@@ -497,7 +497,7 @@ describe("meshagent_client_secret_test", () => {
                     type: "room.lifecycle.start.failed",
                     message: "No RoomServer was available",
                     severity: "ERROR",
-                    data: { reason: "room pool is full" },
+                    data: { reason: "room pool is full", "code.line.number": 255 },
                     created_at: "2026-08-19T18:00:00Z",
                     service_name: "meshagent-allocator",
                 }],
@@ -519,7 +519,7 @@ describe("meshagent_client_secret_test", () => {
                 sessionId: "session-1",
                 type: "room.lifecycle.start.failed",
             });
-            expect(events[0].data).to.deep.equal({ reason: "room pool is full" });
+            expect(events[0]).not.to.have.property("data");
             expect(events[0]).not.to.have.property("serviceName");
             expect(calls).to.deep.equal([
                 {
