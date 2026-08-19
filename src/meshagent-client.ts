@@ -172,6 +172,24 @@ export interface RoomInfo {
     annotations: Record<string, string>;
 }
 
+export type RoomAllocationStatus = "Allocated" | "Unallocated";
+
+export interface RoomStatus {
+    status: RoomAllocationStatus;
+    allocatedAt?: Date | null;
+    runningForSeconds?: number | null;
+}
+
+export interface RoomLifecycleEvent {
+    id: string;
+    roomName: string;
+    sessionId?: string | null;
+    type: string;
+    message: string;
+    severity?: string | null;
+    createdAt: Date;
+}
+
 export interface GroupInfo {
     id: string;
     name: string;
@@ -1174,6 +1192,70 @@ export class Meshagent {
             name,
             metadata: metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : {},
             annotations: annotations && typeof annotations === "object" ? annotations as Record<string, string> : {},
+        };
+    }
+
+    private parseRoomStatus(data: unknown): RoomStatus {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid room status payload");
+        }
+        const {
+            status,
+            allocated_at: allocatedAt,
+            running_for_seconds: runningForSeconds,
+        } = data as Record<string, unknown>;
+        if (status !== "Allocated" && status !== "Unallocated") {
+            throw new RoomException("Invalid room status payload: unknown status");
+        }
+        if (allocatedAt != null && typeof allocatedAt !== "string") {
+            throw new RoomException("Invalid room status payload: allocated_at must be a timestamp");
+        }
+        if (runningForSeconds != null && typeof runningForSeconds !== "number") {
+            throw new RoomException("Invalid room status payload: running_for_seconds must be a number");
+        }
+        return {
+            status,
+            allocatedAt: allocatedAt == null ? null : new Date(allocatedAt),
+            runningForSeconds: runningForSeconds == null ? null : runningForSeconds,
+        };
+    }
+
+    private parseRoomLifecycleEvent(data: unknown): RoomLifecycleEvent {
+        if (!data || typeof data !== "object") {
+            throw new RoomException("Invalid room lifecycle event payload");
+        }
+        const {
+            id,
+            room_name: roomName,
+            session_id: sessionId,
+            type,
+            message,
+            severity,
+            created_at: createdAt,
+        } = data as Record<string, unknown>;
+        if (
+            typeof id !== "string"
+            || typeof roomName !== "string"
+            || typeof type !== "string"
+            || typeof message !== "string"
+            || typeof createdAt !== "string"
+        ) {
+            throw new RoomException("Invalid room lifecycle event payload: missing required fields");
+        }
+        if (sessionId != null && typeof sessionId !== "string") {
+            throw new RoomException("Invalid room lifecycle event payload: session_id must be a string");
+        }
+        if (severity != null && typeof severity !== "string") {
+            throw new RoomException("Invalid room lifecycle event payload: severity must be a string");
+        }
+        return {
+            id,
+            roomName,
+            sessionId: sessionId == null ? null : sessionId as string,
+            type,
+            message,
+            severity: severity == null ? null : severity as string,
+            createdAt: new Date(createdAt),
         };
     }
 
@@ -2943,6 +3025,31 @@ export class Meshagent {
             action: "fetch room",
         });
         return this.parseRoom(data);
+    }
+
+    async getRoomStatus(projectId: string, name: string): Promise<RoomStatus> {
+        const roomName = this.encodePathComponent(name);
+        const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/status`, {
+            action: "get room status",
+        });
+        return this.parseRoomStatus(data);
+    }
+
+    async listRoomEvents(
+        projectId: string,
+        name: string,
+        options: { limit?: number } = {},
+    ): Promise<RoomLifecycleEvent[]> {
+        const roomName = this.encodePathComponent(name);
+        const data = await this.request<{ events?: unknown[] }>(
+            `/accounts/projects/${projectId}/rooms/${roomName}/events`,
+            {
+                query: { limit: options.limit ?? 100 },
+                action: "list room lifecycle events",
+            },
+        );
+        const events = Array.isArray(data?.events) ? data.events : [];
+        return events.map((event) => this.parseRoomLifecycleEvent(event));
     }
 
     async updateRoom(

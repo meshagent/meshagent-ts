@@ -473,6 +473,69 @@ describe("meshagent_client_secret_test", () => {
         }
     });
 
+    it("gets typed room status and lifecycle events", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{ method: string; url: string }> = [];
+
+        globalThis.fetch = (async (url, init) => {
+            if (typeof url !== "string") {
+                throw new Error("expected string url");
+            }
+            calls.push({ method: init?.method ?? "GET", url });
+            if (url.endsWith("/status")) {
+                return jsonResponse({
+                    status: "Allocated",
+                    allocated_at: "2026-08-19T18:00:00Z",
+                    running_for_seconds: 42,
+                });
+            }
+            return jsonResponse({
+                events: [{
+                    id: "event-1",
+                    room_name: "room/one",
+                    session_id: "session-1",
+                    type: "room.lifecycle.start.failed",
+                    message: "No RoomServer was available",
+                    severity: "ERROR",
+                    data: { reason: "room pool is full", "code.line.number": 255 },
+                    created_at: "2026-08-19T18:00:00Z",
+                    service_name: "meshagent-allocator",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
+
+            const status = await client.getRoomStatus("proj_123", "room/one");
+            const events = await client.listRoomEvents("proj_123", "room/one", { limit: 25 });
+
+            expect(status.status).to.equal("Allocated");
+            expect(status.allocatedAt?.toISOString()).to.equal("2026-08-19T18:00:00.000Z");
+            expect(status.runningForSeconds).to.equal(42);
+            expect(events[0]).to.deep.include({
+                id: "event-1",
+                roomName: "room/one",
+                sessionId: "session-1",
+                type: "room.lifecycle.start.failed",
+            });
+            expect(events[0]).not.to.have.property("data");
+            expect(events[0]).not.to.have.property("serviceName");
+            expect(calls).to.deep.equal([
+                {
+                    method: "GET",
+                    url: "http://example.test/accounts/projects/proj_123/rooms/room%2Fone/status",
+                },
+                {
+                    method: "GET",
+                    url: "http://example.test/accounts/projects/proj_123/rooms/room%2Fone/events?limit=25",
+                },
+            ]);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it("addUserToProject sends project roles", async () => {
         const originalFetch = globalThis.fetch;
         const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
