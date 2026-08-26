@@ -3027,6 +3027,13 @@ export class Meshagent {
         return this.parseRoom(data);
     }
 
+    /**
+     * Returns the room's current control-plane allocation status.
+     *
+     * `Allocated` means an active room session exists. `Unallocated` means
+     * there is no active session. This does not report lifecycle history or
+     * service/container health.
+     */
     async getRoomStatus(projectId: string, name: string): Promise<RoomStatus> {
         const roomName = this.encodePathComponent(name);
         const data = await this.request(`/accounts/projects/${projectId}/rooms/${roomName}/status`, {
@@ -3035,6 +3042,12 @@ export class Meshagent {
         return this.parseRoomStatus(data);
     }
 
+    /**
+     * Lists recent lifecycle transitions for the room across all sessions.
+     *
+     * Events include allocation, startup, shutdown, and startup failures.
+     * Use `getRoomStatus` when current allocation state is required.
+     */
     async listRoomEvents(
         projectId: string,
         name: string,
