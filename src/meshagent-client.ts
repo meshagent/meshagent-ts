@@ -698,6 +698,7 @@ export interface RouteCorsRule {
 
 export interface RouteContentSpec {
     subpath?: string;
+    notFound?: string | null;
     cors?: RouteCorsRule[];
     index?: boolean;
     iap?: boolean;
@@ -711,8 +712,8 @@ interface RoutePathBase {
 }
 
 export type RoutePathSpec = RoutePathBase & (
-    | { targetPort: string | number; targetContent?: never }
-    | { targetContent: RouteContentSpec; targetPort?: never }
+    | { targetPort: string | number; targetContent?: never; unavailable?: string | null }
+    | { targetContent: RouteContentSpec; targetPort?: never; unavailable?: never }
 );
 
 export interface RouteSpec {
