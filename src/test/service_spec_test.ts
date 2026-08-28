@@ -24,6 +24,7 @@ describe("service_spec_test", () => {
                 path: "/docs",
                 targetContent: {
                     subpath: "sites/docs",
+                    notFound: "/errors/404.html",
                     index: true,
                     iap: true,
                     compression: "brotli",
@@ -37,6 +38,12 @@ describe("service_spec_test", () => {
         };
 
         expect(route.paths?.[0]?.targetContent?.compression).to.equal("brotli");
+
+        const serviceRoute: RouteSpec = {
+            ...route,
+            paths: [{ targetPort: "web", unavailable: "/errors/unavailable.html" }],
+        };
+        expect(serviceRoute.paths?.[0]?.unavailable).to.equal("/errors/unavailable.html");
     });
 
     it("types secret values without legacy identity", () => {

@@ -1,5 +1,6 @@
 ## [0.51.5]
 - Stability
+- Route types now expose `notFound` fallback content for content routes and `unavailable` fallback content for service routes.
 
 ## [0.51.4]
 - Stability
