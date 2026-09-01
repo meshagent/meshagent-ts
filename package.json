@@ -1,10 +1,6 @@
 {
     "name": "@meshagent/meshagent",
-<<<<<<< HEAD
-    "version": "0.51.6",
-=======
     "version": "0.52.0",
->>>>>>> origin/main
     "description": "Meshagent Client",
     "homepage": "https://github.com/meshagent/meshagent-ts",
     "scripts": {
