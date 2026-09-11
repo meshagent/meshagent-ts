@@ -66,7 +66,7 @@ function isRetryableStartupClose({
   kind: ProtocolCloseKind;
   reason: string | null;
 }): boolean {
-  if (kind === ProtocolCloseKind.ERROR) {
+  if (kind === ProtocolCloseKind.ERROR || kind === ProtocolCloseKind.SERVER) {
     return true;
   }
   return (reason ?? "").toLowerCase().includes("1013");

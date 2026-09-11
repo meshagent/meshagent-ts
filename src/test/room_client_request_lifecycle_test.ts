@@ -181,13 +181,17 @@ class CloseWithStatusChannel implements ProtocolChannel {
 
   public start(
     _onDataReceived: (data: Uint8Array) => void,
-    { onError }: { onDone?: () => void; onError?: (error: unknown) => void },
+    { onDone, onError }: { onDone?: () => void; onError?: (error: unknown) => void },
   ): void {
     if (this._started) {
       throw new Error("Already started");
     }
     this._started = true;
     queueMicrotask(() => {
+      if (this._closeCode === 1000) {
+        onDone?.();
+        return;
+      }
       onError?.(
         new ProtocolCloseException({
           closeCode: this._closeCode,
@@ -412,6 +416,41 @@ describe("room_client_request_lifecycle", () => {
             channel: new CloseWithStatusChannel({
               closeCode: 1013,
               reason: "try_again_later",
+            }),
+          });
+        }
+        return pair.clientProtocolFactory();
+      },
+      reconnectTimeout: 500,
+    });
+
+    try {
+      pair.serverProtocol.start({ onMessage: async () => {} });
+
+      const start = room.start();
+      await waitUntil(() => protocolFactoryCalls >= 2);
+      await sendRoomReady(pair.serverProtocol);
+      await start;
+
+      expect(protocolFactoryCalls).to.equal(2);
+      expect(room.isConnected).to.equal(true);
+    } finally {
+      room.dispose();
+      pair.dispose();
+    }
+  });
+
+  it("start retries normal server closure before ready", async () => {
+    const pair = new ProtocolPair();
+    let protocolFactoryCalls = 0;
+    const room = new RoomClient({
+      protocolFactory: () => {
+        protocolFactoryCalls += 1;
+        if (protocolFactoryCalls === 1) {
+          return new Protocol({
+            channel: new CloseWithStatusChannel({
+              closeCode: 1000,
+              reason: "normal closure",
             }),
           });
         }
