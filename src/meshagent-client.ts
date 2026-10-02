@@ -51,7 +51,8 @@ export type ProjectRole =
     | "llm_quota_manager"
     | "usage_reporter"
     | "billing_manager"
-    | "group_manager";
+    | "group_manager"
+    | "user_profile_editor";
 export type ResourceRole = "viewer" | "operator" | "developer" | "admin";
 export type RoomRole = "site_user" | "guest" | ResourceRole;
 export type ProjectSettingsDocumentName = "openai" | "anthropic" | "otel" | "admission" | "room" | "room_roles" | "router";
@@ -234,6 +235,8 @@ export interface ProjectMember {
     email: string;
     firstName?: string | null;
     lastName?: string | null;
+    metadata?: Record<string, unknown>;
+    annotations?: Record<string, string>;
     directRoles: ProjectRole[];
 }
 
@@ -1598,7 +1601,8 @@ export class Meshagent {
                       item === "llm_proxy_user" ||
                       item === "usage_reporter" ||
                       item === "billing_manager" ||
-                      item === "group_manager",
+                      item === "group_manager" ||
+                      item === "user_profile_editor",
               )
             : [];
         const id = typeof user.id === "string" ? user.id : "";
@@ -1608,6 +1612,8 @@ export class Meshagent {
             email,
             firstName: typeof user.first_name === "string" ? user.first_name : null,
             lastName: typeof user.last_name === "string" ? user.last_name : null,
+            metadata: user.metadata && typeof user.metadata === "object" ? user.metadata as Record<string, unknown> : {},
+            annotations: user.annotations && typeof user.annotations === "object" ? user.annotations as Record<string, string> : {},
             directRoles,
         };
     }
@@ -1684,6 +1690,7 @@ export class Meshagent {
                   item === "usage_reporter" ||
                   item === "billing_manager" ||
                   item === "group_manager" ||
+                  item === "user_profile_editor" ||
                   item === "reader" ||
                   item === "subscriber" ||
                   item === "publisher" ||
@@ -1951,10 +1958,22 @@ export class Meshagent {
         });
     }
 
-    async updateUserProfile(userId: string, firstName: string, lastName: string): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/profiles/${userId}`, {
+    /** Omitted fields are preserved; editing another user or annotations requires user_profile_editor in projectId. */
+    async updateUserProfile(
+        userId: string,
+        firstName?: string,
+        lastName?: string,
+        options: { metadata?: Record<string, unknown>; annotations?: Record<string, string>; projectId?: string } = {},
+    ): Promise<Record<string, unknown>> {
+        const query = options.projectId === undefined ? "" : `?project_id=${encodeURIComponent(options.projectId)}`;
+        return await this.request(`/accounts/profiles/${encodeURIComponent(userId)}${query}`, {
             method: "PUT",
-            json: { first_name: firstName, last_name: lastName },
+            json: {
+                ...(firstName !== undefined ? { first_name: firstName } : {}),
+                ...(lastName !== undefined ? { last_name: lastName } : {}),
+                ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
+                ...(options.annotations !== undefined ? { annotations: options.annotations } : {}),
+            },
             action: "update user profile",
         });
     }
