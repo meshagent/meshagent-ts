@@ -1,3 +1,7 @@
+## [0.53.0]
+- Added user profile metadata and annotations to project-member types and parsing.
+- Added the `user_profile_editor` project role and support for partial profile updates with metadata, annotations, and project ID options.
+
 ## [Unreleased]
 - Added user profile metadata and string annotations to project-member models, plus `metadata`, `annotations`, and `projectId` options on `updateUserProfile`. Omitted fields are preserved; supplied maps replace their previous contents.
 - Added `user_profile_editor` to project role types and parsing. Project owners and admins inherit profile editing; ordinary users can edit their own names and metadata.
