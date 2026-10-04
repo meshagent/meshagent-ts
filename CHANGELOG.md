@@ -6,8 +6,10 @@
 - Added the `user_profile_editor` project role and support for partial profile updates with metadata, annotations, and project ID options.
 
 ## [Unreleased]
+- Added project-scoped profile reads and writes, `project`/`user`/`merged` views, and typed inheritance fields. Project user listings default to merged profiles.
+- Added sysadmin global user search, profile reads, and profile updates.
 - Added user profile metadata and string annotations to project-member models, plus `metadata`, `annotations`, and `projectId` options on `updateUserProfile`. Omitted fields are preserved; supplied maps replace their previous contents.
-- Added `user_profile_editor` to project role types and parsing. Project owners and admins inherit profile editing; ordinary users can edit their own names and metadata.
+- Added `user_profile_editor` to project role types and parsing. Project owners and admins inherit project profile editing; ordinary users can edit their own global names and metadata.
 
 ## [0.52.4]
 - Stability

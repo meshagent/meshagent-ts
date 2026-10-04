@@ -230,6 +230,23 @@ export interface ResourcePolicyPage {
     continuationToken?: string | null;
 }
 
+export type UserProfileView = "project" | "user" | "merged";
+export type UserProfileField = "first_name" | "last_name" | "metadata" | "annotations";
+
+export interface UserProfile {
+    id: string;
+    email: string;
+    first_name: string | null;
+    last_name: string | null;
+    metadata: Record<string, unknown>;
+    annotations: Record<string, string>;
+}
+
+export interface UserProfilesPage {
+    users: UserProfile[];
+    continuation_token: string | null;
+}
+
 export interface ProjectMember {
     id: string;
     email: string;
@@ -1937,44 +1954,83 @@ export class Meshagent {
         });
     }
 
-    async getUsersInProjectPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string; email?: string } = {}): Promise<ProjectMembersPage> {
-        const { pageSize = 100, continuationToken, filter, email } = options;
+    async getUsersInProjectPage(projectId: string, options: { pageSize?: number; continuationToken?: string; filter?: string; email?: string; view?: UserProfileView } = {}): Promise<ProjectMembersPage> {
+        const { pageSize = 100, continuationToken, filter, email, view = "merged" } = options;
         const data = await this.request<{ users?: any[]; continuation_token?: string | null }>(`/accounts/projects/${projectId}/users`, {
-            query: { page_size: pageSize, continuation_token: continuationToken, filter, email },
+            query: { page_size: pageSize, continuation_token: continuationToken, filter, email, view },
             action: "fetch project users",
         });
         const users = Array.isArray(data?.users) ? data.users : [];
         return { users: users.map((user) => this.parseProjectMember(user)), continuationToken: data?.continuation_token ?? null };
     }
 
-    async getUsersInProject(projectId: string): Promise<ProjectMember[]> {
-        const page = await this.getUsersInProjectPage(projectId);
+    async getUsersInProject(projectId: string, options: { view?: UserProfileView } = {}): Promise<ProjectMember[]> {
+        const page = await this.getUsersInProjectPage(projectId, options);
         return page.users;
     }
 
-    async getUserProfile(userId: string): Promise<Record<string, unknown>> {
-        return await this.request(`/accounts/profiles/${userId}`, {
+    async getUserProfile(userId: string, options: { projectId?: string; view?: UserProfileView } = {}): Promise<Record<string, unknown>> {
+        if (options.projectId === undefined && options.view === "project") {
+            throw new Error("projectId is required for the project view");
+        }
+        const userPath = encodeURIComponent(userId);
+        const path = options.projectId === undefined
+            ? `/accounts/profiles/${userPath}`
+            : `/accounts/projects/${encodeURIComponent(options.projectId)}/users/${userPath}/profile`;
+        return await this.request(path, {
+            query: options.projectId === undefined ? undefined : { view: options.view ?? "merged" },
             action: "fetch user profile",
         });
     }
 
-    /** Omitted fields are preserved; editing another user or annotations requires user_profile_editor in projectId. */
+    /** Project edits require user_profile_editor even for your own profile. Global edits are self-only. */
     async updateUserProfile(
         userId: string,
-        firstName?: string,
-        lastName?: string,
-        options: { metadata?: Record<string, unknown>; annotations?: Record<string, string>; projectId?: string } = {},
+        firstName?: string | null,
+        lastName?: string | null,
+        options: { metadata?: Record<string, unknown>; annotations?: Record<string, string>; projectId?: string; inherit?: UserProfileField[] } = {},
     ): Promise<Record<string, unknown>> {
-        const query = options.projectId === undefined ? "" : `?project_id=${encodeURIComponent(options.projectId)}`;
-        return await this.request(`/accounts/profiles/${encodeURIComponent(userId)}${query}`, {
+        if (options.projectId === undefined && options.inherit !== undefined) {
+            throw new Error("projectId is required to inherit profile fields");
+        }
+        const userPath = encodeURIComponent(userId);
+        const path = options.projectId === undefined
+            ? `/accounts/profiles/${userPath}`
+            : `/accounts/projects/${encodeURIComponent(options.projectId)}/users/${userPath}/profile`;
+        return await this.request(path, {
             method: "PUT",
             json: {
                 ...(firstName !== undefined ? { first_name: firstName } : {}),
                 ...(lastName !== undefined ? { last_name: lastName } : {}),
                 ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
                 ...(options.annotations !== undefined ? { annotations: options.annotations } : {}),
+                ...(options.inherit !== undefined ? { inherit: options.inherit } : {}),
             },
             action: "update user profile",
+        });
+    }
+
+    async searchSysadminUsers(options: { filter?: string; pageSize?: number; continuationToken?: string } = {}): Promise<UserProfilesPage> {
+        return await this.request(`/accounts/sysadmin/users`, {
+            query: { filter: options.filter, page_size: options.pageSize ?? 100, continuation_token: options.continuationToken },
+            action: "search global users",
+        });
+    }
+
+    async getSysadminUserProfile(userId: string): Promise<UserProfile> {
+        return await this.request(`/accounts/sysadmin/users/${encodeURIComponent(userId)}`, {
+            action: "fetch global user profile",
+        });
+    }
+
+    async updateSysadminUserProfile(
+        userId: string,
+        fields: Partial<Pick<UserProfile, UserProfileField>>,
+    ): Promise<Record<string, unknown>> {
+        return await this.request(`/accounts/sysadmin/users/${encodeURIComponent(userId)}`, {
+            method: "PUT",
+            json: fields,
+            action: "update global user profile",
         });
     }
 

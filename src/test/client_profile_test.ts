@@ -13,6 +13,44 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("client_profile_test", () => {
+    it("searches and edits global users through sysadmin routes and propagates denials", async () => {
+        const originalFetch = globalThis.fetch;
+        const calls: Array<{url: string; body?: unknown}> = [];
+        const profile = {id: "user-1", email: "ada@example.test", first_name: "Ada", last_name: null, metadata: {}, annotations: {verified: "yes"}};
+        let denied = false;
+        globalThis.fetch = (async (url, init) => {
+            calls.push({url: String(url), ...(init?.body ? {body: JSON.parse(String(init.body))} : {})});
+            if (denied) return jsonResponse({error: "forbidden"}, 403);
+            if (init?.method === "PUT") return jsonResponse({ok: true});
+            return jsonResponse(String(url).includes("?") ? {users: [profile], continuation_token: null} : profile);
+        }) as typeof fetch;
+        try {
+            const client = new Meshagent({baseUrl: "http://example.test"});
+            expect((await client.searchSysadminUsers({filter: "Ada", pageSize: 1})).users).to.deep.equal([profile]);
+            expect(await client.getSysadminUserProfile("user-1")).to.deep.equal(profile);
+            await client.updateSysadminUserProfile("user-1", {annotations: {verified: "yes"}});
+            expect(calls).to.deep.equal([
+                {url: "http://example.test/accounts/sysadmin/users?filter=Ada&page_size=1"},
+                {url: "http://example.test/accounts/sysadmin/users/user-1"},
+                {url: "http://example.test/accounts/sysadmin/users/user-1", body: {annotations: {verified: "yes"}}},
+            ]);
+            denied = true;
+            for (const request of [
+                () => client.searchSysadminUsers(),
+                () => client.getSysadminUserProfile("user-1"),
+                () => client.updateSysadminUserProfile("user-1", {metadata: {}}),
+            ]) {
+                try {
+                    await request();
+                    throw new Error("expected ForbiddenException");
+                } catch (error) {
+                    expect(error).to.be.instanceOf(ForbiddenException);
+                }
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
     it("sends partial metadata and project editor updates", async () => {
         const originalFetch = globalThis.fetch;
         const calls: Array<{ url: string; body: unknown }> = [];
@@ -26,7 +64,7 @@ describe("client_profile_test", () => {
             await client.updateUserProfile("user-2", "Grace", "Hopper", { metadata: { active: true }, annotations: { department: "research" }, projectId: "project-1" });
             expect(calls).to.deep.equal([
                 { url: "http://example.test/accounts/profiles/me", body: { metadata: {} } },
-                { url: "http://example.test/accounts/profiles/user-2?project_id=project-1", body: { first_name: "Grace", last_name: "Hopper", metadata: { active: true }, annotations: { department: "research" } } },
+                { url: "http://example.test/accounts/projects/project-1/users/user-2/profile", body: { first_name: "Grace", last_name: "Hopper", metadata: { active: true }, annotations: { department: "research" } } },
             ]);
         } finally {
             globalThis.fetch = originalFetch;
@@ -128,4 +166,23 @@ describe("client_profile_test", () => {
       globalThis.fetch = originalFetch;
     }
   });
+  it("reads explicit project views and restores inherited fields", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{url: string; body?: unknown}> = [];
+    const raw = { id: "user-1", email: "a@example.test", first_name: null };
+    globalThis.fetch = (async (url, init) => {
+      calls.push({url: String(url), ...(init?.body ? {body: JSON.parse(String(init.body))} : {})});
+      return jsonResponse(init?.method === "PUT" ? {ok: true} : raw);
+    }) as typeof fetch;
+    try {
+      const client = new Meshagent({baseUrl: "http://example.test"});
+      expect(await client.getUserProfile("user-1", {projectId: "project-1", view: "project"})).to.deep.equal(raw);
+      await client.updateUserProfile("user-1", undefined, undefined, {projectId: "project-1", inherit: ["first_name", "metadata"]});
+      expect(calls).to.deep.equal([
+        {url: "http://example.test/accounts/projects/project-1/users/user-1/profile?view=project"},
+        {url: "http://example.test/accounts/projects/project-1/users/user-1/profile", body: {inherit: ["first_name", "metadata"]}},
+      ]);
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
 });
