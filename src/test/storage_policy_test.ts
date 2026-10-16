@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ApiScope, FilesPolicy, ParticipantToken, StorageGrant } from "../index.js";
+import { ApiScope, encodeApiKey, FilesPolicy, ParticipantToken, StorageGrant } from "../index.js";
 
 describe("storage_policy_test", () => {
     it("round trips shared policy vectors without expanding file grants", async () => {
@@ -12,7 +12,14 @@ describe("storage_policy_test", () => {
             const participant = new ParticipantToken({ name: "files-policy-test" });
             participant.addApiGrant(new ApiScope({ storage: restored }));
             const secret = "files-policy-test-secret-at-least-32-bytes";
-            const decoded = await ParticipantToken.fromJwt(await participant.toJwt({ token: secret }), { token: secret });
+            // An explicit API key keeps this fixture independent of CI's
+            // MESHAGENT_API_KEY, which takes precedence over a bare secret.
+            const apiKey = encodeApiKey({
+                id: "72c17196-3f2d-4444-a55b-39825e35cbb7",
+                projectId: "44bb91aa-2555-4487-8173-580027a87558",
+                secret,
+            });
+            const decoded = await ParticipantToken.fromJwt(await participant.toJwt({ apiKey }), { token: secret });
             restored = decoded.getApiGrant()!.storage!;
             for (const value of fixture[cases]) {
                 const { path, ...expected } = value;
