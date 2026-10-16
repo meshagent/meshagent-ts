@@ -24,6 +24,7 @@ export * from './room-server-client.js';
 export * from './runtime.js';
 export * from './schema.js';
 export * from './storage-client.js';
+export * from './files-client.js';
 export * from './services-client.js';
 export * from './sqlite-client.js';
 export * from './stream-controller.js';

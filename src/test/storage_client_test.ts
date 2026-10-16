@@ -14,7 +14,8 @@ import {
     RoomEvent,
     SimpleValue,
     ValueProperty,
-    websocketProtocol,
+    ApiScope, ParticipantToken, StorageGrant, FilesPolicy, FilePathRule,
+    WebSocketClientProtocol, websocketRoomUrl,
 } from "../index.js";
 
 import { encoder } from "../utils.js";
@@ -62,10 +63,16 @@ describe("test storage client", function (this: Mocha.Suite) {
     before(async () => {
         const config = getConfig();
 
-        const protocolFactory = await websocketProtocol({
-            roomName: room,
-            participantName: "client",
-            ...config,
+        const scope = ApiScope.agentDefault();
+        scope.storage = new StorageGrant({ files: new FilesPolicy({ paths: [new FilePathRule({
+            path: "", recursive: true, actions: ["list", "read", "write", "delete", "presign"],
+        })] }) });
+        const token = new ParticipantToken({ name: "client", projectId: config.projectId, apiKeyId: config.apiKeyId });
+        token.addRoomGrant(room);
+        token.addApiGrant(scope);
+        const protocolFactory = WebSocketClientProtocol.createFactory({
+            url: websocketRoomUrl({ roomName: room, apiUrl: config.apiUrl }),
+            token: await token.toJwt({ token: config.secret }),
         });
 
         client = new RoomClient({ protocolFactory });

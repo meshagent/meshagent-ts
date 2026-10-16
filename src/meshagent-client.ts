@@ -1,6 +1,8 @@
 import { meshagentBaseUrl } from "./helpers.js";
 import { ForbiddenException, RoomException } from "./requirement.js";
 import { ApiScope } from "./participant-token.js";
+import { FilesClient, FilesApiError, parseFilesDeploymentConfig, readFilesControlResponse } from "./files-client.js";
+import type { FileRole, MeshagentDeploymentConfig } from "./files-client.js";
 
 export type ProjectRole =
     | "member"
@@ -58,7 +60,7 @@ export type RoomRole = "site_user" | "guest" | ResourceRole;
 export type ProjectSettingsDocumentName = "openai" | "anthropic" | "otel" | "admission" | "room" | "room_roles" | "router";
 export type FeedRole = "reader" | "subscriber" | "publisher" | "manager";
 export type SecretRole = "use_proxy";
-export type AccessRole = ProjectRole | RoomRole | FeedRole | SecretRole | "list";
+export type AccessRole = ProjectRole | RoomRole | FeedRole | SecretRole | FileRole | "list";
 export type AccessSubjectType = "user" | "group" | "agent" | "service_account" | "userset";
 export type AccessResourceType = "project" | "room" | "agent" | "group" | "repository" | "feed" | "secret";
 
@@ -745,6 +747,19 @@ export interface RouteSpec {
     paths?: RoutePathSpec[];
 }
 
+function validateRouteSpec(spec: RouteSpec): void {
+    if (spec.backend.agent != null) {
+        for (const path of spec.paths ?? []) {
+            if (path.targetContent == null || path.targetPort != null || path.stripPrefix || path.unavailable != null) {
+                throw new Error("RouteSpec agent paths require targetContent without service options");
+            }
+            if (path.targetContent.iap) {
+                throw new Error("RouteSpec agent content routes do not support IAP");
+            }
+        }
+    }
+}
+
 export interface Route {
     domain: string;
     spec: RouteSpec;
@@ -1032,12 +1047,34 @@ function bytesToBase64(value: Uint8Array | ArrayBuffer): string {
 export class Meshagent {
     private readonly baseUrl: string;
     private readonly token?: string;
+    private readonly tokenProvider?: () => string | undefined | Promise<string | undefined>;
+    private readonly fetcher: typeof fetch;
+    readonly files: FilesClient;
 
-    constructor({ baseUrl, token }: { baseUrl?: string; token?: string } = {}) {
+    constructor({ baseUrl, token, tokenProvider, fetch: transport }: { baseUrl?: string; token?: string; tokenProvider?: () => string | undefined | Promise<string | undefined>; fetch?: typeof fetch } = {}) {
         const resolvedBaseUrl = meshagentBaseUrl(baseUrl).replace(/\/+$/, "");
         this.baseUrl = resolvedBaseUrl || "https://api.meshagent.com";
         const envToken = typeof process !== "undefined" ? process.env?.MESHAGENT_API_KEY : undefined;
         this.token = token ?? envToken ?? undefined;
+        this.tokenProvider = tokenProvider;
+        this.fetcher = transport ?? ((url, init) => globalThis.fetch(url, init));
+        this.files = new FilesClient({ getConfig: options => this.getConfig(options), send: (url, init) => this.authenticatedFetch(url, init) });
+    }
+
+    private async authenticatedFetch(url: string, init: RequestInit): Promise<Response> {
+        const headers: Record<string, string> = init.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : Array.isArray(init.headers) ? Object.fromEntries(init.headers) : { ...init.headers };
+        const token = this.tokenProvider ? await this.tokenProvider() : this.token;
+        if (token) {
+            for (const key of Object.keys(headers)) { if (key.toLowerCase() === "authorization") delete headers[key]; }
+            headers.Authorization = `Bearer ${token}`;
+        }
+        return this.fetcher(url, { ...init, headers });
+    }
+
+    async getConfig({ signal }: { signal?: AbortSignal } = {}): Promise<MeshagentDeploymentConfig> {
+        const response = await this.authenticatedFetch(`${this.baseUrl}/config`, { method: "GET", signal, redirect: "error" });
+        if (!response.ok) { await response.body?.cancel(); throw new FilesApiError("Unable to read deployment config", response.status); }
+        return parseFilesDeploymentConfig(await readFilesControlResponse(response));
     }
 
     private buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -1058,9 +1095,6 @@ export class Meshagent {
         const url = this.buildUrl(path, query);
 
         const finalHeaders: Record<string, string> = {};
-        if (this.token) {
-            finalHeaders["Authorization"] = `Bearer ${this.token}`;
-        }
 
         if (headers) {
             for (const [key, value] of Object.entries(headers)) {
@@ -1080,7 +1114,7 @@ export class Meshagent {
             }
         }
 
-        const response = await fetch(url, {
+        const response = await this.authenticatedFetch(url, {
             method,
             headers: finalHeaders,
             body: toFetchBody(requestBody),
@@ -1301,6 +1335,7 @@ export class Meshagent {
             throw new RoomException("Invalid route payload: expected object");
         }
         if (data.spec && typeof data.spec === "object") {
+            validateRouteSpec(data.spec as RouteSpec);
             return { domain: String(data.domain ?? data.spec.domain), spec: data.spec as RouteSpec };
         }
         if (typeof data.domain === "string" && typeof data.room_name === "string") {
@@ -3339,6 +3374,7 @@ export class Meshagent {
     }
 
     async createRoute(params: { projectId: string; spec: RouteSpec }): Promise<void> {
+        validateRouteSpec(params.spec);
         await this.request(`/accounts/projects/${params.projectId}/routes`, {
             method: "POST",
             json: { spec: params.spec },
@@ -3348,6 +3384,7 @@ export class Meshagent {
     }
 
     async updateRoute(params: { projectId: string; domain: string; spec: RouteSpec }): Promise<void> {
+        validateRouteSpec(params.spec);
         const domain = this.encodePathComponent(params.domain);
         await this.request(`/accounts/projects/${params.projectId}/routes/${domain}`, {
             method: "PUT",
