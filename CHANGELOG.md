@@ -10,6 +10,7 @@
 - Added the `user_profile_editor` project role and support for partial profile updates with metadata, annotations, and project ID options.
 
 ## [Unreleased]
+- Added SQLite `executeSqlBatch` with typed commands, atomic ordered execution, and mixed statement/query results.
 - Added project-scoped profile reads and writes, `project`/`user`/`merged` views, and typed inheritance fields. Project user listings default to merged profiles.
 - Added sysadmin global user search, profile reads, and profile updates.
 - Added user profile metadata and string annotations to project-member models, plus `metadata`, `annotations`, and `projectId` options on `updateUserProfile`. Omitted fields are preserved; supplied maps replace their previous contents.
