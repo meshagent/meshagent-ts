@@ -3519,7 +3519,6 @@ export class Meshagent {
     }
 
     async getResourcePolicyPage(projectId: string, params: { resourceType: string; resourceId: string; pageSize?: number; continuationToken?: string }): Promise<ResourcePolicyPage> {
-        this.validateResourcePolicyType(params.resourceType);
         const data = await this.request<any>(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy`, {
             method: "GET",
             query: { page_size: params.pageSize ?? 50, continuation_token: params.continuationToken },
@@ -3546,7 +3545,6 @@ export class Meshagent {
     }
 
     async grantResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; subject: AccessSubject; roles: string[]; inviteRedirectUrl?: string }): Promise<void> {
-        this.validateResourcePolicyType(params.resourceType);
         await this.request(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy:grant`, {
             method: "POST",
             json: {
@@ -3559,7 +3557,6 @@ export class Meshagent {
     }
 
     async revokeResourcePolicy(projectId: string, params: { resourceType: string; resourceId: string; subject: AccessSubject }): Promise<void> {
-        this.validateResourcePolicyType(params.resourceType);
         await this.request(`/accounts/projects/${projectId}/iam/${params.resourceType}/${params.resourceId}/policy:revoke`, {
             method: "POST",
             json: {
@@ -3569,11 +3566,6 @@ export class Meshagent {
         });
     }
 
-    private validateResourcePolicyType(resourceType: string): void {
-        if (resourceType === "agent") {
-            throw new Error("managed agent resource policies are not supported; use agent run_as instead");
-        }
-    }
 
     // OAuth Clients -----------------------------------------------------------
 

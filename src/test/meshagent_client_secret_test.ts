@@ -775,46 +775,25 @@ describe("meshagent_client_secret_test", () => {
         }
     });
 
-    it("managed agent policy methods are rejected client-side", async () => {
+    it("managed agent policy methods use IAM policy routes", async () => {
         const originalFetch = globalThis.fetch;
-        const calls: string[] = [];
-
-        globalThis.fetch = (async (url) => {
-            calls.push(String(url));
-            return jsonResponse({});
+        const calls: Array<{ url: string; method: string; body: unknown }> = [];
+        globalThis.fetch = (async (url, init) => {
+            calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null });
+            return jsonResponse({ resource: { type: "agent", id: "agent-1", name: "planner" }, access_grants: [] });
         }) as typeof fetch;
-
         try {
             const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token" });
-            const expectedMessage = /managed agent resource policies are not supported/;
-
-            for (const action of [
-                () => client.grantResourcePolicy("proj_123", {
-                    resourceType: "agent",
-                    resourceId: "agent-1",
-                    subject: { type: "user", id: "user-1" },
-                    roles: ["manager"],
-                }),
-                () => client.getResourcePolicyPage("proj_123", {
-                    resourceType: "agent",
-                    resourceId: "agent-1",
-                }),
-                () => client.revokeResourcePolicy("proj_123", {
-                    resourceType: "agent",
-                    resourceId: "agent-1",
-                    subject: { type: "user", id: "user-1" },
-                }),
-            ]) {
-                try {
-                    await action();
-                    throw new Error("expected managed agent resource policy call to fail");
-                } catch (error) {
-                    expect(error).to.be.instanceOf(Error);
-                    expect((error as Error).message).to.match(expectedMessage);
-                }
-            }
-
-            expect(calls).to.deep.equal([]);
+            const params = { resourceType: "agent", resourceId: "agent-1", subject: { type: "user" as const, id: "user-1" } };
+            await client.grantResourcePolicy("proj_123", { ...params, roles: ["operator", "list"] });
+            const page = await client.getResourcePolicyPage("proj_123", params);
+            await client.revokeResourcePolicy("proj_123", params);
+            expect(page.resource.type).to.equal("agent");
+            expect(calls.map(call => call.method)).to.deep.equal(["POST", "GET", "POST"]);
+            const base = "http://example.test/accounts/projects/proj_123/iam/agent/agent-1/policy";
+            expect(calls.map(call => call.url)).to.deep.equal([base + ":grant", base + "?page_size=50", base + ":revoke"]);
+            expect(calls[0].body).to.deep.equal({ subject: params.subject, roles: ["operator", "list"] });
+            expect(calls[2].body).to.deep.equal({ subject: params.subject });
         } finally {
             globalThis.fetch = originalFetch;
         }
