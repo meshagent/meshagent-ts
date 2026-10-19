@@ -1,3 +1,4 @@
+import { AnonymousAccessTokenProvider } from "./anonymous-access-token-provider.js";
 import { Completer } from "./completer.js";
 import { DatasetsClient } from "./datasets-client.js";
 import { SqliteClient } from "./sqlite-client.js";
@@ -110,15 +111,19 @@ class RoomConnectionStatusException extends RoomServerException {
   constructor({
     statusCode,
     statusText,
+    errorCode,
   }: {
     statusCode: number;
     statusText?: string;
+    errorCode?: string;
   }) {
     const normalizedStatusText = statusText?.trim();
     super(
       normalizedStatusText == null || normalizedStatusText.length === 0
         ? `websocket connect failed with status ${statusCode}`
         : `websocket connect failed with status ${statusCode}: ${normalizedStatusText}`,
+      undefined,
+      { statusCode, errorCode },
     );
     this.name = "RoomConnectionStatusException";
     this.statusCode = statusCode;
@@ -141,6 +146,7 @@ function wrapRoomConnectionError(error: unknown): RoomServerException {
     return new RoomConnectionStatusException({
       statusCode: error.statusCode,
       statusText: error.statusText,
+      errorCode: error.errorCode,
     });
   }
   if (error instanceof ProtocolCloseException) {
@@ -154,7 +160,7 @@ function wrapRoomConnectionError(error: unknown): RoomServerException {
 function nonRetryableConnectFailureReason(error: unknown): string | null {
   if (
     error instanceof RoomConnectionStatusException
-    && (error.statusCode === 403 || error.statusCode === 404)
+    && (error.statusCode != null && [400, 401, 403, 404, 423].includes(error.statusCode))
   ) {
     return error.message;
   }
@@ -400,6 +406,20 @@ export class RoomClient {
     this.memory = new MemoryClient({ room: this });
     this.services = new ServicesClient({ room: this });
     this.mounts = new MountsClient(this);
+  }
+
+  public static withAnonymous({ authorizationUrl, fetch, reconnectTimeout = null }: {
+    authorizationUrl?: string | URL;
+    fetch?: typeof globalThis.fetch;
+    reconnectTimeout?: number | null;
+  } = {}): RoomClient {
+    const provider = new AnonymousAccessTokenProvider({ resource: "room", authorizationUrl, fetch });
+    return new RoomClient({
+      protocolFactory: () => new WebSocketClientProtocol({
+        url: provider.connectUrl.toString(), tokenProvider: () => provider.getToken(),
+      }),
+      reconnectTimeout,
+    });
   }
 
   public static withIAP({
@@ -962,13 +982,18 @@ export class RoomClient {
         } else {
           const nonRetryableCloseReason = nonRetryableConnectFailureReason(error);
           if (nonRetryableCloseReason != null) {
-            this._finalizeInitialStartupRetryFailure({
-              retryResult: {
-                connected: false,
-                closeKind: ProtocolCloseKind.ERROR,
-                closeReason: nonRetryableCloseReason,
-              },
-            });
+            const terminalState = {
+              closeKind: ProtocolCloseKind.ERROR,
+              closeReason: nonRetryableCloseReason,
+              protocol: this._protocolInstance,
+            };
+            this._setStartupTerminalState(terminalState);
+            const failure = error as RoomConnectionStatusException;
+            throw new RoomServerException(
+              this._startupException(terminalState).message,
+              undefined,
+              { statusCode: failure.statusCode, errorCode: failure.errorCode },
+            );
           }
 
           const closeKind = this._protocolInstance.closeKind;

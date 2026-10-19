@@ -46,8 +46,9 @@ export class ProtocolCloseException extends Error {
 export class ProtocolHandshakeException extends Error {
   public readonly statusCode: number;
   public readonly statusText?: string;
+  public readonly errorCode?: string;
 
-  constructor({ statusCode, statusText }: { statusCode: number; statusText?: string }) {
+  constructor({ statusCode, statusText, errorCode }: { statusCode: number; statusText?: string; errorCode?: string }) {
     const normalizedStatusText = statusText?.trim();
     super(
       normalizedStatusText == null || normalizedStatusText.length === 0
@@ -57,6 +58,7 @@ export class ProtocolHandshakeException extends Error {
     this.name = "ProtocolHandshakeException";
     this.statusCode = statusCode;
     this.statusText = normalizedStatusText;
+    this.errorCode = errorCode;
   }
 }
 
@@ -146,7 +148,8 @@ export class StreamProtocolChannel implements ProtocolChannel {
 
 export class WebSocketProtocolChannel implements ProtocolChannel {
   public readonly url: string;
-  public readonly jwt: string | null;
+  public jwt: string | null;
+  private readonly tokenProvider?: () => string | undefined | Promise<string | undefined>;
   public webSocket: WebSocket | null = null;
 
   private _opened = new Completer<void>();
@@ -172,23 +175,36 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
     );
   };
 
-  constructor({ url, jwt }: { url: string; jwt: string | null }) {
+  constructor({ url, jwt, tokenProvider }: { url: string; jwt: string | null; tokenProvider?: () => string | undefined | Promise<string | undefined> }) {
     this.url = url;
     this.jwt = jwt;
+    this.tokenProvider = tokenProvider;
   }
 
   public start(
     onDataReceived: (data: Uint8Array) => void,
     { onDone, onError }: { onDone?: () => void; onError?: (error: unknown) => void },
   ): void {
-    const url = resolveWebSocketUrl(this.url);
-
     this._opened = new Completer<void>();
     this._finished = false;
     this._onDataReceived = onDataReceived;
     this._doneHandler = onDone;
     this._errorHandler = onError;
 
+    if (this.tokenProvider != null) {
+      void this._startWithToken().catch((error: unknown) => this._finish("error", error));
+    } else {
+      this._connect();
+    }
+  }
+
+  private async _startWithToken(): Promise<void> {
+    this.jwt = (await this.tokenProvider!()) ?? null;
+    if (!this._finished) this._connect();
+  }
+
+  private _connect(): void {
+    const url = resolveWebSocketUrl(this.url);
     const socket = isNodeRuntime()
       ? new WebSocket(url.toString(), [], {
           headers: this.jwt == null ? undefined : { Authorization: `Bearer ${this.jwt}` },
@@ -268,6 +284,7 @@ export class WebSocketProtocolChannel implements ProtocolChannel {
   };
 
   public dispose(): void {
+    this._finished = true;
     const socket = this.webSocket;
     this.webSocket = null;
     this._onDataReceived = undefined;
@@ -697,14 +714,12 @@ export class Protocol<T extends ProtocolChannel = ProtocolChannel> {
 
 export class WebSocketClientProtocol extends Protocol<WebSocketProtocolChannel> {
   private readonly _url: string;
-  private readonly _token: string | null;
 
-  constructor({ url, token }: { url: string; token: string | null }) {
+  constructor({ url, token = null, tokenProvider }: { url: string; token?: string | null; tokenProvider?: () => string | undefined | Promise<string | undefined> }) {
     super({
-      channel: new WebSocketProtocolChannel({ url, jwt: token }),
+      channel: new WebSocketProtocolChannel({ url, jwt: token, tokenProvider }),
     });
     this._url = url;
-    this._token = token;
   }
 
   public static withIAP({ url = "./.well-known/meshagent/room/connect" }: { url?: string } = {}): WebSocketClientProtocol {
@@ -716,6 +731,6 @@ export class WebSocketClientProtocol extends Protocol<WebSocketProtocolChannel> 
   }
 
   public override get token(): string | null {
-    return this._token;
+    return this.channel.jwt;
   }
 }

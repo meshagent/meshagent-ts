@@ -24,6 +24,7 @@ export type Uint8List = Uint8Array;
 
 export class RoomServerException extends Error {
   public readonly statusCode?: number;
+  public readonly errorCode?: string;
   public readonly code?: number;
   public readonly retryable: boolean;
 
@@ -32,9 +33,11 @@ export class RoomServerException extends Error {
     code?: number,
     {
       statusCode,
+      errorCode,
       retryable = false,
     }: {
       statusCode?: number;
+      errorCode?: string;
       retryable?: boolean;
     } = {},
   ) {
@@ -42,6 +45,7 @@ export class RoomServerException extends Error {
 
     this.name = "RoomServerException";
     this.statusCode = statusCode;
+    this.errorCode = errorCode;
     this.code = code;
     this.retryable = retryable;
   }
