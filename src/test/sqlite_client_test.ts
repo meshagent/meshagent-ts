@@ -66,6 +66,39 @@ sqliteIntegrationDescribe("sqlite_client_test", function (this: Mocha.Suite) {
     client2?.dispose();
   });
 
+  it("executes atomic mixed batches through the Rust API", async () => {
+    const db = client1.sqlite.database(sqliteDatabaseName("batch"), { namespace: ["team"] });
+    await db.createDatabase();
+    expect(await db.executeSqlBatch({ commands: [] })).to.deep.equal([]);
+    const results = await db.executeSqlBatch({ commands: [
+      { query: "CREATE TABLE items(id INTEGER PRIMARY KEY, label TEXT)" },
+      { query: "INSERT INTO items VALUES (?, ?)", params: [1, "Ada"] },
+      { query: "UPDATE items SET label=:label WHERE id=:id", params: { label: "Grace", id: 1 } },
+      { query: "SELECT * FROM items" },
+    ] });
+    expect(results[1]).to.deep.equal({ kind: "statement", rowsAffected: 1 });
+    const query = results[3];
+    if (query.kind !== "query") throw new Error("expected query");
+    try {
+      const chunks = [];
+      for await (const chunk of client1.sqlite.readSqlQuery({ queryId: query.queryId })) chunks.push(chunk);
+      expect(rows(chunks[0])).to.deep.equal([{ id: 1n, label: "Grace" }]);
+      expect(query.schema.fields.map((field) => field.name)).to.deep.equal(["id", "label"]);
+    } finally {
+      await client1.sqlite.closeSqlQuery({ queryId: query.queryId });
+    }
+    try {
+      await db.executeSqlBatch({ commands: [
+        { query: "INSERT INTO items VALUES (2, 'rollback')" },
+        { query: "INSERT INTO items VALUES (1, 'duplicate')" },
+      ] });
+      expect.fail("expected constraint error");
+    } catch (error) {
+      expect(String(error)).to.contain("command 1 failed");
+    }
+    expect(await db.count({ table: "items" })).to.equal(1);
+  });
+
   it("round trips sqlite operations through the room server", async () => {
     const appName = sqliteDatabaseName("app");
     const db = client1.sqlite.database(appName, { namespace: ["team"] });

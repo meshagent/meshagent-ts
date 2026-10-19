@@ -16,6 +16,11 @@ export interface SqliteDatabaseDetails {
   sizeBytes: number;
 }
 
+export interface SqliteSqlCommand {
+  query: string;
+  params?: unknown;
+}
+
 export interface SqliteSqlQuery {
   kind: "query";
   schema: Schema;
@@ -413,6 +418,10 @@ export class SqliteDatabaseClient {
 
   public async *sqlStream(params: { query: string; params?: unknown }): AsyncIterable<Table> {
     yield* this.client.sqlStream({ ...params, database: this.database, namespace: this.namespace });
+  }
+
+  public async executeSqlBatch({ commands }: { commands: SqliteSqlCommand[] }): Promise<SqliteSqlExecution[]> {
+    return await this.client.executeSqlBatch({ database: this.database, namespace: this.namespace, commands });
   }
 
   public async executeSql(params: { query: string; params?: unknown }): Promise<SqliteSqlExecution> {
@@ -897,6 +906,39 @@ export class SqliteClient {
       kind: "query",
       queryId,
     };
+  }
+
+  /** Execute commands atomically in order. Close any returned query handles. */
+  public async executeSqlBatch({ database, commands, namespace }: {
+    database: string;
+    commands: SqliteSqlCommand[];
+    namespace?: string[];
+  }): Promise<SqliteSqlExecution[]> {
+    const response = await this.invoke("execute_sql_batch", {
+      database, namespace: namespace ?? null,
+      commands: commands.map(({ query, params }) => ({ query, params: params ?? null })),
+    });
+    if (!(response instanceof JsonContent) || !Array.isArray(response.json.results)
+      || response.json.results.length !== commands.length) {
+      throw this.unexpectedResponseError("execute_sql_batch");
+    }
+    return response.json.results.map((result: unknown): SqliteSqlExecution => {
+      if (!isRecord(result)) throw this.unexpectedResponseError("execute_sql_batch");
+      if (result.kind === "statement" && Number.isSafeInteger(result.rows_affected)
+        && Object.keys(result).length === 2) {
+        return { kind: "statement", rowsAffected: result.rows_affected as number };
+      }
+      if (result.kind === "query" && typeof result.query_id === "string" && result.query_id !== ""
+        && typeof result.schema_base64 === "string" && Object.keys(result).length === 3) {
+        try {
+          const bytes = Uint8Array.from(atob(result.schema_base64), (char) => char.charCodeAt(0));
+          return { kind: "query", queryId: result.query_id, schema: schemaFromIPCBytes(bytes) };
+        } catch {
+          throw this.unexpectedResponseError("execute_sql_batch");
+        }
+      }
+      throw this.unexpectedResponseError("execute_sql_batch");
+    });
   }
 
   public async executeSql({ database, query, params, namespace }: {
