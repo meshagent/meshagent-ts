@@ -1,4 +1,5 @@
 export * from './agent.js';
+export * from './anonymous-access-token-provider.js';
 export * from './agent-client.js';
 export * from './event-emitter.js';
 export * from './client.js';
