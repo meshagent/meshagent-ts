@@ -422,3 +422,32 @@ describe("sqlite_client_unit_test", () => {
     expect(Array.from(sqlRows.getChild("payload")?.get(0) as Uint8Array)).to.deep.equal([1, 2, 3]);
   });
 });
+
+
+describe("sqlite batch", () => {
+  it("binds the database and decodes mixed ordered results", async () => {
+    const room = new FakeSqliteRoom();
+    room.malformedResponses.execute_sql_batch = new JsonContent({ json: { results: [
+      { kind: "statement", rows_affected: 1 },
+      { kind: "query", query_id: "batch-query", schema_base64: Buffer.from(tableToIPC(new Table(room.sqlTable.schema), "stream")).toString("base64") },
+    ] } });
+    const commands = [{ query: "INSERT INTO items VALUES (?)", params: [1] }, { query: "SELECT * FROM items WHERE id=:id", params: { id: 1 } }];
+    const results = await new SqliteClient({ room }).database("app", { namespace: ["team"] }).executeSqlBatch({ commands });
+    expect(results[0]).to.deep.equal({ kind: "statement", rowsAffected: 1 });
+    expect(results[1].kind).to.equal("query");
+    if (results[1].kind === "query") expect(results[1].schema.fields.map((field) => field.name)).to.deep.equal(["id", "payload"]);
+    expect(room.invokeCalls[0]).to.deep.equal({ toolkit: "sqlite", tool: "execute_sql_batch", input: { database: "app", namespace: ["team"], commands } });
+  });
+  it("rejects malformed result counts, kinds, and schemas", async () => {
+    for (const results of [[], [{ kind: "unknown" }], [{ kind: "statement", rows_affected: true }], [{ kind: "query", query_id: "x", schema_base64: "%%%" }]]) {
+      const room = new FakeSqliteRoom();
+      room.malformedResponses.execute_sql_batch = new JsonContent({ json: { results } });
+      try {
+        await new SqliteClient({ room }).executeSqlBatch({ database: "app", commands: [{ query: "SELECT 1" }] });
+        expect.fail("expected malformed batch error");
+      } catch (error) {
+        expect(String(error)).to.contain("unexpected return type from sqlite.execute_sql_batch");
+      }
+    }
+  });
+});

@@ -1,3 +1,22 @@
+## [0.54.0]
+- Stability
+
+## [Unreleased]
+- WebSocket download URL creation now requires both read and explicit presign permission. Legacy storage grants do not delegate public URLs; use authenticated downloads or an explicit file policy. OAuth participant tokens retain file-action scopes and IAM path exclusions.
+- Participant storage grants now carry typed file policies, with separate actions, excluded subtrees, ordered read-only rules, and path-component matching. Policies survive signed-token round trips.
+- Added discovered room/managed-agent file clients through `Meshagent.files`, including streaming transfers, cancellation, pagination, metadata, permissions, copy/move, directories, deletion and presign requests. File clients share the parent transport and current token provider; typed file IAM roles and path policies are available.
+- Added SQLite `executeSqlBatch` with typed commands, atomic ordered execution, and mixed statement/query results.
+- Added project-scoped profile reads and writes, `project`/`user`/`merged` views, and typed inheritance fields. Project user listings default to merged profiles.
+- Added sysadmin global user search, profile reads, and profile updates.
+- Added user profile metadata and string annotations to project-member models, plus `metadata`, `annotations`, and `projectId` options on `updateUserProfile`. Omitted fields are preserved; supplied maps replace their previous contents.
+- Added `user_profile_editor` to project role types and parsing. Project owners and admins inherit project profile editing; ordinary users can edit their own global names and metadata.
+- Agent domain routes can publish file-content paths; IAP and service-port paths are rejected for agent backends. Empty paths retain the existing WebSocket route behavior.
+
+## [0.53.5]
+- Added typed project and global profile models, project/user/merged views, project-local updates with inheritance, and sysadmin user search and profile administration.
+- Project member listings now default to merged profiles, with metadata and annotations included.
+- Project profile updates require `user_profile_editor`; global profile access is self-only and global annotations require sysadmin APIs.
+
 ## [0.53.4]
 - Stability
 
@@ -14,12 +33,6 @@
 ## [0.53.0]
 - Added user profile metadata and annotations to project-member types and parsing.
 - Added the `user_profile_editor` project role and support for partial profile updates with metadata, annotations, and project ID options.
-
-## [Unreleased]
-- Added project-scoped profile reads and writes, `project`/`user`/`merged` views, and typed inheritance fields. Project user listings default to merged profiles.
-- Added sysadmin global user search, profile reads, and profile updates.
-- Added user profile metadata and string annotations to project-member models, plus `metadata`, `annotations`, and `projectId` options on `updateUserProfile`. Omitted fields are preserved; supplied maps replace their previous contents.
-- Added `user_profile_editor` to project role types and parsing. Project owners and admins inherit project profile editing; ordinary users can edit their own global names and metadata.
 
 ## [0.52.4]
 - Stability

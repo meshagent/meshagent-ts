@@ -1,3 +1,5 @@
+import { FilesPolicy, legacyStoragePolicy, storageRequestPath } from "./file-permissions.js";
+import type { FileAction } from "./file-permissions.js";
 import { decodeJwt, jwtVerify, SignJWT } from "jose";
 import type { JWTPayload } from "jose";
 import { parseApiKey } from "./api_keys.js";
@@ -1098,51 +1100,32 @@ export class StoragePathGrant {
 
 export class StorageGrant {
     public paths?: StoragePathGrant[];
+    public files?: FilesPolicy;
 
-    constructor({ paths }: { paths?: StoragePathGrant[] } = {}) {
+    constructor({ paths, files }: { paths?: StoragePathGrant[]; files?: FilesPolicy } = {}) {
         this.paths = paths;
+        this.files = files;
     }
-
-    canRead(path: string): boolean {
-        if (this.paths === undefined) {
-            return true;
-        }
-
-        return this.paths.some((pathGrant) => path.startsWith(pathGrant.path));
+    private policy(): FilesPolicy { return this.files ?? legacyStoragePolicy(this.paths); }
+    private allows(action: FileAction, path: string, options: { subtree?: boolean } = {}): boolean {
+        try { return this.policy().allows(action, storageRequestPath(path), options); } catch { return false; }
     }
-
-    canWrite(path: string): boolean {
-        if (this.paths === undefined) {
-            return true;
-        }
-
-        for (const pathGrant of this.paths) {
-            if (path.startsWith(pathGrant.path)) {
-                return !pathGrant.readOnly;
-            }
-        }
-
-        return false;
+    canRead(path: string, options: { subtree?: boolean } = {}): boolean { return this.allows("read", path, options); }
+    canWrite(path: string, options: { subtree?: boolean } = {}): boolean { return this.allows("write", path, options); }
+    canDelete(path: string, { recursive = false }: { recursive?: boolean } = {}): boolean { return this.allows("delete", path, { subtree: recursive }); }
+    canList(path: string): boolean { return this.allows("list", path); }
+    canListDirectory(path: string): boolean {
+        try { return this.policy().canListDirectory(storageRequestPath(path)); } catch { return false; }
     }
-
-    toJSON(): Record<string, any> {
-        const json: Record<string, any> = {};
-        if (this.paths !== undefined) {
-            json["paths"] = this.paths.map((pathGrant) => pathGrant.toJSON());
-        }
-        return json;
+    canPresign(path: string): boolean { return this.allows("presign", path); }
+    toJSON(): Record<string, unknown> {
+        return { ...(this.paths === undefined ? {} : { paths: this.paths.map(path => path.toJSON()) }),
+            ...(this.files === undefined ? {} : { files: this.files.toJson() }) };
     }
-
     static fromJSON(obj: unknown): StorageGrant {
-        if (!isRecord(obj)) {
-            return new StorageGrant();
-        }
-
-        return new StorageGrant({
-            paths: Array.isArray(obj.paths)
-                ? obj.paths.map((pathGrant) => StoragePathGrant.fromJSON(pathGrant))
-                : undefined,
-        });
+        if (!isRecord(obj)) return new StorageGrant();
+        return new StorageGrant({ paths: Array.isArray(obj.paths) ? obj.paths.map(path => StoragePathGrant.fromJSON(path)) : undefined,
+            files: obj.files == null ? undefined : FilesPolicy.fromJson(obj.files) });
     }
 }
 
