@@ -48,6 +48,10 @@ class FakeSqliteRoom {
     }
 
     switch (params.tool) {
+      case "get_database_settings":
+      case "update_database_settings":
+      case "flush_database":
+        return new JsonContent({ json: { replication_mode: "asynchronous", flush_interval_ms: 250 } });
       case "list_databases":
         return new JsonContent({ json: { databases: ["app"] } });
       case "create_database":
@@ -449,5 +453,21 @@ describe("sqlite batch", () => {
         expect(String(error)).to.contain("unexpected return type from sqlite.execute_sql_batch");
       }
     }
+  });
+});
+
+
+describe("SQLite replication settings", () => {
+  it("sends create options, partial updates, and explicit flush", async () => {
+    const room = new FakeSqliteRoom();
+    const client = new SqliteClient({ room });
+    await client.createDatabase({ name: "app", replicationMode: "asynchronous", flushIntervalMs: 250 });
+    const result = await client.updateDatabaseSettings({ name: "app", flushIntervalMs: 250 });
+    expect(result).to.deep.equal({ replication_mode: "asynchronous", flush_interval_ms: 250 });
+    await client.getDatabaseSettings({ name: "app" });
+    await client.flushDatabase({ name: "app" });
+    expect(room.invokeCalls[0].input).to.deep.equal({ name: "app", namespace: null, mode: "create", replication_mode: "asynchronous", flush_interval_ms: 250 });
+    expect(room.invokeCalls[1].input).to.deep.equal({ name: "app", namespace: null, flush_interval_ms: 250 });
+    expect(room.invokeCalls.map(call => call.tool)).to.deep.equal(["create_database", "update_database_settings", "get_database_settings", "flush_database"]);
   });
 });

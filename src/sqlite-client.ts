@@ -4,6 +4,12 @@ import { RoomServerException } from "./room-server-client.js";
 import { BinaryContent, ControlContent, EmptyContent, ErrorContent, JsonContent, type Content } from "./response.js";
 import { DatasetRecord, DatasetValue, DatasetValueEncoder } from "./datasets-client.js";
 
+export type SqliteReplicationMode = "synchronous" | "asynchronous";
+export interface SqliteReplicationSettings {
+  replication_mode: SqliteReplicationMode;
+  flush_interval_ms: number;
+}
+
 export type SqliteCreateMode = "create" | "overwrite" | "create_if_not_exists";
 export type SqliteWhere = string | Record<string, DatasetValue>;
 export type SqliteSqlCancelStatus = "cancelled" | "cancelling" | "not_cancellable";
@@ -282,8 +288,8 @@ export class SqliteDatabaseClient {
     public readonly namespace?: string[],
   ) {}
 
-  public async createDatabase({ mode = "create" }: { mode?: SqliteCreateMode } = {}): Promise<void> {
-    return this.client.createDatabase({ name: this.database, namespace: this.namespace, mode });
+  public async createDatabase({ mode = "create", replicationMode, flushIntervalMs }: { mode?: SqliteCreateMode; replicationMode?: SqliteReplicationMode; flushIntervalMs?: number } = {}): Promise<void> {
+    return this.client.createDatabase({ name: this.database, namespace: this.namespace, mode, replicationMode, flushIntervalMs });
   }
 
   public async dropDatabase({ ignoreMissing = false }: { ignoreMissing?: boolean } = {}): Promise<void> {
@@ -517,15 +523,35 @@ export class SqliteClient {
     return response.json.databases;
   }
 
-  public async createDatabase({ name, namespace, mode = "create" }: {
+  public async createDatabase({ name, namespace, mode = "create", replicationMode, flushIntervalMs }: {
     name: string;
     namespace?: string[];
     mode?: SqliteCreateMode;
+    replicationMode?: SqliteReplicationMode;
+    flushIntervalMs?: number;
   }): Promise<void> {
-    const response = await this.invoke("create_database", { name, namespace: namespace ?? null, mode });
+    const response = await this.invoke("create_database", { name, namespace: namespace ?? null, mode, ...(replicationMode === undefined ? {} : {replication_mode: replicationMode}), ...(flushIntervalMs === undefined ? {} : {flush_interval_ms: flushIntervalMs}) });
     if (!(response instanceof EmptyContent)) {
       throw this.unexpectedResponseError("create_database");
     }
+  }
+
+  public async getDatabaseSettings({ name, namespace }: { name: string; namespace?: string[] }): Promise<SqliteReplicationSettings> {
+    return this.replicationSettings("get_database_settings", { name, namespace: namespace ?? null });
+  }
+
+  public async updateDatabaseSettings({ name, namespace, replicationMode, flushIntervalMs }: { name: string; namespace?: string[]; replicationMode?: SqliteReplicationMode; flushIntervalMs?: number }): Promise<SqliteReplicationSettings> {
+    return this.replicationSettings("update_database_settings", { name, namespace: namespace ?? null, ...(replicationMode === undefined ? {} : {replication_mode: replicationMode}), ...(flushIntervalMs === undefined ? {} : {flush_interval_ms: flushIntervalMs}) });
+  }
+
+  public async flushDatabase({ name, namespace }: { name: string; namespace?: string[] }): Promise<void> {
+    await this.replicationSettings("flush_database", { name, namespace: namespace ?? null });
+  }
+
+  private async replicationSettings(operation: string, input: Record<string, unknown>): Promise<SqliteReplicationSettings> {
+    const response = await this.invoke(operation, input);
+    if (!(response instanceof JsonContent) || !["synchronous", "asynchronous"].includes(response.json.replication_mode) || !Number.isInteger(response.json.flush_interval_ms)) throw this.unexpectedResponseError(operation);
+    return response.json as SqliteReplicationSettings;
   }
 
   public async dropDatabase({ name, namespace, ignoreMissing = false }: {
