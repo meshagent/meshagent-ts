@@ -8497,10 +8497,6 @@ var redoItem = (transaction, item, redoitems, itemsToDelete, ignoreRemoteMapChan
     } else {
       left = parentType._map.get(item.parentSub) || null;
     }
-    if (left !== null && /** @type {AbstractType<any>} */
-    left.parent._item !== parentItem) {
-      left = parentType._map.get(item.parentSub) || null;
-    }
   }
   const nextClock = getState(store, ownClientID);
   const nextId = createID(ownClientID, nextClock);
