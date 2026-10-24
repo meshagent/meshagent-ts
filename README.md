@@ -179,7 +179,7 @@ For deployment, package your toolkit as a long-running Node process. Use the sam
 Create a `Dockerfile` for your toolkit service:
 
 ```dockerfile
-FROM node:22-slim
+FROM node:22.23.4-slim
 
 WORKDIR /app
 COPY package*.json ./
