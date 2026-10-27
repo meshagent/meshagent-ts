@@ -3480,12 +3480,13 @@ export class Meshagent {
         };
     }
 
-    async getEffectiveAccess(projectId: string, params: { subject: AccessSubject; resource: AccessResource; relations?: string[] }): Promise<EffectiveAccess> {
+    async getEffectiveAccess(projectId: string, params: { subject: AccessSubject; resource: AccessResource; roles: string[]; relations?: string[] }): Promise<EffectiveAccess> {
         const data = await this.request<any>(`/accounts/projects/${projectId}/access:effective`, {
             method: "POST",
             json: {
                 subject: this.serializeAccessSubject(params.subject),
                 resource: this.serializeAccessResource(params.resource),
+                roles: params.roles,
                 ...(params.relations ? { relations: params.relations } : {}),
             },
             action: "get effective access",
