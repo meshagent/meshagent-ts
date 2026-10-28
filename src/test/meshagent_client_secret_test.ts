@@ -847,6 +847,7 @@ describe("meshagent_client_secret_test", () => {
             const effective = await client.getEffectiveAccess("proj_123", {
                 subject: { type: "user", id: "user-1" },
                 resource: { type: "room", id: "room-1" },
+                roles: ["developer"],
                 relations: ["can_use", "can_manage"],
             });
             const accessBindings = await client.listAccessBindings("proj_123", {
@@ -871,6 +872,12 @@ describe("meshagent_client_secret_test", () => {
                 relation: "can_use",
             });
             expect(calls[1].url).to.equal("http://example.test/accounts/projects/proj_123/access:effective");
+            expect(calls[1].body).to.deep.equal({
+                subject: { type: "user", id: "user-1" },
+                resource: { type: "room", id: "room-1" },
+                roles: ["developer"],
+                relations: ["can_use", "can_manage"],
+            });
             expect(calls[2].url).to.equal("http://example.test/accounts/projects/proj_123/access:bindings");
             expect(calls[2].body).to.deep.equal({
                 subject: { type: "user", id: "user-1" },
