@@ -286,6 +286,22 @@ class FakeDatasetsRoom {
 }
 
 describe("datasets_client_unit_test", () => {
+  it("registers an external table by room connection ID without credentials", async () => {
+    const room = new FakeDatasetsRoom();
+    const client = new DatasetsClient({ room });
+    await client.registerTable({
+      name: "events", connectionId: "connection-id", path: "events.lance",
+      namespace: ["analytics"], branch: "experiment",
+    });
+    expect(room.invokeCalls).to.deep.equal([{
+      toolkit: "dataset", tool: "register_table",
+      input: {
+        name: "events", connection_id: "connection-id", path: "events.lance",
+        namespace: ["analytics"], branch: "experiment",
+      },
+    }]);
+  });
+
   it("forwards create-table metadata and namespace, and supports expression addColumns", async () => {
     const room = new FakeDatasetsRoom();
     const client = new DatasetsClient({ room });

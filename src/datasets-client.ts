@@ -1311,6 +1311,24 @@ export class DatasetsClient {
     await this.drainWriteStream("create_table", input);
   }
 
+  /** Register an existing external Lance dataset as a read-only room table. */
+  public async registerTable({ name, connectionId, path, namespace, branch }: {
+    name: string;
+    connectionId: string;
+    path: string;
+    namespace?: string[];
+    branch?: string;
+  }): Promise<void> {
+    await this.room.invokeContent({
+      toolkit: "dataset",
+      tool: "register_table",
+      input: {
+        name, connection_id: connectionId, path,
+        namespace: namespace ?? null, branch: branch ?? null,
+      },
+    });
+  }
+
   public async dropTable({ name, ignoreMissing = false, namespace, branch }: {
     name: string;
     ignoreMissing?: boolean;
