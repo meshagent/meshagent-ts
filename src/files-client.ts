@@ -305,9 +305,10 @@ export class TargetFilesClient {
         for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
         return result;
     }
-    async upload(path: string, data: FilesUpload, { contentType = "application/octet-stream", overwrite = true, signal }: { contentType?: string; overwrite?: boolean; signal?: AbortSignal } = {}): Promise<void> {
+    async upload(path: string, data: FilesUpload, { contentType = "application/octet-stream", overwrite = true, ifMatch, signal }: { contentType?: string; overwrite?: boolean; ifMatch?: string; signal?: AbortSignal } = {}): Promise<void> {
+        if (ifMatch !== undefined && !ifMatch.trim()) throw new FilesApiError("If-Match ETag must not be empty");
         const input = uploadBody(data);
-        const options: RequestInit & { duplex?: "half" } = { method: "PUT", headers: { "Content-Type": contentType }, body: input.body, signal };
+        const options: RequestInit & { duplex?: "half" } = { method: "PUT", headers: { "Content-Type": contentType, ...(ifMatch === undefined ? {} : { "If-Match": ifMatch }) }, body: input.body, signal };
         if (input.streaming) options.duplex = "half";
         const response = await this.files.send(await this.files.url(this.target, path, { overwrite: String(overwrite) }), options);
         await response.body?.cancel();

@@ -3,7 +3,7 @@ import { createServer, IncomingMessage, Server, ServerResponse } from "node:http
 import { once } from "node:events";
 import { FilePathRule, FilesApiError, FilesPolicy, FilesTarget, Meshagent } from "../index.js";
 
-interface Call { method: string; url: string; authorization: string | undefined; contentType: string | undefined; body: Uint8Array }
+interface Call { method: string; url: string; authorization: string | undefined; contentType: string | undefined; ifMatch: string | undefined; body: Uint8Array }
 
 class Fixture {
     server: Server;
@@ -11,6 +11,7 @@ class Fixture {
     discovery = 0;
     calls: Call[] = [];
     blobs = new Map<string, Uint8Array>();
+    etags = new Map<string, number>();
     actions: unknown[] = [];
     repeatToken = false;
     uploadStarted!: () => void;
@@ -41,7 +42,7 @@ class Fixture {
         const chunks: Buffer[] = [];
         for await (const chunk of request) { chunks.push(Buffer.from(chunk)); if (request.method === "PUT") this.uploadStarted(); }
         const body = Buffer.concat(chunks);
-        this.calls.push({ method: request.method!, url: request.url!, authorization: request.headers.authorization, contentType: request.headers["content-type"], body });
+        this.calls.push({ method: request.method!, url: request.url!, authorization: request.headers.authorization, contentType: request.headers["content-type"], ifMatch: request.headers["if-match"], body });
         const path = decodeURIComponent(url.pathname);
         if (path.endsWith("/denied")) { this.json(response, { error: { code: "denied", message: "Access denied" } }, 403); return; }
         if (path.endsWith("/unauthenticated")) { this.json(response, {}, 401); return; }
@@ -66,11 +67,18 @@ class Fixture {
             else { response.writeHead(204); response.end(); }
             return;
         }
-        if (request.method === "PUT") { this.blobs.set(path, body); response.writeHead(204); response.end(); return; }
-        if (request.method === "DELETE") { this.blobs.delete(path); response.writeHead(204); response.end(); return; }
+        if (request.method === "PUT") {
+            const current = this.etags.get(path);
+            if (request.headers["if-match"] !== undefined && request.headers["if-match"] !== `"v${current}"`) { response.writeHead(412); response.end(); return; }
+            if (url.searchParams.get("overwrite") === "false" && current !== undefined) { response.writeHead(409); response.end(); return; }
+            this.blobs.set(path, body);
+            this.etags.set(path, (current ?? 0) + 1);
+            response.writeHead(204); response.end(); return;
+        }
+        if (request.method === "DELETE") { this.blobs.delete(path); this.etags.delete(path); response.writeHead(204); response.end(); return; }
         const data = this.blobs.get(path);
         if (!data) { this.json(response, {}, 404); return; }
-        response.writeHead(200, { "Content-Length": data.length, "Content-Type": "application/octet-stream", "ETag": '"v1"' });
+        response.writeHead(200, { "Content-Length": data.length, "Content-Type": "application/octet-stream", "ETag": `"v${this.etags.get(path)}"` });
         response.end(request.method === "HEAD" ? undefined : data);
     }
 }
@@ -120,6 +128,18 @@ describe("files_client_test", () => {
         assert.deepEqual((await stream.next()).value, new Uint8Array([0, 255]));
         abort.abort();
         await assert.rejects(stream.next(), error => error instanceof Error && error.name === "AbortError");
+    });
+
+    it("sends If-Match and rejects a stale workbook replacement", async () => {
+        const files = new Meshagent({ baseUrl: fixture.baseUrl, token: "secret" }).files.forRoom({ projectId: "p", roomName: "r" });
+        await files.upload("workbook", new Uint8Array([1]), { overwrite: false });
+        const etag = (await files.stat("workbook")).etag;
+        assert.equal(etag, '"v1"');
+        await files.upload("workbook", new Uint8Array([2]), { ifMatch: etag! });
+        assert.equal(fixture.calls.at(-1)?.ifMatch, etag);
+        await assert.rejects(files.upload("workbook", new Uint8Array([3]), { ifMatch: etag! }), error => error instanceof FilesApiError && error.status === 412);
+        assert.deepEqual(await files.download("workbook"), new Uint8Array([2]));
+        await assert.rejects(files.upload("workbook", new Uint8Array([4]), { ifMatch: " " }), /ETag/);
     });
 
     it("paginates opaque cursors, detects cycles and keeps cross-target operation payloads typed", async () => {
