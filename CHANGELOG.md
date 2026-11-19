@@ -1,3 +1,6 @@
+## [0.57.1]
+- Added optional ETag matching to TypeScript file uploads, including validation that the ETag is non-empty.
+
 ## [0.57.0]
 - Files uploads now accept an optional `ifMatch` ETag for conditional replacement; use `stat()` to read the current ETag.
 - Added TypeScript support for registering existing external Lance datasets as read-only room tables without transferring credentials.
