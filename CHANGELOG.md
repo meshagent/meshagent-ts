@@ -1,3 +1,6 @@
+## [0.58.0]
+- Stability
+
 ## [0.57.2]
 - Stability
 
@@ -51,7 +54,7 @@
 - Added sysadmin global user search, profile reads, and profile updates.
 - Added user profile metadata and string annotations to project-member models, plus `metadata`, `annotations`, and `projectId` options on `updateUserProfile`. Omitted fields are preserved; supplied maps replace their previous contents.
 - Added `user_profile_editor` to project role types and parsing. Project owners and admins inherit project profile editing; ordinary users can edit their own global names and metadata.
-- Agent domain routes can publish file-content paths; IAP and service-port paths are rejected for agent backends. Empty paths retain the existing WebSocket route behavior.
+- Managed Agent routes can publish public or IAP-protected file paths. A signed-in browser can reuse its IAP cookie at `/.well-known/meshagent/agent/connect`.
 
 ## [0.53.5]
 - Added typed project and global profile models, project/user/merged views, project-local updates with inheritance, and sysadmin user search and profile administration.

@@ -13,7 +13,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("service_spec_test", () => {
-    it("publishes public agent content and rejects IAP/service paths before HTTP", async () => {
+    it("publishes protected agent content and rejects service paths before HTTP", async () => {
         const requests: { method: string; body: unknown }[] = [];
         const client = new Meshagent({ baseUrl: "http://example.test", token: "test-token", fetch: async (_url, init) => {
             requests.push({ method: init?.method ?? "GET", body: JSON.parse(String(init?.body)) });
@@ -21,13 +21,13 @@ describe("service_spec_test", () => {
         } });
         const spec: RouteSpec = { version: "v1", kind: "Route", metadata: { name: "agent.example.test" },
             domain: "agent.example.test", backend: { agent: { name: "assistant" } },
-            paths: [{ path: "/docs", targetContent: { subpath: "site", index: true } }] };
+            paths: [{ path: "/docs", targetContent: { subpath: "site", index: true, iap: true } }] };
         await client.createRoute({ projectId: "project", spec });
         await client.updateRoute({ projectId: "project", domain: spec.domain, spec });
         await client.createRoute({ projectId: "project", spec: { ...spec, paths: [] } });
         expect(requests).to.have.length(3);
         expect(requests[0].body).to.deep.equal({ spec });
-        for (const paths of [[{ targetPort: 80 }], [{ targetContent: { iap: true } }]]) {
+        for (const paths of [[{ targetPort: 80 }], [{ targetContent: {}, unavailable: "error.html" }]]) {
             const invalid = { ...spec, paths } as RouteSpec;
             for (const operation of [() => client.createRoute({ projectId: "project", spec: invalid }),
                 () => client.updateRoute({ projectId: "project", domain: spec.domain, spec: invalid })]) {

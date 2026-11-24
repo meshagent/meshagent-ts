@@ -753,9 +753,6 @@ function validateRouteSpec(spec: RouteSpec): void {
             if (path.targetContent == null || path.targetPort != null || path.stripPrefix || path.unavailable != null) {
                 throw new Error("RouteSpec agent paths require targetContent without service options");
             }
-            if (path.targetContent.iap) {
-                throw new Error("RouteSpec agent content routes do not support IAP");
-            }
         }
     }
 }
